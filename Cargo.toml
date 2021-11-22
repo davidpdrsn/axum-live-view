@@ -5,3 +5,14 @@ edition = "2021"
 
 [dependencies]
 axum = { git = "https://github.com/tokio-rs/axum.git" }
+async-trait = "0.1"
+maud = "0.23"
+tokio = { version = "1.14", features = ["sync", "macros"] }
+futures-util = "0.3"
+bytes = "1.0"
+tokio-stream = { version = "0.1", features = ["sync"] }
+anyhow = "1.0"
+async-stream = "0.3"
+
+[dev-dependencies]
+tokio = { version = "1.14", features = ["full"] }
