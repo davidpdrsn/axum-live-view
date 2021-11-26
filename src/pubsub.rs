@@ -1,16 +1,45 @@
 use bytes::Bytes;
-use futures_util::stream::{BoxStream, StreamExt};
-use std::future::{ready, Future, Ready};
+use crate::Codec;
+use futures_util::{
+    future::BoxFuture,
+    stream::{BoxStream, StreamExt},
+};
+use std::{future::ready, sync::Arc};
 use tokio::sync::broadcast;
 use tokio_stream::wrappers::BroadcastStream;
 
-pub trait PubSub: Clone + Send + Sync + 'static {
-    type SendFuture: Future<Output = anyhow::Result<()>>;
-    type SubscribeFuture: Future<Output = BoxStream<'static, Bytes>>;
+pub trait PubSub: Send + Sync + 'static {
+    fn send_bytes(&self, topic: &str, message: Bytes) -> BoxFuture<'static, anyhow::Result<()>>;
 
-    fn send(&self, topic: &str, message: Bytes) -> Self::SendFuture;
+    fn subscribe(&self, topic: &str) -> BoxFuture<'static, BoxStream<'static, Bytes>>;
+}
 
-    fn subscribe(&self, topic: &str) -> Self::SubscribeFuture;
+pub trait PubSubExt: PubSub {
+    fn send<T>(&self, topic: &str, message: T) -> BoxFuture<'static, anyhow::Result<()>>
+    where
+        T: Codec,
+    {
+        match message.encode() {
+            Ok(bytes) => {
+                self.send_bytes(topic, bytes)
+            }
+            Err(err) => {
+                Box::pin(ready(Err(err)))
+            }
+        }
+    }
+}
+
+impl<P> PubSubExt for P where P: PubSub {}
+
+impl PubSub for Arc<dyn PubSub> {
+    fn send_bytes(&self, topic: &str, message: Bytes) -> BoxFuture<'static, anyhow::Result<()>> {
+        PubSub::send_bytes(&**self, topic, message)
+    }
+
+    fn subscribe(&self, topic: &str) -> BoxFuture<'static, BoxStream<'static, Bytes>> {
+        PubSub::subscribe(&**self, topic)
+    }
 }
 
 #[derive(Clone)]
@@ -26,15 +55,12 @@ impl InProcess {
 }
 
 impl PubSub for InProcess {
-    type SendFuture = Ready<anyhow::Result<()>>;
-    type SubscribeFuture = Ready<BoxStream<'static, Bytes>>;
-
-    fn send(&self, topic: &str, message: Bytes) -> Self::SendFuture {
+    fn send_bytes(&self, topic: &str, message: Bytes) -> BoxFuture<'static, anyhow::Result<()>> {
         let _ = self.tx.send((topic.to_owned(), message));
-        ready(Ok(()))
+        Box::pin(ready(Ok(())))
     }
 
-    fn subscribe(&self, topic: &str) -> Self::SubscribeFuture {
+    fn subscribe(&self, topic: &str) -> BoxFuture<'static, BoxStream<'static, Bytes>> {
         let topic = topic.to_owned();
 
         let stream = BroadcastStream::new(self.tx.subscribe())
@@ -43,6 +69,6 @@ impl PubSub for InProcess {
             .map(|(_, msg)| msg)
             .boxed();
 
-        ready(stream)
+        Box::pin(ready(stream))
     }
 }

@@ -23,12 +23,18 @@ use tokio_stream::StreamMap;
 pub trait LiveView: Sized + Send + Sync + 'static {
     fn setup(sub: &mut Subscriptions<Self>);
 
-    async fn render(&self) -> Markup;
+    fn render(&self) -> Markup;
 }
 
 pub enum ShouldRender<T> {
     Yes(T),
     No(T),
+}
+
+impl<T> From<T> for ShouldRender<T> {
+    fn from(value: T) -> Self {
+        Self::Yes(value)
+    }
 }
 
 pub(crate) async fn run_to_stream<T, P>(
@@ -42,48 +48,24 @@ where
     let mut subscriptions = Subscriptions::new();
     T::setup(&mut subscriptions);
 
-    let ExtendStreamMap(mut stream_map) = subscriptions
+    let mut stream_map = subscriptions
         .handlers
         .into_iter()
         .map(|(topic, callback)| pubsub.subscribe(&topic).map(|stream| (callback, stream)))
         .collect::<FuturesUnordered<_>>()
-        .collect::<ExtendStreamMap<_, _>>()
+        .collect::<StreamMap<_, _>>()
         .await;
 
     stream! {
         while let Some((callback, msg)) = stream_map.next().await {
             liveview = match (callback.callback)(liveview, msg).await {
                 ShouldRender::Yes(liveview) => {
-                    let markup = liveview.render().await;
+                    let markup = liveview.render();
                     yield markup;
                     liveview
                 }
                 ShouldRender::No(liveview) => liveview,
             };
-        }
-    }
-}
-
-// ---- ExtendStreamMap ----
-
-struct ExtendStreamMap<K, V>(StreamMap<K, V>);
-
-impl<K, V> Default for ExtendStreamMap<K, V> {
-    fn default() -> Self {
-        Self(Default::default())
-    }
-}
-
-impl<K, V> Extend<(K, V)> for ExtendStreamMap<K, V>
-where
-    K: Hash + Eq,
-{
-    fn extend<T>(&mut self, iter: T)
-    where
-        T: IntoIterator<Item = (K, V)>,
-    {
-        for (k, v) in iter {
-            self.0.insert(k, v);
         }
     }
 }
@@ -101,16 +83,17 @@ impl<T> Subscriptions<T> {
         }
     }
 
-    pub fn on<F, Fut, Msg>(&mut self, topic: &'static str, callback: F) -> &mut Self
+    pub fn on<F, Fut, Msg, K>(&mut self, topic: &'static str, callback: F) -> &mut Self
     where
         T: Send + 'static,
         F: Fn(T, Msg) -> Fut + Clone + Send + Sync + 'static,
-        Fut: Future<Output = ShouldRender<T>> + Send + 'static,
+        Fut: Future<Output = K> + Send + 'static,
+        K: Into<ShouldRender<T>>,
         Msg: Codec,
     {
         let callback = Arc::new(
             move |receiver: T, raw_msg: Bytes| match Msg::decode(raw_msg) {
-                Ok(msg) => Box::pin(callback(receiver, msg)) as _,
+                Ok(msg) => Box::pin(callback(receiver, msg).map(|value| value.into())) as _,
                 // TODO(david): handle error someshow
                 Err(_err) => Box::pin(ready(ShouldRender::No(receiver))) as _,
             },

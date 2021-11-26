@@ -1,11 +1,33 @@
-#![allow(dead_code)]
+#![allow(clippy::new_without_default)]
 
+use axum::{AddExtensionLayer, Router};
 use bytes::Bytes;
 
-mod liveview;
-mod pubsub;
+pub mod pubsub;
 
-pub use self::liveview::{LiveView, ShouldRender, Subscriptions};
+mod liveview;
+mod manager;
+mod ws;
+
+pub use self::{
+    liveview::{LiveView, ShouldRender, Subscriptions},
+    manager::LiveViewManager,
+    pubsub::PubSubExt,
+};
+
+pub fn routes<B>() -> Router<B>
+where
+    B: Send + 'static,
+{
+    Router::new().merge(ws::routes())
+}
+
+pub fn layer<P>(pubsub: P) -> AddExtensionLayer<LiveViewManager>
+where
+    P: pubsub::PubSub,
+{
+    AddExtensionLayer::new(LiveViewManager::new(pubsub))
+}
 
 pub trait Codec: Sized {
     fn encode(&self) -> anyhow::Result<Bytes>;
@@ -46,10 +68,10 @@ impl Codec for () {
 
 #[cfg(test)]
 mod tests {
-    use super::{*, pubsub::PubSub};
+    use super::{pubsub::PubSub, *};
     use async_trait::async_trait;
-    use maud::Markup;
     use futures_util::StreamExt;
+    use maud::Markup;
 
     #[tokio::test]
     async fn counter() {
@@ -66,7 +88,7 @@ mod tests {
                     .on("counter/decrement", Self::on_decrement);
             }
 
-            async fn render(&self) -> Markup {
+            fn render(&self) -> Markup {
                 maud::html! { (self.n) }
             }
         }
@@ -88,13 +110,22 @@ mod tests {
         let stream = liveview::run_to_stream(counter, pubsub.clone()).await;
         futures_util::pin_mut!(stream);
 
-        pubsub.send("counter/increment", Bytes::new()).await.unwrap();
+        pubsub
+            .send_bytes("counter/increment", Bytes::new())
+            .await
+            .unwrap();
         assert_eq!(stream.next().await.unwrap().into_string(), "1");
 
-        pubsub.send("counter/increment", Bytes::new()).await.unwrap();
+        pubsub
+            .send_bytes("counter/increment", Bytes::new())
+            .await
+            .unwrap();
         assert_eq!(stream.next().await.unwrap().into_string(), "2");
 
-        pubsub.send("counter/decrement", Bytes::new()).await.unwrap();
+        pubsub
+            .send_bytes("counter/decrement", Bytes::new())
+            .await
+            .unwrap();
         assert_eq!(stream.next().await.unwrap().into_string(), "1");
     }
 }
