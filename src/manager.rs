@@ -10,7 +10,7 @@ use uuid::Uuid;
 
 #[derive(Clone)]
 pub struct LiveViewManager {
-    pubsub: Arc<dyn PubSub>,
+    pub(crate) pubsub: Arc<dyn PubSub>,
 }
 
 impl LiveViewManager {
@@ -23,7 +23,7 @@ impl LiveViewManager {
         }
     }
 
-    pub(crate) fn pubsub(&self) -> Arc<dyn PubSub> {
+    pub fn pubsub(&self) -> impl PubSub {
         Arc::clone(&self.pubsub)
     }
 }

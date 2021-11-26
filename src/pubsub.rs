@@ -78,6 +78,12 @@ impl InProcess {
     }
 }
 
+impl Default for InProcess {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PubSub for InProcess {
     fn send_bytes(&self, topic: &str, message: Bytes) -> BoxFuture<'static, anyhow::Result<()>> {
         let _ = self.tx.send((topic.to_owned(), message));

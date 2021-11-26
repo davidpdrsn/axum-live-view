@@ -51,6 +51,14 @@ class LiveView {
                 this.send(liveviewId, "axum/liveview-event", { "event_name": eventName })
             })
         })
+
+        // element.querySelectorAll("[live-input]").forEach((element) => {
+        //     element.addEventListener("input", (event) => {
+        //         let liveviewId = element.closest('[live-component]').getAttribute("live-component")
+        //         let eventName = element.getAttribute("live-input")
+        //         this.send(liveviewId, eventName, { value: element.value })
+        //     })
+        // })
     }
 }
 

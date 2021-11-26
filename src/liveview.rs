@@ -102,39 +102,33 @@ impl<T> Subscriptions<T> {
         }
     }
 
-    pub fn on<F, Fut, Msg, K>(&mut self, topic: &str, callback: F) -> &mut Self
+    pub fn on<F, Msg>(&mut self, topic: &str, callback: F) -> &mut Self
     where
+        F: SubscriptionCallback<T, Msg>,
         T: Send + 'static,
-        F: Fn(T, Msg) -> Fut + Clone + Send + Sync + 'static,
-        Fut: Future<Output = K> + Send + 'static,
-        K: Into<ShouldRender<T>>,
         Msg: Codec,
     {
         self.on_kind(SubscriptionKind::Local(topic.to_owned()), callback)
     }
 
-    pub fn on_global<F, Fut, Msg, K>(&mut self, topic: &str, callback: F) -> &mut Self
+    pub fn on_global<F, Msg>(&mut self, topic: &str, callback: F) -> &mut Self
     where
+        F: SubscriptionCallback<T, Msg>,
         T: Send + 'static,
-        F: Fn(T, Msg) -> Fut + Clone + Send + Sync + 'static,
-        Fut: Future<Output = K> + Send + 'static,
-        K: Into<ShouldRender<T>>,
         Msg: Codec,
     {
         self.on_kind(SubscriptionKind::Global(topic.to_owned()), callback)
     }
 
-    fn on_kind<F, Fut, Msg, K>(&mut self, kind: SubscriptionKind, callback: F) -> &mut Self
+    fn on_kind<F, Msg>(&mut self, kind: SubscriptionKind, callback: F) -> &mut Self
     where
+        F: SubscriptionCallback<T, Msg>,
         T: Send + 'static,
-        F: Fn(T, Msg) -> Fut + Clone + Send + Sync + 'static,
-        Fut: Future<Output = K> + Send + 'static,
-        K: Into<ShouldRender<T>>,
         Msg: Codec,
     {
         let callback = Arc::new(
             move |receiver: T, raw_msg: Bytes| match Msg::decode(raw_msg) {
-                Ok(msg) => Box::pin(callback(receiver, msg).map(|value| value.into())) as _,
+                Ok(msg) => Box::pin(callback.call(receiver, msg).map(|value| value.into())) as _,
                 // TODO(david): handle error someshow
                 Err(_err) => Box::pin(ready(ShouldRender::No(receiver))) as _,
             },
@@ -147,6 +141,42 @@ impl<T> Subscriptions<T> {
             },
         ));
         self
+    }
+}
+
+pub trait SubscriptionCallback<T, Msg>: Copy + Send + Sync + 'static {
+    type Output: Into<ShouldRender<T>>;
+    type Future: Future<Output = Self::Output> + Send + 'static;
+
+    fn call(self, receiver: T, input: Msg) -> Self::Future;
+}
+
+impl<T, F, Fut, K> SubscriptionCallback<T, ()> for F
+where
+    F: Fn(T) -> Fut + Copy + Send + Sync + 'static,
+    Fut: Future<Output = K> + Send + 'static,
+    K: Into<ShouldRender<T>>,
+{
+    type Output = K;
+    type Future = Fut;
+
+    fn call(self, receiver: T, _: ()) -> Self::Future {
+        self(receiver)
+    }
+}
+
+impl<T, Msg, F, Fut, K> SubscriptionCallback<T, (Msg,)> for F
+where
+    F: Fn(T, Msg) -> Fut + Copy + Send + Sync + 'static,
+    Fut: Future<Output = K> + Send + 'static,
+    K: Into<ShouldRender<T>>,
+    Msg: Codec,
+{
+    type Output = K;
+    type Future = Fut;
+
+    fn call(self, receiver: T, (input,): (Msg,)) -> Self::Future {
+        self(receiver, input)
     }
 }
 

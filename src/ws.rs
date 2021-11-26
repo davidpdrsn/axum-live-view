@@ -20,8 +20,7 @@ where
 }
 
 async fn ws(upgrade: WebSocketUpgrade, live: LiveViewManager) -> impl IntoResponse {
-    let pubsub = live.pubsub();
-    upgrade.on_upgrade(move |socket| handle_socket(socket, pubsub))
+    upgrade.on_upgrade(move |socket| handle_socket(socket, live.pubsub))
 }
 
 #[derive(Default)]
