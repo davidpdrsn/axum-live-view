@@ -1,10 +1,12 @@
-use std::sync::Arc;
-use crate::{pubsub::PubSub, LiveView};
+use crate::{liveview::liveview_local_topic, pubsub::PubSub, LiveView, PubSubExt};
 use axum::{
     async_trait,
     extract::{Extension, FromRequest, RequestParts},
 };
-use maud::Markup;
+use futures_util::StreamExt;
+use maud::{html, Markup};
+use std::sync::Arc;
+use uuid::Uuid;
 
 #[derive(Clone)]
 pub struct LiveViewManager {
@@ -20,6 +22,10 @@ impl LiveViewManager {
             pubsub: Arc::new(pubsub),
         }
     }
+
+    pub(crate) fn pubsub(&self) -> Arc<dyn PubSub> {
+        Arc::clone(&self.pubsub)
+    }
 }
 
 impl LiveViewManager {
@@ -27,21 +33,54 @@ impl LiveViewManager {
     where
         T: LiveView + Send + 'static,
     {
-        let html = liveview.render();
+        let initial_content = liveview.render();
+        let liveview_id = Uuid::new_v4();
+        tokio::spawn(run_liveview(liveview_id, liveview, self.pubsub.clone()));
+        wrap_in_liveview_container(liveview_id, initial_content)
+    }
+}
 
-        let pubsub = Arc::clone(&self.pubsub);
-        tokio::spawn(async move {
-            use futures_util::stream::StreamExt;
+fn wrap_in_liveview_container(liveview_id: Uuid, markup: Markup) -> Markup {
+    html! {
+        div.liveview-container data-liveview-id=(liveview_id) {
+            (markup)
+        }
+    }
+}
 
-            let stream = crate::liveview::run_to_stream(liveview, pubsub).await;
-            futures_util::pin_mut!(stream);
+async fn run_liveview<T, P>(liveview_id: Uuid, liveview: T, pubsub: P)
+where
+    T: LiveView,
+    P: PubSub + Clone,
+{
+    let markup_stream = crate::liveview::run_to_stream(liveview, pubsub.clone(), liveview_id).await;
 
-            while let Some(markup) = stream.next().await {
-                dbg!(markup);
+    futures_util::pin_mut!(markup_stream);
+
+    let mut disconnected_stream = pubsub
+        .subscribe(&liveview_local_topic(liveview_id, "socket-disconnected"))
+        .await;
+
+    loop {
+        tokio::select! {
+            Some(markup) = markup_stream.next() => {
+                let markup = wrap_in_liveview_container(liveview_id, markup);
+                if let Err(err) = pubsub
+                    .send(
+                        &liveview_local_topic(liveview_id, "rendered"),
+                        markup.into_string(),
+                    )
+                    .await
+                {
+                    tracing::error!(%err, "failed to send markup on pubsub");
+                }
             }
-        });
 
-        html
+            Some(_) = disconnected_stream.next() => {
+                tracing::trace!(%liveview_id, "shutting down liveview task");
+                return;
+            }
+        }
     }
 }
 

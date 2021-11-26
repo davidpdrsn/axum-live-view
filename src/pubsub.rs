@@ -1,5 +1,5 @@
-use bytes::Bytes;
 use crate::Codec;
+use bytes::Bytes;
 use futures_util::{
     future::BoxFuture,
     stream::{BoxStream, StreamExt},
@@ -20,12 +20,8 @@ pub trait PubSubExt: PubSub {
         T: Codec,
     {
         match message.encode() {
-            Ok(bytes) => {
-                self.send_bytes(topic, bytes)
-            }
-            Err(err) => {
-                Box::pin(ready(Err(err)))
-            }
+            Ok(bytes) => self.send_bytes(topic, bytes),
+            Err(err) => Box::pin(ready(Err(err))),
         }
     }
 }
@@ -39,6 +35,34 @@ impl PubSub for Arc<dyn PubSub> {
 
     fn subscribe(&self, topic: &str) -> BoxFuture<'static, BoxStream<'static, Bytes>> {
         PubSub::subscribe(&**self, topic)
+    }
+}
+
+pub(crate) struct Logging<P> {
+    inner: P,
+}
+
+impl<P> Logging<P> {
+    pub(crate) fn new(inner: P) -> Self {
+        Self { inner }
+    }
+}
+
+impl<P> PubSub for Logging<P>
+where
+    P: PubSub,
+{
+    fn send_bytes(&self, topic: &str, message: Bytes) -> BoxFuture<'static, anyhow::Result<()>> {
+        {
+            let message = String::from_utf8_lossy(&message);
+            tracing::trace!(?topic, %message, "send_bytes");
+        }
+        self.inner.send_bytes(topic, message)
+    }
+
+    fn subscribe(&self, topic: &str) -> BoxFuture<'static, BoxStream<'static, Bytes>> {
+        tracing::trace!(?topic, "subscribing");
+        self.inner.subscribe(topic)
     }
 }
 

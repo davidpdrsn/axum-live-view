@@ -1,7 +1,12 @@
 #![allow(clippy::new_without_default)]
 
-use axum::{AddExtensionLayer, Router};
+use axum::{
+    response::{Headers, IntoResponse},
+    routing::get,
+    AddExtensionLayer, Router,
+};
 use bytes::Bytes;
+use maud::Markup;
 
 pub mod pubsub;
 
@@ -19,14 +24,27 @@ pub fn routes<B>() -> Router<B>
 where
     B: Send + 'static,
 {
-    Router::new().merge(ws::routes())
+    Router::new()
+        .merge(ws::routes())
+        .route("/live/app.js", get(js))
+}
+
+pub fn assets() -> Markup {
+    maud::html! {
+        script src="/live/app.js" {}
+    }
+}
+
+async fn js() -> impl IntoResponse {
+    const JS: &str = concat!(include_str!("morphdom.js"), include_str!("liveview.js"));
+    (Headers([("content-type", "application/javascript")]), JS)
 }
 
 pub fn layer<P>(pubsub: P) -> AddExtensionLayer<LiveViewManager>
 where
     P: pubsub::PubSub,
 {
-    AddExtensionLayer::new(LiveViewManager::new(pubsub))
+    AddExtensionLayer::new(LiveViewManager::new(pubsub::Logging::new(pubsub)))
 }
 
 pub trait Codec: Sized {
@@ -63,69 +81,5 @@ impl Codec for () {
     fn decode(msg: Bytes) -> anyhow::Result<Self> {
         anyhow::ensure!(msg.is_empty());
         Ok(())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{pubsub::PubSub, *};
-    use async_trait::async_trait;
-    use futures_util::StreamExt;
-    use maud::Markup;
-
-    #[tokio::test]
-    async fn counter() {
-        #[derive(Default)]
-        struct Counter {
-            n: i32,
-        }
-
-        #[async_trait]
-        impl LiveView for Counter {
-            fn setup(subscriptions: &mut Subscriptions<Self>) {
-                subscriptions
-                    .on("counter/increment", Self::on_increment)
-                    .on("counter/decrement", Self::on_decrement);
-            }
-
-            fn render(&self) -> Markup {
-                maud::html! { (self.n) }
-            }
-        }
-
-        impl Counter {
-            async fn on_increment(mut self, _msg: ()) -> ShouldRender<Self> {
-                self.n += 1;
-                ShouldRender::Yes(self)
-            }
-
-            async fn on_decrement(mut self, _msg: ()) -> ShouldRender<Self> {
-                self.n -= 1;
-                ShouldRender::Yes(self)
-            }
-        }
-
-        let pubsub = pubsub::InProcess::new();
-        let counter = Counter::default();
-        let stream = liveview::run_to_stream(counter, pubsub.clone()).await;
-        futures_util::pin_mut!(stream);
-
-        pubsub
-            .send_bytes("counter/increment", Bytes::new())
-            .await
-            .unwrap();
-        assert_eq!(stream.next().await.unwrap().into_string(), "1");
-
-        pubsub
-            .send_bytes("counter/increment", Bytes::new())
-            .await
-            .unwrap();
-        assert_eq!(stream.next().await.unwrap().into_string(), "2");
-
-        pubsub
-            .send_bytes("counter/decrement", Bytes::new())
-            .await
-            .unwrap();
-        assert_eq!(stream.next().await.unwrap().into_string(), "1");
     }
 }

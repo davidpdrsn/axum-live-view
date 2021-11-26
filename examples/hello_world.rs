@@ -4,24 +4,19 @@ use axum::{
     routing::get,
     Router,
 };
-use axum_liveview::{LiveView, LiveViewManager, PubSubExt, ShouldRender, Subscriptions};
+use axum_liveview::{LiveView, LiveViewManager, Subscriptions};
 use maud::{html, Markup};
-use std::{net::SocketAddr, time::Duration};
+use std::net::SocketAddr;
+use tracing_subscriber::{EnvFilter, fmt, prelude::*};
 
 #[tokio::main]
 async fn main() {
-    let pubsub = axum_liveview::pubsub::InProcess::new();
+    tracing_subscriber::registry()
+        .with(fmt::layer())
+        .with(EnvFilter::from_default_env())
+        .init();
 
-    {
-        let pubsub = pubsub.clone();
-        tokio::spawn(async move {
-            let mut interval = tokio::time::interval(Duration::from_secs(1));
-            loop {
-                interval.tick().await;
-                pubsub.send("ping", ()).await.unwrap();
-            }
-        });
-    }
+    let pubsub = axum_liveview::pubsub::InProcess::new();
 
     let app = Router::new()
         .route("/", get(root))
@@ -30,7 +25,7 @@ async fn main() {
 
     let addr = SocketAddr::from(([0, 0, 0, 0], 3000));
     axum::Server::bind(&addr)
-        .serve(app.into_make_service())
+        .serve(app.into_make_service_with_connect_info::<SocketAddr, _>())
         .await
         .unwrap();
 }
@@ -40,7 +35,15 @@ async fn root(live: LiveViewManager) -> impl IntoResponse {
 
     Html(
         html! {
-            (live.embed(counter))
+            (maud::DOCTYPE)
+            html {
+                head {
+                    (axum_liveview::assets())
+                }
+                body {
+                    (live.embed(counter))
+                }
+            }
         }
         .into_string(),
     )
@@ -54,9 +57,14 @@ struct Counter {
 #[async_trait]
 impl LiveView for Counter {
     fn setup(sub: &mut Subscriptions<Self>) {
-        sub.on("increment", Counter::increment)
-            .on("decrement", Counter::decrement)
-            .on("ping", Counter::ping);
+        sub.on("increment", |mut this, ()| async move {
+            this.count += 1;
+            this
+        })
+        .on("decrement", |mut this, ()| async move {
+            this.count -= 1;
+            this
+        });
     }
 
     fn render(&self) -> Markup {
@@ -69,20 +77,5 @@ impl LiveView for Counter {
                 button live-click="decrement" { "-" }
             }
         }
-    }
-}
-
-impl Counter {
-    async fn ping(self, _: ()) -> ShouldRender<Self> {
-        println!("received ping!");
-        ShouldRender::No(self)
-    }
-
-    async fn increment(self, _: ()) -> Self {
-        self
-    }
-
-    async fn decrement(self, _: ()) -> Self {
-        self
     }
 }

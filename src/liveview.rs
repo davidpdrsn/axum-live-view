@@ -16,6 +16,7 @@ use std::{
     hash::Hash,
 };
 use tokio_stream::StreamMap;
+use uuid::Uuid;
 
 // ---- LiveView ----
 
@@ -40,6 +41,7 @@ impl<T> From<T> for ShouldRender<T> {
 pub(crate) async fn run_to_stream<T, P>(
     mut liveview: T,
     pubsub: P,
+    liveview_id: Uuid,
 ) -> impl Stream<Item = Markup> + Send
 where
     T: LiveView,
@@ -51,7 +53,15 @@ where
     let mut stream_map = subscriptions
         .handlers
         .into_iter()
-        .map(|(topic, callback)| pubsub.subscribe(&topic).map(|stream| (callback, stream)))
+        .map(|(topic, callback)| {
+            let future = match topic {
+                SubscriptionKind::Local(topic) => pubsub
+                    .subscribe(&liveview_local_topic(liveview_id, &topic))
+                    .left_future(),
+                SubscriptionKind::Global(topic) => pubsub.subscribe(&topic).right_future(),
+            };
+            future.map(|stream| (callback, stream))
+        })
         .collect::<FuturesUnordered<_>>()
         .collect::<StreamMap<_, _>>()
         .await;
@@ -70,10 +80,19 @@ where
     }
 }
 
+pub(crate) fn liveview_local_topic(liveview_id: Uuid, topic: &str) -> String {
+    format!("liveview/{}/{}", liveview_id, topic)
+}
+
 // ---- Subscriptions ----
 
 pub struct Subscriptions<T> {
-    handlers: Vec<(String, AsyncCallback<T>)>,
+    handlers: Vec<(SubscriptionKind, AsyncCallback<T>)>,
+}
+
+enum SubscriptionKind {
+    Local(String),
+    Global(String),
 }
 
 impl<T> Subscriptions<T> {
@@ -83,7 +102,29 @@ impl<T> Subscriptions<T> {
         }
     }
 
-    pub fn on<F, Fut, Msg, K>(&mut self, topic: &'static str, callback: F) -> &mut Self
+    pub fn on<F, Fut, Msg, K>(&mut self, topic: &str, callback: F) -> &mut Self
+    where
+        T: Send + 'static,
+        F: Fn(T, Msg) -> Fut + Clone + Send + Sync + 'static,
+        Fut: Future<Output = K> + Send + 'static,
+        K: Into<ShouldRender<T>>,
+        Msg: Codec,
+    {
+        self.on_kind(SubscriptionKind::Local(topic.to_owned()), callback)
+    }
+
+    pub fn on_global<F, Fut, Msg, K>(&mut self, topic: &str, callback: F) -> &mut Self
+    where
+        T: Send + 'static,
+        F: Fn(T, Msg) -> Fut + Clone + Send + Sync + 'static,
+        Fut: Future<Output = K> + Send + 'static,
+        K: Into<ShouldRender<T>>,
+        Msg: Codec,
+    {
+        self.on_kind(SubscriptionKind::Global(topic.to_owned()), callback)
+    }
+
+    fn on_kind<F, Fut, Msg, K>(&mut self, kind: SubscriptionKind, callback: F) -> &mut Self
     where
         T: Send + 'static,
         F: Fn(T, Msg) -> Fut + Clone + Send + Sync + 'static,
@@ -99,7 +140,7 @@ impl<T> Subscriptions<T> {
             },
         );
         self.handlers.push((
-            topic.to_owned(),
+            kind,
             AsyncCallback {
                 type_id: TypeId::of::<F>(),
                 callback,
