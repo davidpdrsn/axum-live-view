@@ -16,10 +16,7 @@ async fn main() {
         .with(EnvFilter::from_default_env())
         .init();
 
-    let pubsub =
-        axum_liveview::pubsub::Postgres::new("host=localhost dbname=foobar user=davidpdrsn")
-            .await
-            .unwrap();
+    let pubsub = axum_liveview::pubsub::InProcess::new();
 
     let app = Router::new()
         .route("/", get(root))

@@ -2,19 +2,9 @@ use crate::codec::Codec;
 use axum::async_trait;
 use bytes::Bytes;
 use futures_util::stream::{BoxStream, StreamExt};
-use parking_lot::RwLock;
-use std::{
-    collections::{hash_map::Entry, HashMap},
-    future::ready,
-    sync::Arc,
-};
+use std::{future::ready, sync::Arc};
 use tokio::sync::broadcast;
 use tokio_stream::wrappers::BroadcastStream;
-
-#[cfg(feature = "tokio-postgres")]
-mod postgres;
-#[cfg(feature = "tokio-postgres")]
-pub use postgres::Postgres;
 
 mod in_process;
 pub use in_process::InProcess;

@@ -126,7 +126,10 @@ impl<T> Subscriptions<T> {
             move |receiver: T, raw_msg: Bytes| match Msg::decode(raw_msg) {
                 Ok(msg) => Box::pin(callback.call(receiver, msg).map(|value| value.into())) as _,
                 // TODO(david): handle error someshow
-                Err(_err) => Box::pin(ready(ShouldRender::No(receiver))) as _,
+                Err(err) => {
+                    tracing::warn!(?err, "failed to decode message for subscriber");
+                    Box::pin(ready(ShouldRender::No(receiver))) as _
+                }
             },
         );
         self.handlers.push((
