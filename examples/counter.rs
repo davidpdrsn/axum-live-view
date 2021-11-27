@@ -1,20 +1,13 @@
-#![allow(unused_imports)]
-
 use axum::{
     async_trait,
     response::{Html, IntoResponse},
     routing::get,
-    Json, Router,
+    Router,
 };
-use axum_liveview::{
-    pubsub::PubSub, LiveView, LiveViewManager, PubSubExt, ShouldRender, Subscriptions,
-};
+use axum_liveview::{LiveView, LiveViewManager, Subscriptions};
 use maud::{html, Markup};
-use serde::{Deserialize, Serialize};
-use std::{net::SocketAddr, time::Duration};
-use tokio::time::interval;
+use std::net::SocketAddr;
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
-use uuid::Uuid;
 
 #[tokio::main]
 async fn main() {
@@ -23,7 +16,10 @@ async fn main() {
         .with(EnvFilter::from_default_env())
         .init();
 
-    let pubsub = axum_liveview::pubsub::InProcess::new();
+    let pubsub =
+        axum_liveview::pubsub::Postgres::new("host=localhost dbname=foobar user=davidpdrsn")
+            .await
+            .unwrap();
 
     let app = Router::new()
         .route("/", get(root))
@@ -38,11 +34,7 @@ async fn main() {
 }
 
 async fn root(live: LiveViewManager) -> impl IntoResponse {
-    let pubsub = live.pubsub();
-    let counter = Counter {
-        count: 0,
-        pubsub,
-    };
+    let counter = Counter::default();
 
     Html(
         html! {
@@ -60,21 +52,16 @@ async fn root(live: LiveViewManager) -> impl IntoResponse {
     )
 }
 
-struct Counter<P> {
+#[derive(Default)]
+struct Counter {
     count: u64,
-    pubsub: P,
 }
 
 #[async_trait]
-impl<P> LiveView for Counter<P>
-where
-    P: PubSub,
-{
+impl LiveView for Counter {
     fn setup(sub: &mut Subscriptions<Self>) {
         sub.on("increment", Self::increment)
-            .on("decrement", Self::decrement)
-            .on_global("incremented", Self::incremented)
-            .on_global("decremented", Self::decremented);
+            .on("decrement", Self::decrement);
     }
 
     fn render(&self) -> Markup {
@@ -90,29 +77,16 @@ where
     }
 }
 
-impl<P> Counter<P>
-where
-    P: PubSub,
-{
-    async fn incremented(mut self) -> Self {
+impl Counter {
+    async fn increment(mut self) -> Self {
         self.count += 1;
         self
     }
 
-    async fn decremented(mut self) -> Self {
+    async fn decrement(mut self) -> Self {
         if self.count > 0 {
             self.count -= 1;
         }
         self
-    }
-
-    async fn increment(self) -> ShouldRender<Self> {
-        let _ = self.pubsub.send("incremented", ()).await;
-        ShouldRender::No(self)
-    }
-
-    async fn decrement(self) -> ShouldRender<Self> {
-        let _ = self.pubsub.send("decremented", ()).await;
-        ShouldRender::No(self)
     }
 }

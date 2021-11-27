@@ -1,11 +1,10 @@
-use crate::pubsub::PubSub;
-use crate::Codec;
+use crate::{codec::Codec, pubsub::PubSub};
 use async_stream::stream;
 use async_trait::async_trait;
 use bytes::Bytes;
 use futures_util::{
     future::{BoxFuture, FutureExt},
-    stream::{FuturesUnordered, StreamExt},
+    stream::StreamExt,
     Stream,
 };
 use maud::Markup;
@@ -50,21 +49,18 @@ where
     let mut subscriptions = Subscriptions::new();
     T::setup(&mut subscriptions);
 
-    let mut stream_map = subscriptions
-        .handlers
-        .into_iter()
-        .map(|(topic, callback)| {
-            let future = match topic {
-                SubscriptionKind::Local(topic) => pubsub
+    let mut stream_map = StreamMap::new();
+    for (topic, callback) in subscriptions.handlers {
+        let stream = match topic {
+            SubscriptionKind::Local(topic) => {
+                pubsub
                     .subscribe(&liveview_local_topic(liveview_id, &topic))
-                    .left_future(),
-                SubscriptionKind::Global(topic) => pubsub.subscribe(&topic).right_future(),
-            };
-            future.map(|stream| (callback, stream))
-        })
-        .collect::<FuturesUnordered<_>>()
-        .collect::<StreamMap<_, _>>()
-        .await;
+                    .await
+            }
+            SubscriptionKind::Global(topic) => pubsub.subscribe(&topic).await,
+        };
+        stream_map.insert(callback, stream);
+    }
 
     stream! {
         while let Some((callback, msg)) = stream_map.next().await {
