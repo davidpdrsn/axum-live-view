@@ -143,7 +143,7 @@ where
                 sent_by: self.user_id,
             };
             self.persisted_messages.lock().push(message.clone());
-            let _ = self.pubsub.send("new_message", Json(message)).await;
+            let _ = self.pubsub.broadcast("new_message", Json(message)).await;
         }
         self
     }

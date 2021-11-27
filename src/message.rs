@@ -1,15 +1,15 @@
 use bytes::Bytes;
 use serde::{de::DeserializeOwned, Serialize};
 
-pub trait Codec: Sized {
+pub trait Message: Sized {
     fn encode(&self) -> anyhow::Result<Bytes>;
 
     fn decode(msg: Bytes) -> anyhow::Result<Self>;
 }
 
-impl<T> Codec for (T,)
+impl<T> Message for (T,)
 where
-    T: Codec,
+    T: Message,
 {
     fn encode(&self) -> anyhow::Result<Bytes> {
         self.0.encode()
@@ -21,7 +21,7 @@ where
     }
 }
 
-impl Codec for Bytes {
+impl Message for Bytes {
     fn encode(&self) -> anyhow::Result<Bytes> {
         Ok(self.clone())
     }
@@ -31,7 +31,7 @@ impl Codec for Bytes {
     }
 }
 
-impl Codec for String {
+impl Message for String {
     fn encode(&self) -> anyhow::Result<Bytes> {
         Ok(Bytes::copy_from_slice(self.as_bytes()))
     }
@@ -41,7 +41,7 @@ impl Codec for String {
     }
 }
 
-impl Codec for () {
+impl Message for () {
     fn encode(&self) -> anyhow::Result<Bytes> {
         Ok(Bytes::new())
     }
@@ -52,7 +52,7 @@ impl Codec for () {
     }
 }
 
-impl<T> Codec for axum::Json<T>
+impl<T> Message for axum::Json<T>
 where
     T: Serialize + DeserializeOwned,
 {

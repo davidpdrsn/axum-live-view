@@ -20,12 +20,12 @@ impl Default for InProcess {
 
 #[async_trait]
 impl PubSub for InProcess {
-    async fn send_bytes(&self, topic: &str, msg: Bytes) -> anyhow::Result<()> {
+    async fn send_raw(&self, topic: &str, msg: Bytes) -> anyhow::Result<()> {
         let _ = self.tx.send((topic.to_owned(), msg));
         Ok(())
     }
 
-    async fn subscribe(&self, topic: &str) -> BoxStream<'static, Bytes> {
+    async fn subscribe_raw(&self, topic: &str) -> BoxStream<'static, Bytes> {
         let topic = topic.to_owned();
 
         BroadcastStream::new(self.tx.subscribe())

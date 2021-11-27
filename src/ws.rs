@@ -5,7 +5,6 @@ use axum::{
     routing::get,
     Router,
 };
-use bytes::Bytes;
 use futures_util::{stream::BoxStream, StreamExt};
 use serde::Deserialize;
 use serde_json::{from_value, Value};
@@ -25,7 +24,7 @@ async fn ws(upgrade: WebSocketUpgrade, live: LiveViewManager) -> impl IntoRespon
 
 #[derive(Default)]
 struct SocketState {
-    markup_streams: StreamMap<Uuid, BoxStream<'static, Bytes>>,
+    markup_streams: StreamMap<Uuid, BoxStream<'static, String>>,
 }
 
 async fn handle_socket<P>(mut socket: WebSocket, pubsub: P)
@@ -48,13 +47,7 @@ where
                 }
             }
 
-            Some((liveview_id, bytes)) = state.markup_streams.next() => {
-                let html = if let Ok(str) = String::from_utf8(bytes.to_vec()) {
-                    str
-                } else {
-                    tracing::error!("rendered liveview gave invalid UTF-8");
-                    continue;
-                };
+            Some((liveview_id, html)) = state.markup_streams.next() => {
                 let msg = serde_json::json!({
                     "topic": "rendered",
                     "data": {
@@ -79,7 +72,7 @@ where
 
     for liveview_id in liveview_ids {
         let _ = pubsub
-            .send(
+            .broadcast(
                 &liveview_local_topic(liveview_id, "socket-disconnected"),
                 (),
             )
@@ -121,11 +114,11 @@ where
         }
         Message::LiveClick(LiveClick { event_name }) => {
             let topic = liveview_local_topic(liveview_id, &event_name);
-            try_!(pubsub.send(&topic, ()).await, Ok);
+            try_!(pubsub.broadcast(&topic, ()).await, Ok);
         }
         Message::LiveInput(LiveInput { event_name, value }) => {
             let topic = liveview_local_topic(liveview_id, &event_name);
-            try_!(pubsub.send(&topic, value).await, Ok);
+            try_!(pubsub.broadcast(&topic, value).await, Ok);
         }
     }
 }

@@ -58,7 +58,7 @@ where
     futures_util::pin_mut!(markup_stream);
 
     let mut disconnected_stream = pubsub
-        .subscribe(&liveview_local_topic(liveview_id, "socket-disconnected"))
+        .subscribe::<()>(&liveview_local_topic(liveview_id, "socket-disconnected"))
         .await;
 
     loop {
@@ -66,7 +66,7 @@ where
             Some(markup) = markup_stream.next() => {
                 let markup = wrap_in_liveview_container(liveview_id, markup);
                 if let Err(err) = pubsub
-                    .send(
+                    .broadcast(
                         &liveview_local_topic(liveview_id, "rendered"),
                         markup.into_string(),
                     )

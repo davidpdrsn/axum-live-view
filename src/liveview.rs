@@ -1,4 +1,4 @@
-use crate::{codec::Codec, pubsub::PubSub};
+use crate::{message::Message, pubsub::PubSub};
 use async_stream::stream;
 use async_trait::async_trait;
 use bytes::Bytes;
@@ -54,10 +54,10 @@ where
         let stream = match topic {
             SubscriptionKind::Local(topic) => {
                 pubsub
-                    .subscribe(&liveview_local_topic(liveview_id, &topic))
+                    .subscribe_raw(&liveview_local_topic(liveview_id, &topic))
                     .await
             }
-            SubscriptionKind::Global(topic) => pubsub.subscribe(&topic).await,
+            SubscriptionKind::Global(topic) => pubsub.subscribe_raw(&topic).await,
         };
         stream_map.insert(callback, stream);
     }
@@ -102,7 +102,7 @@ impl<T> Subscriptions<T> {
     where
         F: SubscriptionCallback<T, Msg>,
         T: Send + 'static,
-        Msg: Codec,
+        Msg: Message,
     {
         self.on_kind(SubscriptionKind::Local(topic.to_owned()), callback)
     }
@@ -111,7 +111,7 @@ impl<T> Subscriptions<T> {
     where
         F: SubscriptionCallback<T, Msg>,
         T: Send + 'static,
-        Msg: Codec,
+        Msg: Message,
     {
         self.on_kind(SubscriptionKind::Global(topic.to_owned()), callback)
     }
@@ -120,7 +120,7 @@ impl<T> Subscriptions<T> {
     where
         F: SubscriptionCallback<T, Msg>,
         T: Send + 'static,
-        Msg: Codec,
+        Msg: Message,
     {
         let callback = Arc::new(
             move |receiver: T, raw_msg: Bytes| match Msg::decode(raw_msg) {
@@ -169,7 +169,7 @@ where
     F: Fn(T, Msg) -> Fut + Copy + Send + Sync + 'static,
     Fut: Future<Output = K> + Send + 'static,
     K: Into<ShouldRender<T>>,
-    Msg: Codec,
+    Msg: Message,
 {
     type Output = K;
     type Future = Fut;

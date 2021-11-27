@@ -1,4 +1,4 @@
-use crate::codec::Codec;
+use crate::message::Message;
 use axum::async_trait;
 use bytes::Bytes;
 use futures_util::stream::{BoxStream, StreamExt};
@@ -9,25 +9,48 @@ use tokio_stream::wrappers::BroadcastStream;
 mod in_process;
 pub use in_process::InProcess;
 
-// TODO(david): redis pubsub
-
 #[async_trait]
 pub trait PubSub: Send + Sync + 'static {
-    async fn send_bytes(&self, topic: &str, msg: Bytes) -> anyhow::Result<()>;
+    async fn send_raw(&self, topic: &str, msg: Bytes) -> anyhow::Result<()>;
 
-    async fn subscribe(&self, topic: &str) -> BoxStream<'static, Bytes>;
+    async fn subscribe_raw(&self, topic: &str) -> BoxStream<'static, Bytes>;
 }
 
 #[async_trait]
 pub trait PubSubExt: PubSub {
-    async fn send<T>(&self, topic: &str, msg: T) -> anyhow::Result<()>
+    async fn broadcast<T>(&self, topic: &str, msg: T) -> anyhow::Result<()>
     where
-        T: Codec + Send + Sync + 'static,
+        T: Message + Send + Sync + 'static,
     {
         match msg.encode() {
-            Ok(bytes) => self.send_bytes(topic, bytes).await,
+            Ok(bytes) => self.send_raw(topic, bytes).await,
             Err(err) => Err(err),
         }
+    }
+
+    async fn subscribe<T>(&self, topic: &str) -> BoxStream<'static, T>
+    where
+        T: Message + Send + Sync + 'static,
+    {
+        let mut stream = self.subscribe_raw(topic).await;
+        let topic = topic.to_owned();
+        let decoded_stream = async_stream::stream! {
+            while let Some(bytes) = stream.next().await {
+                match T::decode(bytes) {
+                    Ok(msg) => yield msg,
+                    Err(err) => {
+                        tracing::warn!(
+                            ?topic,
+                            ?err,
+                            expected_type = tracing::field::display(std::any::type_name::<T>()),
+                            "failed to decode message for topic stream",
+                        );
+                    }
+                }
+            }
+        };
+
+        Box::pin(decoded_stream)
     }
 }
 
@@ -35,12 +58,12 @@ impl<P> PubSubExt for P where P: PubSub {}
 
 #[async_trait]
 impl PubSub for Arc<dyn PubSub> {
-    async fn send_bytes(&self, topic: &str, msg: Bytes) -> anyhow::Result<()> {
-        PubSub::send_bytes(&**self, topic, msg).await
+    async fn send_raw(&self, topic: &str, msg: Bytes) -> anyhow::Result<()> {
+        PubSub::send_raw(&**self, topic, msg).await
     }
 
-    async fn subscribe(&self, topic: &str) -> BoxStream<'static, Bytes> {
-        PubSub::subscribe(&**self, topic).await
+    async fn subscribe_raw(&self, topic: &str) -> BoxStream<'static, Bytes> {
+        PubSub::subscribe_raw(&**self, topic).await
     }
 }
 
@@ -61,16 +84,16 @@ impl<P> PubSub for Logging<P>
 where
     P: PubSub,
 {
-    async fn send_bytes(&self, topic: &str, msg: Bytes) -> anyhow::Result<()> {
+    async fn send_raw(&self, topic: &str, msg: Bytes) -> anyhow::Result<()> {
         {
             let msg = String::from_utf8_lossy(&msg);
-            tracing::trace!(?topic, %msg, "send_bytes");
+            tracing::trace!(?topic, %msg, "send_raw");
         }
-        self.inner.send_bytes(topic, msg).await
+        self.inner.send_raw(topic, msg).await
     }
 
-    async fn subscribe(&self, topic: &str) -> BoxStream<'static, Bytes> {
+    async fn subscribe_raw(&self, topic: &str) -> BoxStream<'static, Bytes> {
         tracing::trace!(?topic, "subscribing");
-        self.inner.subscribe(topic).await
+        self.inner.subscribe_raw(topic).await
     }
 }
