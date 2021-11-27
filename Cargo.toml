@@ -18,6 +18,7 @@ tokio = { version = "1.14", features = ["sync", "macros"] }
 tokio-stream = { version = "0.1", features = ["sync"] }
 tracing = "0.1"
 uuid = { version = "0.8", features = ["v4", "serde"] }
+tower = { version = "0.4", features = ["util"] }
 
 tokio-postgres = { version = "0.7", optional = true }
 

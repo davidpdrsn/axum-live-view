@@ -1,6 +1,3 @@
-// import morphdom from "morphdom"
-// window.morphdom = morphdom
-
 class LiveView {
     constructor() {
         this.socket = new WebSocket("ws://localhost:3000/live")
@@ -19,9 +16,9 @@ class LiveView {
                 const element = document.querySelector(`[data-liveview-id="${data.liveview_id}"]`)
                 window.morphdom(element, data.html, {
                     onBeforeElUpdated: function (fromEl, toEl) {
-                        if (toEl.tagName === 'INPUT') {
-                            toEl.value = fromEl.value;
-                        }
+                        // if (toEl.tagName === 'INPUT') {
+                        //     toEl.value = fromEl.value;
+                        // }
                     },
                 })
             } else {
@@ -32,6 +29,7 @@ class LiveView {
 
     send(liveviewId, topic, data) {
         let msg = { "liveview_id": liveviewId, topic: topic, data: data }
+        console.log("sending message", msg)
         this.socket.send(JSON.stringify(msg))
     }
 
@@ -48,17 +46,17 @@ class LiveView {
                 event.preventDefault()
                 let liveviewId = element.closest('[data-liveview-id]').getAttribute("data-liveview-id")
                 let eventName = element.getAttribute("live-click")
-                this.send(liveviewId, "axum/liveview-event", { "event_name": eventName })
+                this.send(liveviewId, "axum/live-click", { "event_name": eventName })
             })
         })
 
-        // element.querySelectorAll("[live-input]").forEach((element) => {
-        //     element.addEventListener("input", (event) => {
-        //         let liveviewId = element.closest('[live-component]').getAttribute("live-component")
-        //         let eventName = element.getAttribute("live-input")
-        //         this.send(liveviewId, eventName, { value: element.value })
-        //     })
-        // })
+        element.querySelectorAll("[live-input]").forEach((element) => {
+            element.addEventListener("input", (event) => {
+                let liveviewId = element.closest('[data-liveview-id]').getAttribute("data-liveview-id")
+                let eventName = element.getAttribute("live-input")
+                this.send(liveviewId, "axum/live-input", { "event_name": eventName, "value": element.value })
+            })
+        })
     }
 }
 

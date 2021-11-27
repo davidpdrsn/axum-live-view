@@ -1,5 +1,5 @@
 use bytes::Bytes;
-use serde::{Serialize, de::DeserializeOwned};
+use serde::{de::DeserializeOwned, Serialize};
 
 pub trait Codec: Sized {
     fn encode(&self) -> anyhow::Result<Bytes>;

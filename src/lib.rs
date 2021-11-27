@@ -46,9 +46,9 @@ use axum::{
 };
 use maud::Markup;
 
+pub mod codec;
 pub mod liveview;
 pub mod pubsub;
-pub mod codec;
 
 mod manager;
 mod ws;
