@@ -94,7 +94,7 @@ where
             .on_global("new_message", Self::new_message);
     }
 
-    #[allow(warnings)]
+    #[allow(clippy::branches_sharing_code)]
     fn render(&self) -> Markup {
         html! {
             form {

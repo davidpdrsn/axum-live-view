@@ -60,18 +60,20 @@ pub use self::{
     pubsub::PubSubExt,
 };
 
+const APP_JS_PATH: &str = "/live/app.js";
+
 pub fn routes<B>() -> Router<B>
 where
     B: Send + 'static,
 {
     Router::new()
         .merge(ws::routes())
-        .route("/live/app.js", get(js))
+        .route(APP_JS_PATH, get(js))
 }
 
 pub fn assets() -> Markup {
     maud::html! {
-        script src="/live/app.js" {}
+        script src=(APP_JS_PATH) {}
     }
 }
 
