@@ -1,6 +1,5 @@
 use crate::{message::Message, pubsub::PubSub};
 use async_stream::stream;
-use async_trait::async_trait;
 use bytes::Bytes;
 use futures_util::{
     future::{BoxFuture, FutureExt},
@@ -19,9 +18,8 @@ use uuid::Uuid;
 
 // ---- LiveView ----
 
-#[async_trait]
 pub trait LiveView: Sized + Send + Sync + 'static {
-    fn setup(sub: &mut Subscriptions<Self>);
+    fn setup(&self, sub: &mut Subscriptions<Self>);
 
     fn render(&self) -> Markup;
 }
@@ -47,7 +45,7 @@ where
     P: PubSub,
 {
     let mut subscriptions = Subscriptions::new();
-    T::setup(&mut subscriptions);
+    liveview.setup(&mut subscriptions);
 
     let mut stream_map = StreamMap::new();
     for (topic, callback) in subscriptions.handlers {

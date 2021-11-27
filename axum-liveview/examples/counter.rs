@@ -23,7 +23,7 @@ async fn main() {
         .merge(axum_liveview::routes())
         .layer(axum_liveview::layer(pubsub));
 
-    let addr = SocketAddr::from(([0, 0, 0, 0], 3000));
+    let addr = SocketAddr::from(([0, 0, 0, 0], 4000));
     axum::Server::bind(&addr)
         .serve(app.into_make_service_with_connect_info::<SocketAddr, _>())
         .await
@@ -42,6 +42,13 @@ async fn root(live: LiveViewManager) -> impl IntoResponse {
                 }
                 body {
                     (live.embed(counter))
+
+                    script {
+                        r#"
+                            const liveView = new LiveView('localhost', 4000)
+                            liveView.connect()
+                        "#
+                    }
                 }
             }
         }
@@ -54,11 +61,10 @@ struct Counter {
     count: u64,
 }
 
-#[async_trait]
 impl LiveView for Counter {
-    fn setup(sub: &mut Subscriptions<Self>) {
-        sub.on("increment", Self::increment)
-            .on("decrement", Self::decrement);
+    fn setup(&self, subscriptions: &mut Subscriptions<Self>) {
+        subscriptions.on("increment", Self::increment);
+        subscriptions.on("decrement", Self::decrement);
     }
 
     fn render(&self) -> Markup {

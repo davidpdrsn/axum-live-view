@@ -112,9 +112,13 @@ where
                 .markup_streams
                 .insert(liveview_id, Box::pin(markup_stream));
         }
-        Message::LiveClick(LiveClick { event_name }) => {
+        Message::LiveClick(LiveClick { event_name, additional_data }) => {
             let topic = liveview_local_topic(liveview_id, &event_name);
-            try_!(pubsub.broadcast(&topic, ()).await, Ok);
+            if let Some(additional_data) = additional_data {
+                try_!(pubsub.broadcast(&topic, axum::Json(additional_data)).await, Ok);
+            } else {
+                try_!(pubsub.broadcast(&topic, ()).await, Ok);
+            }
         }
         Message::LiveInput(LiveInput { event_name, value }) => {
             let topic = liveview_local_topic(liveview_id, &event_name);
@@ -161,6 +165,7 @@ enum Message {
 #[derive(Debug, Deserialize)]
 struct LiveClick {
     event_name: String,
+    additional_data: Option<Value>,
 }
 
 #[derive(Debug, Deserialize)]

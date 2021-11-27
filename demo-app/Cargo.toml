@@ -1,0 +1,32 @@
+[package]
+name = "demo-app"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+axum = { version = "0.4", features = ["http2"] }
+axum-extra = "0.1"
+axum-liveview = { version = "0.1", path = "../axum-liveview" }
+maud = "0.23"
+tokio = { version = "1.14", features = ["full"] }
+tower = { version = "0.4", features = ["util"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+serde = { version = "1.0", features = ["derive"] }
+tracing = "0.1"
+pin-project-lite = "0.2"
+futures = "0.3"
+parking_lot = "0.11"
+http-body = "0.4"
+bytesize = "1.1"
+console-subscriber = { git = "https://github.com/tokio-rs/console.git" }
+console-api = { git = "https://github.com/tokio-rs/console.git" }
+humantime = "2.1"
+
+[dependencies.tower-http]
+version = "0.2"
+features = [
+    "trace",
+    "compression-full",
+    "fs",
+]

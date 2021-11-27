@@ -1,6 +1,6 @@
 class LiveView {
-    constructor() {
-        this.socket = new WebSocket("ws://localhost:3000/live")
+    constructor(host, port) {
+        this.socket = new WebSocket(`ws://${host}:${port}/live`)
     }
 
     connect() {
@@ -15,11 +15,15 @@ class LiveView {
             if (topic === "rendered") {
                 const element = document.querySelector(`[data-liveview-id="${data.liveview_id}"]`)
                 window.morphdom(element, data.html, {
-                    onBeforeElUpdated: function (fromEl, toEl) {
-                        // if (toEl.tagName === 'INPUT') {
-                        //     toEl.value = fromEl.value;
-                        // }
+                    onNodeAdded: (node) => {
+                        this.addEventListeners(node)
                     },
+                    // this break setting input field values from live views
+                    // onBeforeElUpdated: function (fromEl, toEl) {
+                    //     if (toEl.tagName === 'INPUT') {
+                    //         toEl.value = fromEl.value;
+                    //     }
+                    // },
                 })
             } else {
                 console.error("unknown event", msg)
@@ -29,7 +33,6 @@ class LiveView {
 
     send(liveviewId, topic, data) {
         let msg = { "liveview_id": liveviewId, topic: topic, data: data }
-        console.log("sending message", msg)
         this.socket.send(JSON.stringify(msg))
     }
 
@@ -41,12 +44,32 @@ class LiveView {
     }
 
     addEventListeners(element) {
+        if (element.querySelectorAll === undefined) {
+            return;
+        }
+
         element.querySelectorAll("[live-click]").forEach((element) => {
             element.addEventListener("click", (event) => {
                 event.preventDefault()
                 let liveviewId = element.closest('[data-liveview-id]').getAttribute("data-liveview-id")
                 let eventName = element.getAttribute("live-click")
-                this.send(liveviewId, "axum/live-click", { "event_name": eventName })
+
+                var hasAdditionalData = false
+                var additionalData = {}
+                for (var i = 0; i < element.attributes.length; i++) {
+                    var attr = element.attributes[i];
+                    if (attr.name.startsWith("live-data-")) {
+                        additionalData[attr.name.slice("live-data-".length)] = attr.value
+                        hasAdditionalData = true
+                    }
+                }
+
+                var data = { "event_name": eventName }
+                if (hasAdditionalData) {
+                    data["additional_data"] = additionalData;
+                }
+
+                this.send(liveviewId, "axum/live-click", data)
             })
         })
 
@@ -54,13 +77,11 @@ class LiveView {
             element.addEventListener("input", (event) => {
                 let liveviewId = element.closest('[data-liveview-id]').getAttribute("data-liveview-id")
                 let eventName = element.getAttribute("live-input")
+
+                // TODO: also include `additionalData` here
+
                 this.send(liveviewId, "axum/live-input", { "event_name": eventName, "value": element.value })
             })
         })
     }
 }
-
-window.addEventListener("DOMContentLoaded", () => {
-    let liveView = new LiveView()
-    liveView.connect()
-});

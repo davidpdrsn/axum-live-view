@@ -66,3 +66,20 @@ where
         Ok(Self(serde_json::from_slice(&msg)?))
     }
 }
+
+pub struct Bincode<T>(pub T);
+
+impl<T> Message for Bincode<T>
+where
+    T: Serialize + DeserializeOwned,
+{
+    fn encode(&self) -> anyhow::Result<Bytes> {
+        let bytes = bincode::serialize(&self.0)?;
+        let bytes = Bytes::copy_from_slice(&bytes);
+        Ok(bytes)
+    }
+
+    fn decode(msg: Bytes) -> anyhow::Result<Self> {
+        Ok(Self(bincode::deserialize(&msg)?))
+    }
+}
