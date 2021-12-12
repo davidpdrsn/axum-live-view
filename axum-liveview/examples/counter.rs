@@ -1,5 +1,4 @@
 use axum::{
-    async_trait,
     response::{Html, IntoResponse},
     routing::get,
     Router,
@@ -82,6 +81,11 @@ impl LiveView for Counter {
 
 impl Counter {
     async fn increment(mut self) -> Self {
+        let count = 123;
+        axum_liveview::html! {
+            <div>{ count }</div>
+        };
+
         self.count += 1;
         self
     }

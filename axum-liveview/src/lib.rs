@@ -51,7 +51,11 @@ pub mod message;
 pub mod pubsub;
 
 mod manager;
+mod view;
 mod ws;
+
+pub use axum_liveview_macros::html;
+pub use self::view::View;
 
 #[doc(inline)]
 pub use self::{

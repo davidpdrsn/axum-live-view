@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+axum-liveview-macros = { path = "../axum-liveview-macros", version = "0.1" }
 anyhow = "1.0"
 async-stream = "0.3"
 async-trait = "0.1"
