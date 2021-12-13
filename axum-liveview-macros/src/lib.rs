@@ -1,291 +1,234 @@
-use quote::{ToTokens, quote};
+use proc_macro2::TokenStream;
+use quote::{quote, ToTokens};
+use std::{collections::VecDeque, fmt::Write};
+use syn::{parse::Parse, punctuated::Punctuated, Block, Ident, LitStr, Token};
 
 #[proc_macro]
 pub fn html(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    let input = input.into_iter().map(|tree| {
-        tree.to_string()
-    }).collect::<String>();
+    let tree = match syn::parse::<Tree>(input) {
+        Ok(tree) => tree,
+        Err(err) => return err.into_compile_error().into(),
+    };
 
-    html_from_str(&input)
-}
-
-fn html_from_str(input: &str) -> proc_macro::TokenStream {
-    let mut tokens = Vec::new();
-    for c in input.chars() {
-        match c {
-            '{' => tokens.push(Token::BraceOpen(BraceOpen)),
-            '}' => tokens.push(Token::BraceClose(BraceClose)),
-            _ => tokens.push(Token::Char(c)),
-        }
-    }
-
-    let mut stream = TokenStream { tokens, pos: 0 };
-
-    let tree = stream.parse::<Tree>().unwrap();
-
-    if !stream.is_empty() {
-        panic!("Unexpected token");
-    }
-
-    let tokens = quote! { #tree };
-    println!("{}", tokens);
-    (tokens).into()
-}
-
-struct TokenStream {
-    tokens: Vec<Token>,
-    pos: usize,
-}
-
-impl TokenStream {
-    fn is_empty(&self) -> bool {
-        self.tokens.get(self.pos).is_none()
-    }
-
-    fn parse<P>(&mut self) -> Result<P, ParseError>
-    where
-        P: Parse,
-    {
-        P::parse(self)
-    }
-
-    fn parse_many<P>(&mut self) -> Vec<P>
-    where
-        P: Parse,
-    {
-        let mut out = Vec::new();
-        while let Some(token) = self.try_parse() {
-            out.push(token);
-        }
-        out
-    }
-
-    #[allow(warnings)]
-    fn parse_until<P, I>(&mut self) -> Vec<P>
-    where
-        P: Parse,
-        I: Parse,
-    {
-        let mut out = Vec::new();
-        loop {
-            if self.peek::<I>() {
-                break;
-            } else {
-                let nodes = self.parse_many();
-                out.extend(nodes);
-            }
-        }
-        out
-    }
-
-    fn try_parse<P>(&mut self) -> Option<P>
-    where
-        P: Parse,
-    {
-        let pos = self.pos;
-        if let Ok(node) = P::parse(self) {
-            Some(node)
-        } else {
-            self.pos = pos;
-            None
-        }
-    }
-
-    fn peek<P>(&mut self) -> bool
-    where
-        P: Parse,
-    {
-        let pos = self.pos;
-        let out = P::parse(self).is_ok();
-        self.pos = pos;
-        out
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-enum Token {
-    BraceOpen(BraceOpen),
-    BraceClose(BraceClose),
-    Char(char),
-}
-
-#[derive(Debug, Clone, Copy)]
-struct BraceOpen;
-
-#[derive(Debug, Clone, Copy)]
-struct BraceClose;
-
-impl Iterator for TokenStream {
-    type Item = Token;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let token = self.tokens.get(self.pos).copied();
-        self.pos += 1;
-        token
-    }
-}
-
-trait Parse: Sized {
-    fn parse(stream: &mut TokenStream) -> Result<Self, ParseError>;
-}
-
-impl Parse for BraceOpen {
-    fn parse(stream: &mut TokenStream) -> Result<Self, ParseError> {
-        if let Some(Token::BraceOpen(token)) = stream.next() {
-            Ok(token)
-        } else {
-            Err(ParseError)
-        }
-    }
-}
-
-impl Parse for BraceClose {
-    fn parse(stream: &mut TokenStream) -> Result<Self, ParseError> {
-        if let Some(Token::BraceClose(token)) = stream.next() {
-            Ok(token)
-        } else {
-            Err(ParseError)
-        }
-    }
-}
-
-impl Parse for char {
-    fn parse(stream: &mut TokenStream) -> Result<Self, ParseError> {
-        if let Some(Token::Char(token)) = stream.next() {
-            Ok(token)
-        } else {
-            Err(ParseError)
-        }
-    }
-}
-
-#[derive(Debug)]
-struct ParseError;
-
-#[derive(Debug)]
-enum Node {
-    Fixed(Fixed),
-    Dynamic(Box<Dynamic>),
-}
-
-impl Parse for Node {
-    fn parse(stream: &mut TokenStream) -> Result<Self, ParseError> {
-        if let Some(node) = stream.try_parse() {
-            return Ok(Self::Fixed(node));
-        }
-
-        if let Some(node) = stream.try_parse() {
-            return Ok(Self::Dynamic(Box::new(node)));
-        }
-
-        Err(ParseError)
-    }
-}
-
-impl ToTokens for Node {
-    fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
-        match self {
-            Node::Fixed(inner) => inner.to_tokens(tokens),
-            Node::Dynamic(inner) => inner.to_tokens(tokens),
-        }
-    }
-}
-
-#[derive(Debug)]
-struct Fixed(String);
-
-impl Parse for Fixed {
-    fn parse(stream: &mut TokenStream) -> Result<Self, ParseError> {
-        if stream.peek::<char>() {
-            let chars = stream.parse_many::<char>().into_iter().collect();
-            Ok(Self(chars))
-        } else {
-            Err(ParseError)
-        }
-    }
-}
-
-impl ToTokens for Fixed {
-    fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
-        let value = &self.0;
-        tokens.extend(quote! {
-            view.fixed(#value);
-        })
-    }
-}
-
-#[derive(Debug)]
-struct Dynamic(syn::Expr);
-
-impl Parse for Dynamic {
-    fn parse(mut stream: &mut TokenStream) -> Result<Self, ParseError> {
-        if stream.peek::<BraceOpen>() {
-            stream.parse::<BraceOpen>()?;
-
-            let mut depth: u32 = 0;
-
-            let mut expr = String::new();
-
-            for token in &mut stream {
-                match token {
-                    Token::BraceOpen(_) => {
-                        depth += 1;
-                        expr.push('{');
-                    }
-                    Token::BraceClose(_) => {
-                        if depth == 0 {
-                            break;
-                        } else {
-                            depth -= 1;
-                            expr.push('}');
-                        }
-                    }
-                    Token::Char(c) => expr.push(c),
-                }
-            }
-
-            let expr = syn::parse_str::<syn::Expr>(&expr).unwrap();
-
-            Ok(Self(expr))
-        } else {
-            Err(ParseError)
-        }
-    }
-}
-
-impl ToTokens for Dynamic {
-    fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
-        let expr = &self.0;
-        tokens.extend(quote! {
-            view.dynamic({
-                #expr
-            });
-        })
-    }
+    tree.into_token_stream().into()
 }
 
 #[derive(Debug)]
 struct Tree {
-    nodes: Vec<Node>,
+    nodes: Vec<HtmlNode>,
 }
 
 impl Parse for Tree {
-    fn parse(stream: &mut TokenStream) -> Result<Self, ParseError> {
-        let nodes = stream.parse_many();
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        let mut nodes = Vec::new();
+        while !input.is_empty() {
+            nodes.push(input.parse()?);
+        }
         Ok(Self { nodes })
     }
 }
 
-impl ToTokens for Tree {
-    fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
-        let nodes = &self.nodes;
+#[derive(Debug, Clone)]
+struct HtmlNode {
+    open: Ident,
+    attrs: Vec<Attr>,
+    close: Option<NodeClose>,
+}
 
-        tokens.extend(quote! {
-            {
-                let mut view = axum_liveview::View::default();
-                #(#nodes)*
-                view
+#[derive(Debug, Clone)]
+struct NodeClose {
+    inner: Option<NodeInner>,
+    close: Ident,
+}
+
+impl Parse for HtmlNode {
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        input.parse::<Token![<]>()?;
+        let open = input.parse::<Ident>()?;
+
+        let mut attrs = Vec::new();
+        while input.peek(Ident) {
+            let ident = Punctuated::<Ident, Token![-]>::parse_separated_nonempty(input)?;
+            let value = if input.parse::<Token![=]>().is_ok() {
+                if let Ok(block) = input.parse::<Block>().map(AttrValue::Block) {
+                    Some(block)
+                } else {
+                    Some(input.parse::<LitStr>().map(AttrValue::LitStr)?)
+                }
+            } else {
+                None
+            };
+            attrs.push(Attr { ident, value });
+        }
+
+        if input.parse::<Token![/]>().is_ok() {
+            input.parse::<Token![>]>()?;
+            return Ok(Self {
+                open,
+                attrs,
+                close: None,
+            });
+        }
+
+        input.parse::<Token![>]>()?;
+
+        let inner = if let Ok(lit_str) = input.parse::<LitStr>().map(NodeInner::LitStr) {
+            Some(lit_str)
+        } else if input.peek(Token![<]) && !input.peek2(Token![/]) {
+            let mut nodes = Vec::new();
+            while input.peek(Token![<]) && !input.peek2(Token![/]) {
+                nodes.push(input.parse::<Self>()?);
             }
+            Some(NodeInner::Nodes(nodes))
+        } else if let Ok(block) = input.parse::<Block>().map(NodeInner::Block) {
+            Some(block)
+        } else {
+            None
+        };
+
+        input.parse::<Token![<]>()?;
+        input.parse::<Token![/]>()?;
+        let close = input.parse::<Ident>()?;
+        input.parse::<Token![>]>()?;
+
+        if open != close {
+            let span = open.span().join(close.span()).unwrap_or_else(|| close.span());
+            return Err(syn::Error::new(span, "Unmatched close tag"));
+        }
+
+        Ok(Self {
+            open,
+            attrs,
+            close: Some(NodeClose { inner, close }),
         })
     }
+}
+
+#[derive(Debug, Clone)]
+enum NodeInner {
+    LitStr(LitStr),
+    Block(Block),
+    Nodes(Vec<HtmlNode>),
+}
+
+#[derive(Debug, Clone)]
+struct Attr {
+    ident: Punctuated<Ident, Token![-]>,
+    value: Option<AttrValue>,
+}
+
+impl Attr {
+    fn ident(&self) -> String {
+        let mut out = String::new();
+        let mut iter = self.ident.iter().peekable();
+        while let Some(ident) = iter.next() {
+            if iter.peek().is_some() {
+                let _ = write!(out, "{}-", ident);
+            } else {
+                let _ = write!(out, "{}", ident);
+            }
+        }
+        out
+    }
+}
+
+#[derive(Debug, Clone)]
+enum AttrValue {
+    LitStr(LitStr),
+    Block(Block),
+}
+
+// like `std::write` but infallible
+macro_rules! write {
+    ( $($tt:tt)* ) => {
+        std::write!($($tt)*).unwrap()
+    };
+}
+
+impl ToTokens for Tree {
+    fn to_tokens(&self, out: &mut proc_macro2::TokenStream) {
+        nodes_to_tokens(self.nodes.iter().collect(), out)
+    }
+}
+
+fn nodes_to_tokens(mut nodes_queue: VecDeque<&HtmlNode>, out: &mut proc_macro2::TokenStream) {
+    let mut tokens = TokenStream::new();
+    tokens.extend(quote! {
+        let mut view = axum_liveview::View::default();
+    });
+
+    let mut buf = String::new();
+    while let Some(node) = nodes_queue.pop_front() {
+        let HtmlNode { open, attrs, close } = node;
+
+        write!(buf, "<{}", open);
+
+        if !attrs.is_empty() {
+            write!(buf, " ");
+
+            let mut attrs = attrs.iter().peekable();
+            while let Some(attr) = attrs.next() {
+                let ident = attr.ident();
+                write!(buf, "{}", ident);
+
+                match &attr.value {
+                    Some(AttrValue::LitStr(lit_str)) => {
+                        write!(buf, "=");
+                        write!(buf, "{:?}", lit_str.value());
+                    }
+                    Some(AttrValue::Block(block)) => {
+                        write!(buf, "=");
+                        tokens.extend(quote! { view.fixed(#buf); });
+                        buf.clear();
+                        tokens.extend(quote! { view.dynamic(#block); });
+                    }
+                    None => {}
+                }
+
+                if attrs.peek().is_some() {
+                    write!(buf, " ");
+                }
+            }
+        }
+
+        if let Some(NodeClose { inner, close }) = close {
+            write!(buf, ">");
+
+            if let Some(inner) = inner {
+                match inner {
+                    NodeInner::LitStr(lit_str) => {
+                        write!(buf, "{}", lit_str.value());
+                    }
+                    NodeInner::Block(block) => {
+                        tokens.extend(quote! { view.fixed(#buf); });
+                        buf.clear();
+                        tokens.extend(quote! { view.dynamic(#block); });
+                    }
+                    NodeInner::Nodes(inner_nodes) => {
+                        nodes_queue.reserve(inner_nodes.len());
+                        for node in inner_nodes.iter().rev() {
+                            nodes_queue.push_front(node);
+                        }
+                        continue;
+                    }
+                }
+            }
+
+            write!(buf, "</{}>", close);
+        } else {
+            write!(buf, " />");
+        }
+    }
+
+    if !buf.is_empty() {
+        tokens.extend(quote! { view.fixed(#buf); });
+    }
+
+    out.extend(quote! {
+        #[allow(unused_braces)]
+        {
+            #tokens
+            view
+        }
+    });
 }

@@ -1,5 +1,3 @@
-#![allow(warnings)]
-
 use serde_json::{json, Value};
 use std::{collections::HashMap, fmt};
 
@@ -71,7 +69,7 @@ impl View {
         out
     }
 
-    fn serialize(&self) -> Value {
+    pub fn serialize(&self) -> Value {
         let out = self
             .dynamic
             .iter()
@@ -94,5 +92,103 @@ impl View {
             .insert("s".to_owned(), serde_json::to_value(&self.fixed).unwrap());
 
         out
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[allow(unused_imports)]
+    use super::*;
+    use crate as axum_liveview;
+    use crate::html;
+
+    #[test]
+    fn these_should_compile() {
+        html! {
+            <div></div>
+        };
+
+        html! {
+            <div>"foo"</div>
+        };
+
+        let count = 1;
+        html! {
+            <div>{ count }</div>
+        };
+
+        let count = 1;
+        html! {
+            <div>"foo"</div>
+            <div>{ count }</div>
+        };
+
+        html! {
+            <div>
+                <p>"some paragraph..."</p>
+            </div>
+        };
+
+        let count = 3;
+        html! {
+            <div>
+                <ul>
+                    <li>{ count }</li>
+                    <li>"2"</li>
+                    <li>"3"</li>
+                </ul>
+            </div>
+        };
+
+        html! {
+            <div>
+                <ul>
+                    {
+                        html! {
+                            <li>"1"</li>
+                            <li>"2"</li>
+                            <li>"3"</li>
+                        }
+                    }
+                </ul>
+            </div>
+        };
+
+        html! {
+            <div class="col-md">"foo"</div>
+        };
+
+        html! {
+            <div class="col-md" id="the-thing">"foo"</div>
+        };
+
+        html! {
+            <div on-click="do thing">"foo"</div>
+        };
+
+        let size = 8;
+        html! {
+            <div class={ format!("col-{}", size) }>"foo"</div>
+        };
+
+        html! {
+            <div
+                class="foo"
+                class="foo"
+                class={
+                    let foo = 123;
+                    format!("col-{}", foo)
+                }
+                class="foo"
+            >"foo"</div>
+        };
+
+        html! {
+            <button disabled>"foo"</button>
+        };
+
+        html! {
+            <img src="foo.png" />
+        };
     }
 }
