@@ -1,16 +1,19 @@
+use axum::response::IntoResponse;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::{collections::HashMap, fmt};
 
 #[derive(Default, Debug)]
-pub struct View {
+pub struct Html {
     fixed: Vec<String>,
     dynamic: Vec<Dynamic>,
 }
 
+// TODO(david): document as private API
 #[derive(Debug)]
 pub enum Dynamic {
     String(String),
-    View(View),
+    Html(Html),
 }
 
 impl<S> From<S> for Dynamic
@@ -22,22 +25,24 @@ where
     }
 }
 
-impl From<View> for Dynamic {
-    fn from(inner: View) -> Self {
-        Self::View(inner)
+impl From<Html> for Dynamic {
+    fn from(inner: Html) -> Self {
+        Self::Html(inner)
     }
 }
 
-impl View {
+impl Html {
+    // TODO(david): document as private API
     pub fn fixed(&mut self, part: &str) {
         self.fixed.push(part.to_owned());
     }
 
+    // TODO(david): document as private API
     pub fn dynamic(&mut self, part: impl Into<Dynamic>) {
         self.dynamic.push(part.into());
     }
 
-    fn diff(&self, other: &Self) -> Value {
+    pub(crate) fn diff(&self, other: &Self) -> Diff {
         let out = self
             .dynamic
             .iter()
@@ -51,8 +56,8 @@ impl View {
                         Some((idx, json!(b)))
                     }
                 }
-                (Dynamic::View(a), Dynamic::View(b)) => Some((idx, a.diff(b))),
-                (_, Dynamic::View(inner)) => Some((idx, inner.serialize())),
+                (Dynamic::Html(a), Dynamic::Html(b)) => Some((idx, json!(a.diff(b)))),
+                (_, Dynamic::Html(inner)) => Some((idx, json!(inner.serialize()))),
                 (_, Dynamic::String(inner)) => Some((idx, json!(inner))),
             })
             .collect::<HashMap<_, _>>();
@@ -66,10 +71,10 @@ impl View {
                 .insert("s".to_owned(), serde_json::to_value(&other.fixed).unwrap());
         }
 
-        out
+        Diff(out)
     }
 
-    pub fn serialize(&self) -> Value {
+    pub(crate) fn serialize(&self) -> Serialized {
         let out = self
             .dynamic
             .iter()
@@ -79,7 +84,7 @@ impl View {
                     idx.to_string(),
                     match value {
                         Dynamic::String(s) => json!(s),
-                        Dynamic::View(inner) => inner.serialize(),
+                        Dynamic::Html(inner) => json!(inner.serialize()),
                     },
                 )
             })
@@ -91,9 +96,35 @@ impl View {
             .unwrap()
             .insert("s".to_owned(), serde_json::to_value(&self.fixed).unwrap());
 
-        out
+        Serialized(out)
+    }
+
+    pub(crate) fn render(self) -> String {
+        use itertools::Itertools;
+
+        self.fixed
+            .into_iter()
+            .interleave(self.dynamic.into_iter().map(|dynamic| match dynamic {
+                Dynamic::String(s) => s,
+                Dynamic::Html(inner) => inner.render(),
+            }))
+            .collect::<String>()
     }
 }
+
+impl IntoResponse for Html {
+    fn into_response(self) -> axum::response::Response {
+        axum::response::Html(self.render()).into_response()
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(transparent)]
+pub(crate) struct Serialized(Value);
+
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(transparent)]
+pub(crate) struct Diff(Value);
 
 #[cfg(test)]
 mod tests {
@@ -103,12 +134,21 @@ mod tests {
     use crate::html;
 
     #[test]
+    #[allow(unused_variables)]
     fn these_should_compile() {
-        html! {
+        let view = html! {
             <div></div>
         };
 
-        html! {
+        let view = html! {
+            <!DOCTYPE html>
+        };
+
+        let view = html! {
+            "hi there"
+        };
+
+        let view = html! {
             <div>"foo"</div>
         };
 
@@ -123,14 +163,14 @@ mod tests {
             <div>{ count }</div>
         };
 
-        html! {
+        let view = html! {
             <div>
                 <p>"some paragraph..."</p>
             </div>
         };
 
         let count = 3;
-        html! {
+        let view = html! {
             <div>
                 <ul>
                     <li>{ count }</li>
@@ -171,7 +211,7 @@ mod tests {
             <div class={ format!("col-{}", size) }>"foo"</div>
         };
 
-        html! {
+        let view = html! {
             <div
                 class="foo"
                 class="foo"
@@ -190,5 +230,59 @@ mod tests {
         html! {
             <img src="foo.png" />
         };
+
+        let view = html! {
+            <div>
+                if true {
+                    <p>"some paragraph..."</p>
+                }
+            </div>
+        };
+
+        let something = || true;
+        let view = html! {
+            <div>
+                if something() {
+                    <p>"something"</p>
+                } else {
+                    <p>"something else"</p>
+                }
+            </div>
+        };
+
+        let name = Some("bob");
+        let view = html! {
+            <div>
+                if let Some(name) = name {
+                    <p>{ format!("Hi {}", name) }</p>
+                } else {
+                    <p>"Missing name..."</p>
+                }
+            </div>
+        };
+
+        let names = ["alice", "bob", "cindy"];
+        let view = html! {
+            <ul>
+                for name in names {
+                    <li>{ name }</li>
+                }
+            </ul>
+        };
+
+        let name = Some("bob");
+        let view = html! {
+            <div>
+                match name {
+                    Some(name) => <p>{ format!("Hi {}", name) }</p>,
+                    None => <p>"Missing name..."</p>,
+                }
+            </div>
+        };
+
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&view.serialize()).unwrap()
+        );
     }
 }

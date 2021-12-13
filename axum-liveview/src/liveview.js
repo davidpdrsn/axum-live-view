@@ -10,29 +10,31 @@ class LiveView {
         })
 
         this.socket.addEventListener("message", (event) => {
-            const { topic, data } = JSON.parse(event.data)
+            const [liveviewId, topic, data] = JSON.parse(event.data)
 
             if (topic === "rendered") {
-                const element = document.querySelector(`[data-liveview-id="${data.liveview_id}"]`)
-                window.morphdom(element, data.html, {
-                    onNodeAdded: (node) => {
-                        this.addEventListeners(node)
-                    },
-                    // this break setting input field values from live views
-                    // onBeforeElUpdated: function (fromEl, toEl) {
-                    //     if (toEl.tagName === 'INPUT') {
-                    //         toEl.value = fromEl.value;
-                    //     }
-                    // },
-                })
+                // const element = document.querySelector(`[data-liveview-id="${data.liveview_id}"]`)
+                // window.morphdom(element, data.html, {
+                //     onNodeAdded: (node) => {
+                //         this.addEventListeners(node)
+                //     },
+                //     // this break setting input field values from live views
+                //     // onBeforeElUpdated: function (fromEl, toEl) {
+                //     //     if (toEl.tagName === 'INPUT') {
+                //     //         toEl.value = fromEl.value;
+                //     //     }
+                //     // },
+                // })
+            } else if (topic === "initial-render") {
+                console.log("RECV: initial-render", data)
             } else {
-                console.error("unknown event", msg)
+                console.error("unknown event", topic, data)
             }
         })
     }
 
     send(liveviewId, topic, data) {
-        let msg = { "liveview_id": liveviewId, topic: topic, data: data }
+        let msg = [liveviewId, topic, data]
         this.socket.send(JSON.stringify(msg))
     }
 
@@ -64,9 +66,9 @@ class LiveView {
                     }
                 }
 
-                var data = { "event_name": eventName }
+                var data = { "e": eventName }
                 if (hasAdditionalData) {
-                    data["additional_data"] = additionalData;
+                    data["d"] = additionalData;
                 }
 
                 this.send(liveviewId, "axum/live-click", data)
@@ -80,7 +82,7 @@ class LiveView {
 
                 // TODO: also include `additionalData` here
 
-                this.send(liveviewId, "axum/live-input", { "event_name": eventName, "value": element.value })
+                this.send(liveviewId, "axum/live-input", { "e": eventName, "v": element.value })
             })
         })
     }

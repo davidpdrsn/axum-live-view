@@ -44,18 +44,19 @@ use axum::{
     routing::get,
     AddExtensionLayer, Router,
 };
-use maud::Markup;
 
 pub mod liveview;
 pub mod message;
 pub mod pubsub;
 
+mod html;
 mod manager;
-mod view;
 mod ws;
 
+pub use self::html::Html;
 pub use axum_liveview_macros::html;
-pub use self::view::View;
+use futures_util::StreamExt;
+use tokio::fs;
 
 #[doc(inline)]
 pub use self::{
@@ -75,15 +76,32 @@ where
         .route(APP_JS_PATH, get(js))
 }
 
-pub fn assets() -> Markup {
-    maud::html! {
-        script src=(APP_JS_PATH) {}
+pub fn assets() -> Html {
+    use crate as axum_liveview;
+    html! {
+        <script src={ APP_JS_PATH }></script>
     }
 }
 
 async fn js() -> impl IntoResponse {
-    const JS: &str = concat!(include_str!("morphdom.js"), include_str!("liveview.js"));
-    (Headers([("content-type", "application/javascript")]), JS)
+    let morphdom = fs::File::open("axum-liveview/src/morphdom.js")
+        .await
+        .unwrap();
+    let morphdom = tokio_util::io::ReaderStream::new(morphdom);
+
+    let liveview = fs::File::open("axum-liveview/src/liveview.js")
+        .await
+        .unwrap();
+    let liveview = tokio_util::io::ReaderStream::new(liveview);
+
+    let stream = morphdom.chain(liveview);
+
+    let body = axum::body::StreamBody::new(stream);
+
+    (Headers([("content-type", "application/javascript")]), body)
+
+    // const JS: &str = concat!(include_str!("morphdom.js"), include_str!("liveview.js"));
+    // (Headers([("content-type", "application/javascript")]), JS)
 }
 
 pub fn layer<P>(pubsub: P) -> AddExtensionLayer<LiveViewManager>

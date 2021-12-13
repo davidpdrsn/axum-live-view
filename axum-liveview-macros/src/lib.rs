@@ -13,47 +13,110 @@ pub fn html(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     tree.into_token_stream().into()
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct Tree {
     nodes: Vec<HtmlNode>,
 }
 
 impl Parse for Tree {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
-        let mut nodes = Vec::new();
-        while !input.is_empty() {
-            nodes.push(input.parse()?);
-        }
+        let nodes = parse_many(input)?;
         Ok(Self { nodes })
     }
 }
 
-#[derive(Debug, Clone)]
-struct HtmlNode {
-    open: Ident,
-    attrs: Vec<Attr>,
-    close: Option<NodeClose>,
+fn parse_many<P>(input: syn::parse::ParseStream) -> syn::Result<Vec<P>>
+where
+    P: Parse,
+{
+    let mut nodes = Vec::new();
+    while !input.is_empty() {
+        nodes.push(input.parse()?);
+    }
+    Ok(nodes)
 }
 
 #[derive(Debug, Clone)]
-struct NodeClose {
-    inner: Option<NodeInner>,
-    close: Ident,
+enum HtmlNode {
+    Doctype(Doctype),
+    TagNode(TagNode),
+    LitStr(LitStr),
+    Block(Block),
+    If(If),
+    For(For),
+    Match(Match),
+    Close(Ident),
 }
 
 impl Parse for HtmlNode {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        if input.peek(Token![<]) && input.peek2(Token![!]) {
+            input.parse().map(Self::Doctype)
+        } else if input.peek(Token![<]) && !input.peek2(Token![/]) {
+            input.parse().map(Self::TagNode)
+        } else if input.peek(LitStr) {
+            input.parse().map(Self::LitStr)
+        } else if let Ok(block) = input.parse() {
+            Ok(Self::Block(block))
+        } else if input.peek(Token![if]) {
+            input.parse().map(Self::If)
+        } else if input.peek(Token![for]) {
+            input.parse().map(Self::For)
+        } else if input.peek(Token![match]) {
+            input.parse().map(Self::Match)
+        } else {
+            let span = input.span();
+            Err(syn::Error::new(span, "Unexpected token"))
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct Doctype;
+
+impl Parse for Doctype {
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        mod kw {
+            syn::custom_keyword!(DOCTYPE);
+            syn::custom_keyword!(html);
+        }
+
         input.parse::<Token![<]>()?;
-        let open = input.parse::<Ident>()?;
+        input.parse::<Token![!]>()?;
+        input.parse::<kw::DOCTYPE>()?;
+        input.parse::<kw::html>()?;
+        input.parse::<Token![>]>()?;
+
+        Ok(Self)
+    }
+}
+
+#[derive(Debug, Clone)]
+struct TagNode {
+    open: Ident,
+    attrs: Vec<Attr>,
+    close: Option<TagClose>,
+}
+
+#[derive(Debug, Clone)]
+struct TagClose {
+    inner: Vec<HtmlNode>,
+    close: Ident,
+}
+
+impl Parse for TagNode {
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        input.parse::<Token![<]>()?;
+        let open = input.parse()?;
 
         let mut attrs = Vec::new();
         while input.peek(Ident) {
             let ident = Punctuated::<Ident, Token![-]>::parse_separated_nonempty(input)?;
             let value = if input.parse::<Token![=]>().is_ok() {
-                if let Ok(block) = input.parse::<Block>().map(AttrValue::Block) {
+                if let Ok(block) = input.parse().map(AttrValue::Block) {
                     Some(block)
                 } else {
-                    Some(input.parse::<LitStr>().map(AttrValue::LitStr)?)
+                    Some(input.parse().map(AttrValue::LitStr)?)
                 }
             } else {
                 None
@@ -72,19 +135,11 @@ impl Parse for HtmlNode {
 
         input.parse::<Token![>]>()?;
 
-        let inner = if let Ok(lit_str) = input.parse::<LitStr>().map(NodeInner::LitStr) {
-            Some(lit_str)
-        } else if input.peek(Token![<]) && !input.peek2(Token![/]) {
-            let mut nodes = Vec::new();
-            while input.peek(Token![<]) && !input.peek2(Token![/]) {
-                nodes.push(input.parse::<Self>()?);
-            }
-            Some(NodeInner::Nodes(nodes))
-        } else if let Ok(block) = input.parse::<Block>().map(NodeInner::Block) {
-            Some(block)
-        } else {
-            None
-        };
+        let next_is_close = || input.peek(Token![<]) && input.peek2(Token![/]);
+        let mut inner = Vec::new();
+        while !next_is_close() {
+            inner.push(input.parse::<HtmlNode>()?);
+        }
 
         input.parse::<Token![<]>()?;
         input.parse::<Token![/]>()?;
@@ -92,23 +147,19 @@ impl Parse for HtmlNode {
         input.parse::<Token![>]>()?;
 
         if open != close {
-            let span = open.span().join(close.span()).unwrap_or_else(|| close.span());
+            let span = open
+                .span()
+                .join(close.span())
+                .unwrap_or_else(|| close.span());
             return Err(syn::Error::new(span, "Unmatched close tag"));
         }
 
         Ok(Self {
             open,
             attrs,
-            close: Some(NodeClose { inner, close }),
+            close: Some(TagClose { inner, close }),
         })
     }
-}
-
-#[derive(Debug, Clone)]
-enum NodeInner {
-    LitStr(LitStr),
-    Block(Block),
-    Nodes(Vec<HtmlNode>),
 }
 
 #[derive(Debug, Clone)]
@@ -138,6 +189,122 @@ enum AttrValue {
     Block(Block),
 }
 
+#[derive(Debug, Clone)]
+struct If {
+    cond: syn::Expr,
+    then_tree: Tree,
+    else_tree: Option<Tree>,
+}
+
+impl Parse for If {
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        input.parse::<Token![if]>()?;
+
+        let cond = input.parse::<syn::Expr>()?;
+
+        let content;
+        syn::braced!(content in input);
+        let then_tree = content.parse::<Tree>()?;
+
+        let else_tree = if input.parse::<Token![else]>().is_ok() {
+            if input.peek(Token![if]) {
+                // TODO(david): support `else if`
+                return Err(input.error("`else if` is not supported yet"));
+            }
+
+            let content;
+            syn::braced!(content in input);
+            Some(content.parse::<Tree>()?)
+        } else {
+            None
+        };
+
+        Ok(Self {
+            cond,
+            then_tree,
+            else_tree,
+        })
+    }
+}
+
+#[derive(Debug, Clone)]
+struct For {
+    pat: syn::Pat,
+    expr: syn::Expr,
+    tree: Tree,
+}
+
+impl Parse for For {
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        input.parse::<Token![for]>()?;
+        let pat = input.parse::<syn::Pat>()?;
+
+        input.parse::<Token![in]>()?;
+        let expr = input.call(syn::Expr::parse_without_eager_brace)?;
+
+        let content;
+        syn::braced!(content in input);
+        let tree = content.parse::<Tree>()?;
+
+        Ok(Self { pat, expr, tree })
+    }
+}
+
+#[derive(Debug, Clone)]
+struct Match {
+    expr: syn::Expr,
+    arms: Vec<Arm>,
+}
+
+impl Parse for Match {
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        input.parse::<Token![match]>()?;
+
+        let expr = input.call(syn::Expr::parse_without_eager_brace)?;
+
+        let content;
+        syn::braced!(content in input);
+        let mut arms = Vec::new();
+        while !content.is_empty() {
+            arms.push(content.call(Arm::parse)?);
+        }
+
+        Ok(Self { expr, arms })
+    }
+}
+
+#[derive(Debug, Clone)]
+struct Arm {
+    pat: syn::Pat,
+    tree: Tree,
+}
+
+impl Parse for Arm {
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        let pat = input.parse::<syn::Pat>()?;
+
+        if input.peek(Token![if]) {
+            // TODO(david): support `if` guards
+            return Err(input.error("`if` guards is not supported yet"));
+        }
+
+        input.parse::<Token![=>]>()?;
+
+        let mut nodes = Vec::new();
+        while input.fork().parse::<HtmlNode>().is_ok() {
+            let node = input.parse::<HtmlNode>()?;
+            nodes.push(node);
+        }
+
+        input.parse::<Token![,]>()?;
+
+        Ok(Self {
+            pat,
+            tree: Tree { nodes },
+        })
+    }
+}
+
 // like `std::write` but infallible
 macro_rules! write {
     ( $($tt:tt)* ) => {
@@ -147,88 +314,140 @@ macro_rules! write {
 
 impl ToTokens for Tree {
     fn to_tokens(&self, out: &mut proc_macro2::TokenStream) {
-        nodes_to_tokens(self.nodes.iter().collect(), out)
+        let mut inside_braces = TokenStream::new();
+
+        inside_braces.extend(quote! {
+            let mut html = axum_liveview::Html::default();
+        });
+
+        nodes_to_tokens(self.nodes.iter().cloned().collect(), &mut inside_braces);
+
+        out.extend(quote! {
+            {
+                #inside_braces
+                html
+            }
+        });
     }
 }
 
-fn nodes_to_tokens(mut nodes_queue: VecDeque<&HtmlNode>, out: &mut proc_macro2::TokenStream) {
-    let mut tokens = TokenStream::new();
-    tokens.extend(quote! {
-        let mut view = axum_liveview::View::default();
-    });
-
+fn nodes_to_tokens(mut nodes_queue: VecDeque<HtmlNode>, out: &mut proc_macro2::TokenStream) {
     let mut buf = String::new();
     while let Some(node) = nodes_queue.pop_front() {
-        let HtmlNode { open, attrs, close } = node;
+        match node {
+            HtmlNode::TagNode(TagNode { open, attrs, close }) => {
+                write!(buf, "<{}", open);
 
-        write!(buf, "<{}", open);
-
-        if !attrs.is_empty() {
-            write!(buf, " ");
-
-            let mut attrs = attrs.iter().peekable();
-            while let Some(attr) = attrs.next() {
-                let ident = attr.ident();
-                write!(buf, "{}", ident);
-
-                match &attr.value {
-                    Some(AttrValue::LitStr(lit_str)) => {
-                        write!(buf, "=");
-                        write!(buf, "{:?}", lit_str.value());
-                    }
-                    Some(AttrValue::Block(block)) => {
-                        write!(buf, "=");
-                        tokens.extend(quote! { view.fixed(#buf); });
-                        buf.clear();
-                        tokens.extend(quote! { view.dynamic(#block); });
-                    }
-                    None => {}
-                }
-
-                if attrs.peek().is_some() {
+                if !attrs.is_empty() {
                     write!(buf, " ");
-                }
-            }
-        }
 
-        if let Some(NodeClose { inner, close }) = close {
-            write!(buf, ">");
+                    let mut attrs = attrs.iter().peekable();
+                    while let Some(attr) = attrs.next() {
+                        let ident = attr.ident();
+                        write!(buf, "{}", ident);
 
-            if let Some(inner) = inner {
-                match inner {
-                    NodeInner::LitStr(lit_str) => {
-                        write!(buf, "{}", lit_str.value());
-                    }
-                    NodeInner::Block(block) => {
-                        tokens.extend(quote! { view.fixed(#buf); });
-                        buf.clear();
-                        tokens.extend(quote! { view.dynamic(#block); });
-                    }
-                    NodeInner::Nodes(inner_nodes) => {
-                        nodes_queue.reserve(inner_nodes.len());
-                        for node in inner_nodes.iter().rev() {
-                            nodes_queue.push_front(node);
+                        match &attr.value {
+                            Some(AttrValue::LitStr(lit_str)) => {
+                                write!(buf, "=");
+                                write!(buf, "{:?}", lit_str.value());
+                            }
+                            Some(AttrValue::Block(block)) => {
+                                write!(buf, "=");
+                                out.extend(quote! { html.fixed(#buf); });
+                                buf.clear();
+                                out.extend(quote! {
+                                    #[allow(unused_braces)]
+                                    html.dynamic(#block);
+                                });
+                            }
+                            None => {}
                         }
-                        continue;
+
+                        if attrs.peek().is_some() {
+                            write!(buf, " ");
+                        }
+                    }
+                }
+
+                write!(buf, ">");
+                if let Some(TagClose {
+                    inner: inner_nodes,
+                    close,
+                }) = close
+                {
+                    nodes_queue.push_front(HtmlNode::Close(close.clone()));
+
+                    for node in inner_nodes.iter().rev() {
+                        nodes_queue.push_front(node.clone());
                     }
                 }
             }
+            HtmlNode::LitStr(lit_str) => {
+                write!(buf, "{}", lit_str.value());
+            }
+            HtmlNode::Close(close) => {
+                write!(buf, "</{}>", close);
+            }
+            HtmlNode::Block(block) => {
+                out.extend(quote! { html.fixed(#buf); });
+                buf.clear();
+                out.extend(quote! {
+                    #[allow(unused_braces)]
+                    html.dynamic(#block);
+                });
+            }
+            HtmlNode::If(If {
+                cond,
+                then_tree,
+                else_tree,
+            }) => {
+                out.extend(quote! { html.fixed(#buf); });
+                buf.clear();
 
-            write!(buf, "</{}>", close);
-        } else {
-            write!(buf, " />");
+                if let Some(else_tree) = else_tree {
+                    out.extend(quote! {
+                        if #cond {
+                            html.dynamic(#then_tree);
+                        } else {
+                            html.dynamic(#else_tree);
+                        }
+                    });
+                } else {
+                    out.extend(quote! {
+                        if #cond {
+                            html.dynamic(#then_tree);
+                        }
+                    });
+                }
+            }
+            HtmlNode::For(For { pat, expr, tree }) => out.extend(quote! {
+                for #pat in #expr {
+                    html.dynamic(#tree);
+                }
+            }),
+            HtmlNode::Match(Match { expr, arms }) => {
+                let arms = arms
+                    .iter()
+                    .map(|Arm { pat, tree }| {
+                        quote! {
+                            #pat => html.dynamic(#tree),
+                        }
+                    })
+                    .collect::<TokenStream>();
+
+                out.extend(quote! {
+                    match #expr {
+                        #arms
+                    }
+                })
+            }
+            HtmlNode::Doctype(_) => {
+                write!(buf, "<!DOCTYPE html>");
+            }
         }
     }
 
     if !buf.is_empty() {
-        tokens.extend(quote! { view.fixed(#buf); });
+        out.extend(quote! { html.fixed(#buf); });
     }
-
-    out.extend(quote! {
-        #[allow(unused_braces)]
-        {
-            #tokens
-            view
-        }
-    });
 }

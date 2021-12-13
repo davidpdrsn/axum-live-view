@@ -1,4 +1,4 @@
-use crate::{message::Message, pubsub::PubSub};
+use crate::{html::Html, message::Message, pubsub::PubSub};
 use async_stream::stream;
 use bytes::Bytes;
 use futures_util::{
@@ -6,7 +6,6 @@ use futures_util::{
     stream::StreamExt,
     Stream,
 };
-use maud::Markup;
 use std::sync::Arc;
 use std::{
     any::TypeId,
@@ -21,7 +20,7 @@ use uuid::Uuid;
 pub trait LiveView: Sized + Send + Sync + 'static {
     fn setup(&self, sub: &mut Subscriptions<Self>);
 
-    fn render(&self) -> Markup;
+    fn render(&self) -> Html;
 }
 
 pub enum ShouldRender<T> {
@@ -39,7 +38,7 @@ pub(crate) async fn run_to_stream<T, P>(
     mut liveview: T,
     pubsub: P,
     liveview_id: Uuid,
-) -> impl Stream<Item = Markup> + Send
+) -> impl Stream<Item = Html> + Send
 where
     T: LiveView,
     P: PubSub,

@@ -2,5 +2,5 @@
 members = [
     "axum-liveview",
     "axum-liveview-macros",
-    "demo-app",
+    # "demo-app",
 ]
