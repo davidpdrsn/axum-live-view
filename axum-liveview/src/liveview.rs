@@ -54,7 +54,7 @@ where
                     .subscribe_raw(&liveview_local_topic(liveview_id, &topic))
                     .await
             }
-            SubscriptionKind::Global(topic) => pubsub.subscribe_raw(&topic).await,
+            SubscriptionKind::Broadcast(topic) => pubsub.subscribe_raw(&topic).await,
         };
         stream_map.insert(callback, stream);
     }
@@ -85,7 +85,7 @@ pub struct Subscriptions<T> {
 
 enum SubscriptionKind {
     Local(String),
-    Global(String),
+    Broadcast(String),
 }
 
 impl<T> Subscriptions<T> {
@@ -104,13 +104,13 @@ impl<T> Subscriptions<T> {
         self.on_kind(SubscriptionKind::Local(topic.to_owned()), callback)
     }
 
-    pub fn on_global<F, Msg>(&mut self, topic: &str, callback: F) -> &mut Self
+    pub fn on_broadcast<F, Msg>(&mut self, topic: &str, callback: F) -> &mut Self
     where
         F: SubscriptionCallback<T, Msg>,
         T: Send + 'static,
         Msg: Message,
     {
-        self.on_kind(SubscriptionKind::Global(topic.to_owned()), callback)
+        self.on_kind(SubscriptionKind::Broadcast(topic.to_owned()), callback)
     }
 
     fn on_kind<F, Msg>(&mut self, kind: SubscriptionKind, callback: F) -> &mut Self

@@ -59,9 +59,11 @@ impl LiveView for Counter {
 
     fn render(&self) -> Html {
         html! {
-            <div>
-                { self.count }
-            </div>
+            <ul>
+                <li>{ self.count }</li>
+                <li>{ self.count }</li>
+                <li>{ self.count }</li>
+            </ul>
             <div>
                 <button live-click="increment">"+"</button>
                 <button live-click="decrement">"-"</button>

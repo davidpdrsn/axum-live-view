@@ -3,14 +3,14 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::{collections::HashMap, fmt};
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone)]
 pub struct Html {
     fixed: Vec<String>,
     dynamic: Vec<Dynamic>,
 }
 
 // TODO(david): document as private API
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Dynamic {
     String(String),
     Html(Html),
@@ -284,5 +284,46 @@ mod tests {
             "{}",
             serde_json::to_string_pretty(&view.serialize()).unwrap()
         );
+    }
+
+    #[test]
+    fn diffing() {
+        let render = |count: u32| {
+            html! {
+                <div>
+                    if count == 0 {
+                        "its ZERO!"
+                    } else {
+                        { count }
+                    }
+                </div>
+            }
+        };
+
+        let zero = render(0);
+        let one = render(1);
+
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&zero.serialize()).unwrap()
+        );
+
+        println!("-------");
+
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&one.serialize()).unwrap()
+        );
+
+        let diff = zero.diff(&one);
+
+        println!("-------");
+
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&diff).unwrap()
+        );
+
+        panic!();
     }
 }
