@@ -49,17 +49,17 @@ pub mod liveview;
 pub mod message;
 pub mod pubsub;
 
-mod html;
+pub mod html;
 mod manager;
 mod ws;
 
-pub use self::html::Html;
 pub use axum_liveview_macros::html;
 use futures_util::StreamExt;
 use tokio::fs;
 
 #[doc(inline)]
 pub use self::{
+    html::Html,
     liveview::{LiveView, ShouldRender, Subscriptions},
     manager::LiveViewManager,
     pubsub::PubSubExt,
@@ -76,7 +76,7 @@ where
         .route(APP_JS_PATH, get(js))
 }
 
-pub fn assets() -> Html {
+pub fn assets() -> html::Html {
     use crate as axum_liveview;
     html! {
         <script src={ APP_JS_PATH }></script>
@@ -104,6 +104,7 @@ async fn js() -> impl IntoResponse {
     // (Headers([("content-type", "application/javascript")]), JS)
 }
 
+// TODO(david): make return type private
 pub fn layer<P>(pubsub: P) -> AddExtensionLayer<LiveViewManager>
 where
     P: pubsub::PubSub,

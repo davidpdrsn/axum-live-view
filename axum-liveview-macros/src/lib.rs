@@ -317,7 +317,7 @@ impl ToTokens for Tree {
         let mut inside_braces = TokenStream::new();
 
         inside_braces.extend(quote! {
-            let mut html = axum_liveview::Html::default();
+            let mut html = axum_liveview::html::Html::default();
         });
 
         nodes_to_tokens(self.nodes.iter().cloned().collect(), &mut inside_braces);
@@ -353,11 +353,13 @@ fn nodes_to_tokens(mut nodes_queue: VecDeque<HtmlNode>, out: &mut proc_macro2::T
                             }
                             Some(AttrValue::Block(block)) => {
                                 write!(buf, "=");
-                                out.extend(quote! { html.fixed(#buf); });
+                                out.extend(quote! {
+                                    axum_liveview::html::__private::fixed(&mut html, #buf);
+                                });
                                 buf.clear();
                                 out.extend(quote! {
                                     #[allow(unused_braces)]
-                                    html.dynamic(#block);
+                                    axum_liveview::html::__private::dynamic(&mut html, #block);
                                 });
                             }
                             None => {}
@@ -389,12 +391,14 @@ fn nodes_to_tokens(mut nodes_queue: VecDeque<HtmlNode>, out: &mut proc_macro2::T
                 write!(buf, "</{}>", close);
             }
             HtmlNode::Block(block) => {
-                out.extend(quote! { html.fixed(#buf); });
+                out.extend(quote! {
+                    axum_liveview::html::__private::fixed(&mut html, #buf);
+                });
                 buf.clear();
 
                 out.extend(quote! {
                     #[allow(unused_braces)]
-                    html.dynamic(#block);
+                    axum_liveview::html::__private::dynamic(&mut html, #block);
                 });
             }
             HtmlNode::If(If {
@@ -402,50 +406,57 @@ fn nodes_to_tokens(mut nodes_queue: VecDeque<HtmlNode>, out: &mut proc_macro2::T
                 then_tree,
                 else_tree,
             }) => {
-                out.extend(quote! { html.fixed(#buf); });
+                out.extend(quote! {
+                    axum_liveview::html::__private::fixed(&mut html, #buf);
+                });
                 buf.clear();
 
                 if let Some(else_tree) = else_tree {
                     out.extend(quote! {
                         if #cond {
-                            html.dynamic(#then_tree);
+                            axum_liveview::html::__private::dynamic(&mut html, #then_tree);
                         } else {
-                            html.dynamic(#else_tree);
+                            axum_liveview::html::__private::dynamic(&mut html, #else_tree);
                         }
                     });
                 } else {
                     out.extend(quote! {
                         if #cond {
-                            html.dynamic(#then_tree);
+                            axum_liveview::html::__private::dynamic(&mut html, #then_tree);
                         }
                     });
                 }
             }
             HtmlNode::For(For { pat, expr, tree }) => {
-                out.extend(quote! { html.fixed(#buf); });
+                out.extend(quote! {
+                    axum_liveview::html::__private::fixed(&mut html, #buf);
+                });
                 buf.clear();
 
                 out.extend(quote! {
                     let mut __first = true;
                     for #pat in #expr {
-                        html.dynamic(#tree);
+                        axum_liveview::html::__private::dynamic(&mut html, #tree);
+
                         // add some empty segments so the number of placeholders matches up
                         if !__first {
-                            html.fixed("");
+                            axum_liveview::html::__private::fixed(&mut html, "");
                         }
                         __first = false;
                     }
                 })
             }
             HtmlNode::Match(Match { expr, arms }) => {
-                out.extend(quote! { html.fixed(#buf); });
+                out.extend(quote! {
+                    axum_liveview::html::__private::fixed(&mut html, #buf);
+                });
                 buf.clear();
 
                 let arms = arms
                     .iter()
                     .map(|Arm { pat, tree }| {
                         quote! {
-                            #pat => html.dynamic(#tree),
+                            #pat => axum_liveview::html::__private::dynamic(&mut html, #tree),
                         }
                     })
                     .collect::<TokenStream>();
@@ -462,5 +473,7 @@ fn nodes_to_tokens(mut nodes_queue: VecDeque<HtmlNode>, out: &mut proc_macro2::T
         }
     }
 
-    out.extend(quote! { html.fixed(#buf); });
+    out.extend(quote! {
+        axum_liveview::html::__private::fixed(&mut html, #buf);
+    });
 }

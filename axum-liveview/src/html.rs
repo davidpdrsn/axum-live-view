@@ -1,3 +1,4 @@
+use __private::*;
 use axum::response::IntoResponse;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -9,48 +10,51 @@ pub struct Html {
     dynamic: Vec<Dynamic>,
 }
 
-// TODO(david): document as private API
-#[derive(Debug, Clone)]
-pub enum Dynamic {
-    String(String),
-    Html(Html),
-}
+#[doc(hidden)]
+pub mod __private {
+    /// Private API. Do _not_ use anything here!
+    use super::*;
 
-impl Dynamic {
-    fn serialize(&self) -> Value {
-        match self {
-            Dynamic::String(s) => json!(s),
-            Dynamic::Html(inner) => json!(inner.serialize()),
+    pub fn fixed(html: &mut Html, part: &str) {
+        html.fixed.push(part.to_owned());
+    }
+
+    pub fn dynamic(html: &mut Html, part: impl Into<Dynamic>) {
+        html.dynamic.push(part.into());
+    }
+
+    #[derive(Debug, Clone)]
+    pub enum Dynamic {
+        String(String),
+        Html(Html),
+    }
+
+    impl Dynamic {
+        pub(super) fn serialize(&self) -> Value {
+            match self {
+                Dynamic::String(s) => json!(s),
+                Dynamic::Html(inner) => json!(inner.serialize()),
+            }
+        }
+    }
+
+    impl<S> From<S> for Dynamic
+    where
+        S: fmt::Display,
+    {
+        fn from(inner: S) -> Self {
+            Self::String(inner.to_string())
+        }
+    }
+
+    impl From<Html> for Dynamic {
+        fn from(inner: Html) -> Self {
+            Self::Html(inner)
         }
     }
 }
 
-impl<S> From<S> for Dynamic
-where
-    S: fmt::Display,
-{
-    fn from(inner: S) -> Self {
-        Self::String(inner.to_string())
-    }
-}
-
-impl From<Html> for Dynamic {
-    fn from(inner: Html) -> Self {
-        Self::Html(inner)
-    }
-}
-
 impl Html {
-    // TODO(david): document as private API
-    pub fn fixed(&mut self, part: &str) {
-        self.fixed.push(part.to_owned());
-    }
-
-    // TODO(david): document as private API
-    pub fn dynamic(&mut self, part: impl Into<Dynamic>) {
-        self.dynamic.push(part.into());
-    }
-
     pub(crate) fn diff(&self, other: &Self) -> DiffResult {
         let mut out = self
             .dynamic
@@ -76,6 +80,7 @@ impl Html {
                                 Some(json!(b))
                             }
                         }
+                        #[allow(clippy::needless_borrow)] // false positive
                         (Dynamic::Html(a), Dynamic::Html(b)) => match a.diff(&b) {
                             DiffResult::Changed(diff) => Some(json!(diff)),
                             DiffResult::Unchanged => None,
