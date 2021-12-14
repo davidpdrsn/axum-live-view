@@ -4,7 +4,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::{collections::HashMap, fmt};
 
-#[derive(Default, Debug, Clone)]
 pub struct Html {
     fixed: Vec<String>,
     dynamic: Vec<Dynamic>,
@@ -15,6 +14,13 @@ pub mod __private {
     /// Private API. Do _not_ use anything here!
     use super::*;
 
+    pub fn html() -> Html {
+        Html {
+            fixed: Default::default(),
+            dynamic: Default::default(),
+        }
+    }
+
     pub fn fixed(html: &mut Html, part: &str) {
         html.fixed.push(part.to_owned());
     }
@@ -23,7 +29,6 @@ pub mod __private {
         html.dynamic.push(part.into());
     }
 
-    #[derive(Debug, Clone)]
     pub enum Dynamic {
         String(String),
         Html(Html),
@@ -287,6 +292,18 @@ mod tests {
                     <p>"something"</p>
                 } else {
                     <p>"something else"</p>
+                }
+            </div>
+        };
+
+        let view = html! {
+            <div>
+                if true {
+                    <p>"some paragraph..."</p>
+                } else if true {
+                    <p>"some paragraph..."</p>
+                } else {
+                    <p>"some paragraph..."</p>
                 }
             </div>
         };

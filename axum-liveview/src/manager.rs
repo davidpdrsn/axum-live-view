@@ -45,7 +45,6 @@ impl LiveViewManager {
 
 fn wrap_in_liveview_container(liveview_id: Uuid, markup: Html) -> Html {
     use crate as axum_liveview;
-
     html! {
         <div class="liveview-container" data-liveview-id={ liveview_id }>
             { markup }

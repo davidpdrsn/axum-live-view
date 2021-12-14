@@ -10,7 +10,12 @@ pub fn html(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
         Err(err) => return err.into_compile_error().into(),
     };
 
-    tree.into_token_stream().into()
+    let tokens = tree.into_token_stream();
+
+    // useful for debugging:
+    // println!("{}", tokens);
+
+    tokens.into()
 }
 
 #[derive(Debug, Clone)]
@@ -207,14 +212,14 @@ impl Parse for If {
         let then_tree = content.parse::<Tree>()?;
 
         let else_tree = if input.parse::<Token![else]>().is_ok() {
-            if input.peek(Token![if]) {
-                // TODO(david): support `else if`
-                return Err(input.error("`else if` is not supported yet"));
+            if let Ok(nested) = input.parse::<Self>() {
+                let tree = Tree { nodes: vec![HtmlNode::If(nested)] };
+                Some(tree)
+            } else {
+                let content;
+                syn::braced!(content in input);
+                Some(content.parse::<Tree>()?)
             }
-
-            let content;
-            syn::braced!(content in input);
-            Some(content.parse::<Tree>()?)
         } else {
             None
         };
@@ -317,7 +322,7 @@ impl ToTokens for Tree {
         let mut inside_braces = TokenStream::new();
 
         inside_braces.extend(quote! {
-            let mut html = axum_liveview::html::Html::default();
+            let mut html = axum_liveview::html::__private::html();
         });
 
         nodes_to_tokens(self.nodes.iter().cloned().collect(), &mut inside_braces);
