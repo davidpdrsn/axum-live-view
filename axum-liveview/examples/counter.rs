@@ -81,19 +81,24 @@ impl LiveView for Counter {
             </div>
 
             <div>
+                "Counter value: "
                 if self.count == 0 {
-                    "zero..."
+                    "zero... how boring"
                 } else {
                     { self.count }
                 }
             </div>
 
-            // if self.count % 10 == 0 {
-            //     <div>"Divisble by 10!"</div>
-            // }
-
             if let Some(previous_click) = &self.previous_click {
-                <div>{ format!("Your previous click as {:?} seconds ago", previous_click.elapsed().as_secs()) }</div>
+                <div>
+                    <small>
+                        { format!("Your previous click as {:?} seconds ago", previous_click.elapsed().as_secs()) }
+
+                        if previous_click.elapsed().as_secs() == 0 {
+                            ". much engagement, so wow"
+                        }
+                    </small>
+                </div>
             }
         }
     }
