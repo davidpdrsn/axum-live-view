@@ -159,7 +159,7 @@ where
     }
 
     macro_rules! try_ {
-        ($expr:expr, $pattern:path) => {
+        ($expr:expr, $pattern:path $(,)?) => {
             match $expr {
                 $pattern(inner) => inner,
                 other => {
@@ -171,7 +171,6 @@ where
     }
 
     let text = try_!(msg, ws::Message::Text);
-    tracing::info!(%text);
     let msg: RawMessage = try_!(serde_json::from_str(&text), Ok);
     let liveview_id = msg.liveview_id;
     let msg = try_!(Message::try_from(msg), Ok);
@@ -180,26 +179,21 @@ where
 
     match msg {
         Message::Mount => {
-            if let Err(err) = pubsub
-                .broadcast(&liveview_local_topic(liveview_id, "mounted"), ())
-                .await
-            {
-                tracing::error!(%err, "failed to send `mounted` message");
-                return None;
-            }
-
             let mut initial_render_stream = pubsub
                 .subscribe::<Json<html::Serialized>>(&liveview_local_topic(
                     liveview_id,
                     "initial-render",
                 ))
                 .await;
-            let msg = if let Some(Json(msg)) = initial_render_stream.next().await {
-                msg
-            } else {
-                tracing::error!("`initial-render` for liveview never arrived");
-                return None;
-            };
+
+            try_!(
+                pubsub
+                    .broadcast(&liveview_local_topic(liveview_id, "mounted"), ())
+                    .await,
+                Ok,
+            );
+
+            let Json(msg) = try_!(initial_render_stream.next().await, Some);
 
             let diff_stream = pubsub
                 .subscribe::<Json<Diff>>(&liveview_local_topic(liveview_id, "rendered"))
