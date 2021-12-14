@@ -13,17 +13,23 @@ class LiveView {
         this.socket.addEventListener("message", (event) => {
             const [liveviewId, topic, data] = JSON.parse(event.data)
 
-            if (topic === "rendered") {
+            if (topic === "r") {
+                // rendered
+                const diff = data
                 const element = document.querySelector(`[data-liveview-id="${liveviewId}"]`)
-                patchState(this.viewStates[liveviewId], data)
+
+                patchViewState(this.viewStates[liveviewId], diff)
+
                 const html = buildHtmlFromState(this.viewStates[liveviewId])
                 this.updateDom(element, html)
-            } else if (topic === "initial-render") {
+
+            } else if (topic === "i") {
+                // initial-render
                 const element = document.querySelector(`[data-liveview-id="${liveviewId}"]`)
-                console.log(data)
                 const html = buildHtmlFromState(data)
                 this.updateDom(element, html)
                 this.viewStates[liveviewId] = data
+
             } else {
                 console.error("unknown event", topic, data)
             }
@@ -93,65 +99,55 @@ class LiveView {
     }
 }
 
-const buildHtmlFromState = (state) => {
+const buildHtmlFromState = (variables) => {
     var combined = ""
-    var template = state.s
+    var template = variables.s
 
     for (var i = 0; i < template.length; i++) {
-        if (typeof state[i] === "string") {
-            combined = combined.concat(template[i], state[i] || "")
-        } else if (typeof state[i] === "undefined") {
+        const variable = variables[i]
+
+        if (typeof variable === "string") {
+            combined = combined.concat(template[i], variable || "")
+
+        } else if (typeof variable === "undefined" || i === template.length - 1) {
             combined = combined.concat(template[i])
-        } else if (typeof state[i] === "object") {
-            combined = combined.concat(template[i], buildHtmlFromState(state[i]))
+
+        } else if (typeof variable === "object") {
+            combined = combined.concat(template[i], buildHtmlFromState(variable))
+
         } else {
-            console.error("buildHtmlFromState", typeof state[i], state[i])
+            console.error("buildHtmlFromState", typeof variable, variable)
         }
     }
 
     return combined
 }
 
-const patchState = (state, diff) => {
-    for (const [key, value] of Object.entries(diff)) {
-        if (typeof value === "object") {
-            patchState(state[key], value)
-        } else if (typeof value === "string") {
-            state[key] = value
-        } else {
-            console.error("patchState", typeof value, value);
+const patchViewState = (state, diff) => {
+    const deepMerge = (state, diff) => {
+        for (const [key, val] of Object.entries(diff)) {
+            if (val !== null && typeof val === `object` && val.length === undefined) {
+                if (state[key] === undefined) {
+                    state[key] = new val.__proto__.constructor()
+                }
+                patchViewState(state[key], val)
+            } else {
+                state[key] = val
+            }
+        }
+
+        return state
+    }
+
+    deepMerge(state, diff)
+
+    for (const [key, val] of Object.entries(diff)) {
+        if (val === null) {
+            delete state[key]
         }
     }
+
+    if (state["s"].length == Object.keys(state).length - 1) {
+        delete state[state["s"].length - 1]
+    }
 }
-
-// (function() {
-//     var state = {
-//         "0": "0e393823-d873-4c3c-8158-8a91c334366b",
-//         "1": {
-//             "0": {
-//                 "s": [
-//                     "its ZERO!"
-//                 ]
-//             },
-//             "s": [
-//                 "<div>",
-//                 "</div><div><button live-click=\"increment\">+</button><button live-click=\"decrement\">-</button></div>"
-//             ]
-//         },
-//         "s": [
-//             "<div class=\"liveview-container\" data-liveview-id=",
-//             ">",
-//             "</div>"
-//         ]
-//     };
-
-//     var diff = {
-//         "1": {
-//             "0": {
-//                 "s": [
-//                     ""
-//                 ]
-//             }
-//         }
-//     };
-// })()

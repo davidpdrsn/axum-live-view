@@ -391,6 +391,7 @@ fn nodes_to_tokens(mut nodes_queue: VecDeque<HtmlNode>, out: &mut proc_macro2::T
             HtmlNode::Block(block) => {
                 out.extend(quote! { html.fixed(#buf); });
                 buf.clear();
+
                 out.extend(quote! {
                     #[allow(unused_braces)]
                     html.dynamic(#block);
@@ -420,12 +421,26 @@ fn nodes_to_tokens(mut nodes_queue: VecDeque<HtmlNode>, out: &mut proc_macro2::T
                     });
                 }
             }
-            HtmlNode::For(For { pat, expr, tree }) => out.extend(quote! {
-                for #pat in #expr {
-                    html.dynamic(#tree);
-                }
-            }),
+            HtmlNode::For(For { pat, expr, tree }) => {
+                out.extend(quote! { html.fixed(#buf); });
+                buf.clear();
+
+                out.extend(quote! {
+                    let mut __first = true;
+                    for #pat in #expr {
+                        html.dynamic(#tree);
+                        // add some empty segments so the number of placeholders matches up
+                        if !__first {
+                            html.fixed("");
+                        }
+                        __first = false;
+                    }
+                })
+            }
             HtmlNode::Match(Match { expr, arms }) => {
+                out.extend(quote! { html.fixed(#buf); });
+                buf.clear();
+
                 let arms = arms
                     .iter()
                     .map(|Arm { pat, tree }| {
@@ -447,7 +462,5 @@ fn nodes_to_tokens(mut nodes_queue: VecDeque<HtmlNode>, out: &mut proc_macro2::T
         }
     }
 
-    if !buf.is_empty() {
-        out.extend(quote! { html.fixed(#buf); });
-    }
+    out.extend(quote! { html.fixed(#buf); });
 }

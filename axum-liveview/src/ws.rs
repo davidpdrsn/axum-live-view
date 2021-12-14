@@ -44,15 +44,7 @@ where
                 match msg {
                     Ok(msg) => {
                         if let Some((liveview_id, html)) = handle_message_from_socket(msg, &pubsub, &mut state).await {
-                            // TODO(david): dup: al2k3j42oi3j4o2i3
-                            let msg = json!([
-                                liveview_id,
-                                "initial-render",
-                                html,
-                            ]);
-                            let msg = serde_json::to_string(&msg).unwrap();
-                            tracing::trace!(%msg, "sending message to websocket");
-                            if socket.send(ws::Message::Text(msg)).await.is_err() {
+                            if send_message_to_socket(&mut socket, liveview_id, INITIAL_RENDER_TOPIC, html).await.is_err() {
                                 break;
                             }
                         }
@@ -65,15 +57,7 @@ where
             }
 
             Some((liveview_id, diff)) = state.diff_streams.next() => {
-                // TODO(david): dup: al2k3j42oi3j4o2i3
-                let msg = json!([
-                    liveview_id,
-                    "rendered",
-                    diff,
-                ]);
-                let msg = serde_json::to_string(&msg).unwrap();
-                tracing::trace!(%msg, "sending message to websocket");
-                if socket.send(ws::Message::Text(msg)).await.is_err() {
+                if send_message_to_socket(&mut socket, liveview_id, RENDERED_TOPIC, diff).await.is_err() {
                     break;
                 }
             }
@@ -96,6 +80,25 @@ where
     }
 }
 
+const INITIAL_RENDER_TOPIC: &str = "i";
+const RENDERED_TOPIC: &str = "r";
+
+async fn send_message_to_socket<T>(
+    socket: &mut WebSocket,
+    liveview_id: Uuid,
+    topic: &'static str,
+    msg: T,
+) -> Result<(), axum::Error>
+where
+    T: serde::Serialize,
+{
+    let msg = json!([liveview_id, topic, msg,]);
+    let msg = serde_json::to_string(&msg).unwrap();
+    tracing::trace!(%msg, "sending message to websocket");
+
+    socket.send(ws::Message::Text(msg)).await
+}
+
 async fn handle_message_from_socket<P>(
     msg: ws::Message,
     pubsub: &P,
@@ -104,6 +107,57 @@ async fn handle_message_from_socket<P>(
 where
     P: PubSub,
 {
+    #[derive(Debug, Deserialize)]
+    struct RawMessage {
+        liveview_id: Uuid,
+        topic: String,
+        data: Value,
+    }
+
+    impl TryFrom<RawMessage> for Message {
+        type Error = anyhow::Error;
+
+        fn try_from(value: RawMessage) -> Result<Self, Self::Error> {
+            let RawMessage {
+                topic,
+                data,
+                liveview_id: _,
+            } = value;
+
+            match &*topic {
+                "axum/mount-liveview" => Ok(Message::Mount),
+                "axum/live-click" => Ok(Message::LiveClick(from_value(data)?)),
+                "axum/live-input" => Ok(Message::LiveInput(from_value(data)?)),
+                other => {
+                    anyhow::bail!("unknown message topic: {:?}", other)
+                }
+            }
+        }
+    }
+
+    #[derive(Debug)]
+    enum Message {
+        Mount,
+        LiveClick(LiveClick),
+        LiveInput(LiveInput),
+    }
+
+    #[derive(Debug, Deserialize)]
+    struct LiveClick {
+        #[serde(rename = "e")]
+        event_name: String,
+        #[serde(rename = "d")]
+        additional_data: Option<Value>,
+    }
+
+    #[derive(Debug, Deserialize)]
+    struct LiveInput {
+        #[serde(rename = "e")]
+        event_name: String,
+        #[serde(rename = "v")]
+        value: String,
+    }
+
     macro_rules! try_ {
         ($expr:expr, $pattern:path) => {
             match $expr {
@@ -181,55 +235,4 @@ where
             None
         }
     }
-}
-
-#[derive(Debug, Deserialize)]
-struct RawMessage {
-    liveview_id: Uuid,
-    topic: String,
-    data: Value,
-}
-
-impl TryFrom<RawMessage> for Message {
-    type Error = anyhow::Error;
-
-    fn try_from(value: RawMessage) -> Result<Self, Self::Error> {
-        let RawMessage {
-            topic,
-            data,
-            liveview_id: _,
-        } = value;
-
-        match &*topic {
-            "axum/mount-liveview" => Ok(Message::Mount),
-            "axum/live-click" => Ok(Message::LiveClick(from_value(data)?)),
-            "axum/live-input" => Ok(Message::LiveInput(from_value(data)?)),
-            other => {
-                anyhow::bail!("unknown message topic: {:?}", other)
-            }
-        }
-    }
-}
-
-#[derive(Debug)]
-enum Message {
-    Mount,
-    LiveClick(LiveClick),
-    LiveInput(LiveInput),
-}
-
-#[derive(Debug, Deserialize)]
-struct LiveClick {
-    #[serde(rename = "e")]
-    event_name: String,
-    #[serde(rename = "d")]
-    additional_data: Option<Value>,
-}
-
-#[derive(Debug, Deserialize)]
-struct LiveInput {
-    #[serde(rename = "e")]
-    event_name: String,
-    #[serde(rename = "v")]
-    value: String,
 }

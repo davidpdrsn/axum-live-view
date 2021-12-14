@@ -16,6 +16,15 @@ pub enum Dynamic {
     Html(Html),
 }
 
+impl Dynamic {
+    fn serialize(&self) -> Value {
+        match self {
+            Dynamic::String(s) => json!(s),
+            Dynamic::Html(inner) => json!(inner.serialize()),
+        }
+    }
+}
+
 impl<S> From<S> for Dynamic
 where
     S: fmt::Display,
@@ -42,23 +51,51 @@ impl Html {
         self.dynamic.push(part.into());
     }
 
+    #[allow(warnings)]
     pub(crate) fn diff(&self, other: &Self) -> Diff {
         let out = self
             .dynamic
             .iter()
-            .zip(&other.dynamic)
+            .map(Some)
+            .chain(std::iter::repeat(None))
+            .zip(
+                other
+                    .dynamic
+                    .iter()
+                    .map(Some)
+                    .chain(std::iter::repeat(None)),
+            )
+            .take_while(|(a, b)| a.is_some() || b.is_some())
             .enumerate()
-            .filter_map(|(idx, (a, b))| match (a, b) {
-                (Dynamic::String(a), Dynamic::String(b)) => {
-                    if a == b {
-                        None
-                    } else {
-                        Some((idx, json!(b)))
+            .filter_map(|(idx, (prev, current))| {
+                let value = match (prev, current) {
+                    (Some(prev), Some(current)) => {
+                        match (prev, current) {
+                            (Dynamic::String(a), Dynamic::String(b)) => {
+                                if a == b {
+                                    None
+                                } else {
+                                    Some(json!(b))
+                                }
+                            }
+                            (Dynamic::Html(a), Dynamic::Html(b)) => Some(json!(a.diff(&b))),
+                            (_, Dynamic::Html(inner)) => Some(json!(inner.serialize())),
+                            (_, Dynamic::String(inner)) => Some(json!(inner)),
+                        }
                     }
-                }
-                (Dynamic::Html(a), Dynamic::Html(b)) => Some((idx, json!(a.diff(b)))),
-                (_, Dynamic::Html(inner)) => Some((idx, json!(inner.serialize()))),
-                (_, Dynamic::String(inner)) => Some((idx, json!(inner))),
+                    (None, Some(current)) => {
+                        Some(current.serialize())
+                    }
+                    (Some(prev), None) => {
+                        // a placeholder has been removed
+                        // we have to somehow be able to tell the difference between
+                        // a placeholder not having changed and removed
+                        Some(json!(null))
+                    },
+                    (None, None) => unreachable!("double nones are filtered out earlier"),
+                };
+
+                value.map(|value| (idx, value))
             })
             .collect::<HashMap<_, _>>();
         let mut out = json!(out);
@@ -82,10 +119,7 @@ impl Html {
             .map(|(idx, value)| {
                 (
                     idx.to_string(),
-                    match value {
-                        Dynamic::String(s) => json!(s),
-                        Dynamic::Html(inner) => json!(inner.serialize()),
-                    },
+                    value.serialize(),
                 )
             })
             .collect::<HashMap<_, _>>();
@@ -307,23 +341,16 @@ mod tests {
             "{}",
             serde_json::to_string_pretty(&zero.serialize()).unwrap()
         );
-
-        println!("-------");
-
         println!(
             "{}",
             serde_json::to_string_pretty(&one.serialize()).unwrap()
         );
 
-        let diff = zero.diff(&one);
+        println!("--------");
 
-        println!("-------");
+        let diff = one.diff(&zero);
+        println!("{}", serde_json::to_string_pretty(&diff).unwrap());
 
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&diff).unwrap()
-        );
-
-        panic!();
+        panic!("fix diffing!");
     }
 }
