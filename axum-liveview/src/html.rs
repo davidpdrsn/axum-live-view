@@ -349,6 +349,8 @@ mod tests {
             </div>
         };
 
+        // TODO(david): attributes that are rust keywords, like `type`
+
         println!(
             "{}",
             serde_json::to_string_pretty(&view.serialize()).unwrap()
