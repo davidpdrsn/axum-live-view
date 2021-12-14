@@ -338,6 +338,17 @@ mod tests {
             </div>
         };
 
+        let count = Some(10);
+        let view = html! {
+            <div>
+                match count {
+                    Some(count) if count == 0 => <p>"its zero!"</p>,
+                    Some(count) => <p>{ count }</p>,
+                    None => <p>"Missing count..."</p>,
+                }
+            </div>
+        };
+
         println!(
             "{}",
             serde_json::to_string_pretty(&view.serialize()).unwrap()

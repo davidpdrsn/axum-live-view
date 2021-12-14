@@ -13,7 +13,7 @@ pub fn html(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let tokens = tree.into_token_stream();
 
     // useful for debugging:
-    // println!("{}", tokens);
+    println!("{}", tokens);
 
     tokens.into()
 }
@@ -213,7 +213,9 @@ impl Parse for If {
 
         let else_tree = if input.parse::<Token![else]>().is_ok() {
             if let Ok(nested) = input.parse::<Self>() {
-                let tree = Tree { nodes: vec![HtmlNode::If(nested)] };
+                let tree = Tree {
+                    nodes: vec![HtmlNode::If(nested)],
+                };
                 Some(tree)
             } else {
                 let content;
@@ -281,6 +283,7 @@ impl Parse for Match {
 #[derive(Debug, Clone)]
 struct Arm {
     pat: syn::Pat,
+    guard: Option<syn::Expr>,
     tree: Tree,
 }
 
@@ -288,10 +291,12 @@ impl Parse for Arm {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
         let pat = input.parse::<syn::Pat>()?;
 
-        if input.peek(Token![if]) {
-            // TODO(david): support `if` guards
-            return Err(input.error("`if` guards is not supported yet"));
-        }
+        let guard = if input.parse::<Token![if]>().is_ok() {
+            let expr = input.parse::<syn::Expr>()?;
+            Some(expr)
+        } else {
+            None
+        };
 
         input.parse::<Token![=>]>()?;
 
@@ -305,6 +310,7 @@ impl Parse for Arm {
 
         Ok(Self {
             pat,
+            guard,
             tree: Tree { nodes },
         })
     }
@@ -459,9 +465,10 @@ fn nodes_to_tokens(mut nodes_queue: VecDeque<HtmlNode>, out: &mut proc_macro2::T
 
                 let arms = arms
                     .iter()
-                    .map(|Arm { pat, tree }| {
+                    .map(|Arm { pat, guard, tree }| {
+                        let guard = guard.as_ref().map(|guard| quote! { if #guard });
                         quote! {
-                            #pat => axum_liveview::html::__private::dynamic(&mut html, #tree),
+                            #pat #guard => axum_liveview::html::__private::dynamic(&mut html, #tree),
                         }
                     })
                     .collect::<TokenStream>();
