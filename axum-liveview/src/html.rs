@@ -51,9 +51,8 @@ impl Html {
         self.dynamic.push(part.into());
     }
 
-    #[allow(warnings)]
-    pub(crate) fn diff(&self, other: &Self) -> Diff {
-        let out = self
+    pub(crate) fn diff(&self, other: &Self) -> DiffResult {
+        let mut out = self
             .dynamic
             .iter()
             .map(Some)
@@ -77,12 +76,15 @@ impl Html {
                                 Some(json!(b))
                             }
                         }
-                        (Dynamic::Html(a), Dynamic::Html(b)) => Some(json!(a.diff(&b))),
+                        (Dynamic::Html(a), Dynamic::Html(b)) => match a.diff(&b) {
+                            DiffResult::Changed(diff) => Some(json!(diff)),
+                            DiffResult::Unchanged => None,
+                        },
                         (_, Dynamic::Html(inner)) => Some(json!(inner.serialize())),
                         (_, Dynamic::String(inner)) => Some(json!(inner)),
                     },
                     (None, Some(current)) => Some(current.serialize()),
-                    (Some(prev), None) => {
+                    (Some(_prev), None) => {
                         // a placeholder has been removed
                         // we have to somehow be able to tell the difference between
                         // a placeholder not having changed and removed
@@ -91,20 +93,24 @@ impl Html {
                     (None, None) => unreachable!("double nones are filtered out earlier"),
                 };
 
-                value.map(|value| (idx, value))
+                value.map(|value| {
+                    // can we avoid allocating strings here?
+                    (idx.to_string(), value)
+                })
             })
             .collect::<HashMap<_, _>>();
-        let mut out = json!(out);
 
         if self.fixed.len() != other.fixed.len()
             || self.fixed.iter().zip(&other.fixed).any(|(a, b)| a != b)
         {
-            out.as_object_mut()
-                .unwrap()
-                .insert("s".to_owned(), serde_json::to_value(&other.fixed).unwrap());
+            out.insert("s".to_owned(), serde_json::to_value(&other.fixed).unwrap());
         }
 
-        Diff(out)
+        if out.is_empty() {
+            DiffResult::Unchanged
+        } else {
+            DiffResult::Changed(Diff(json!(out)))
+        }
     }
 
     pub(crate) fn serialize(&self) -> Serialized {
@@ -146,6 +152,11 @@ impl IntoResponse for Html {
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(transparent)]
 pub(crate) struct Serialized(Value);
+
+pub(crate) enum DiffResult {
+    Changed(Diff),
+    Unchanged,
+}
 
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(transparent)]
@@ -309,39 +320,5 @@ mod tests {
             "{}",
             serde_json::to_string_pretty(&view.serialize()).unwrap()
         );
-    }
-
-    #[test]
-    fn diffing() {
-        let render = |count: u32| {
-            html! {
-                <div>
-                    if count == 0 {
-                        "its ZERO!"
-                    } else {
-                        { count }
-                    }
-                </div>
-            }
-        };
-
-        let zero = render(0);
-        let one = render(1);
-
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&zero.serialize()).unwrap()
-        );
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&one.serialize()).unwrap()
-        );
-
-        println!("--------");
-
-        let diff = one.diff(&zero);
-        println!("{}", serde_json::to_string_pretty(&diff).unwrap());
-
-        panic!("fix diffing!");
     }
 }

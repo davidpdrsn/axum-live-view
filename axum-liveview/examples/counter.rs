@@ -88,12 +88,12 @@ impl LiveView for Counter {
                 }
             </div>
 
-            if self.count % 10 == 0 {
-                <div>"Divisble by 10!"</div>
-            }
+            // if self.count % 10 == 0 {
+            //     <div>"Divisble by 10!"</div>
+            // }
 
             if let Some(previous_click) = &self.previous_click {
-                <div>{ format!("Your previous click as {:?} ago", previous_click.elapsed()) }</div>
+                <div>{ format!("Your previous click as {:?} seconds ago", previous_click.elapsed().as_secs()) }</div>
             }
         }
     }

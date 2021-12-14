@@ -1,4 +1,7 @@
-use crate::{html, liveview::liveview_local_topic, pubsub::PubSub, Html, LiveView, PubSubExt};
+use crate::{
+    html, html::DiffResult, liveview::liveview_local_topic, pubsub::PubSub, Html, LiveView,
+    PubSubExt,
+};
 use axum::{
     async_trait,
     extract::{Extension, FromRequest, RequestParts},
@@ -73,17 +76,20 @@ where
         tokio::select! {
             Some(new_markup) = markup_stream.next() => {
                 let new_markup = wrap_in_liveview_container(liveview_id, new_markup);
-                let diff = markup.diff(&new_markup);
-                markup = new_markup;
-
-                if let Err(err) = pubsub
-                    .broadcast(
-                        &liveview_local_topic(liveview_id, "rendered"),
-                        Json(diff),
-                    )
-                    .await
-                {
-                    tracing::error!(%err, "failed to send markup on pubsub");
+                match markup.diff(&new_markup) {
+                    DiffResult::Changed(diff) => {
+                        markup = new_markup;
+                        if let Err(err) = pubsub
+                            .broadcast(
+                                &liveview_local_topic(liveview_id, "rendered"),
+                                Json(diff),
+                            )
+                            .await
+                        {
+                            tracing::error!(%err, "failed to send markup on pubsub");
+                        }
+                    }
+                    DiffResult::Unchanged => {}
                 }
             }
 
