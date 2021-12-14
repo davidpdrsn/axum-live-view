@@ -1,6 +1,9 @@
 use axum::{response::IntoResponse, routing::get, Router};
-use axum_liveview::{html, Html, LiveView, LiveViewManager, Subscriptions, PubSubExt};
-use std::{time::{Instant, Duration}, net::SocketAddr};
+use axum_liveview::{html, Html, LiveView, LiveViewManager, PubSubExt, Subscriptions};
+use std::{
+    net::SocketAddr,
+    time::{Duration, Instant},
+};
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 #[tokio::main]

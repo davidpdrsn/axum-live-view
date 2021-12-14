@@ -69,29 +69,25 @@ impl Html {
             .enumerate()
             .filter_map(|(idx, (prev, current))| {
                 let value = match (prev, current) {
-                    (Some(prev), Some(current)) => {
-                        match (prev, current) {
-                            (Dynamic::String(a), Dynamic::String(b)) => {
-                                if a == b {
-                                    None
-                                } else {
-                                    Some(json!(b))
-                                }
+                    (Some(prev), Some(current)) => match (prev, current) {
+                        (Dynamic::String(a), Dynamic::String(b)) => {
+                            if a == b {
+                                None
+                            } else {
+                                Some(json!(b))
                             }
-                            (Dynamic::Html(a), Dynamic::Html(b)) => Some(json!(a.diff(&b))),
-                            (_, Dynamic::Html(inner)) => Some(json!(inner.serialize())),
-                            (_, Dynamic::String(inner)) => Some(json!(inner)),
                         }
-                    }
-                    (None, Some(current)) => {
-                        Some(current.serialize())
-                    }
+                        (Dynamic::Html(a), Dynamic::Html(b)) => Some(json!(a.diff(&b))),
+                        (_, Dynamic::Html(inner)) => Some(json!(inner.serialize())),
+                        (_, Dynamic::String(inner)) => Some(json!(inner)),
+                    },
+                    (None, Some(current)) => Some(current.serialize()),
                     (Some(prev), None) => {
                         // a placeholder has been removed
                         // we have to somehow be able to tell the difference between
                         // a placeholder not having changed and removed
                         Some(json!(null))
-                    },
+                    }
                     (None, None) => unreachable!("double nones are filtered out earlier"),
                 };
 
@@ -116,12 +112,7 @@ impl Html {
             .dynamic
             .iter()
             .enumerate()
-            .map(|(idx, value)| {
-                (
-                    idx.to_string(),
-                    value.serialize(),
-                )
-            })
+            .map(|(idx, value)| (idx.to_string(), value.serialize()))
             .collect::<HashMap<_, _>>();
 
         let mut out = serde_json::to_value(&out).unwrap();
