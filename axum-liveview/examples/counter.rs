@@ -97,6 +97,10 @@ impl LiveView for Counter {
                         if previous_click.elapsed().as_secs() == 0 {
                             ". much engagement, so wow"
                         }
+
+                        if previous_click.elapsed().as_secs() >= 10 {
+                            ". Anybody still there?"
+                        }
                     </small>
                 </div>
             }
