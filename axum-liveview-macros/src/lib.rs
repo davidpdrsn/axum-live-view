@@ -13,7 +13,7 @@ pub fn html(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let tokens = tree.into_token_stream();
 
     // useful for debugging:
-    println!("{}", tokens);
+    // println!("{}", tokens);
 
     tokens.into()
 }
@@ -115,18 +115,8 @@ impl Parse for TagNode {
         let open = input.parse()?;
 
         let mut attrs = Vec::new();
-        while input.peek(Ident) {
-            let ident = Punctuated::<Ident, Token![-]>::parse_separated_nonempty(input)?;
-            let value = if input.parse::<Token![=]>().is_ok() {
-                if let Ok(block) = input.parse().map(AttrValue::Block) {
-                    Some(block)
-                } else {
-                    Some(input.parse().map(AttrValue::LitStr)?)
-                }
-            } else {
-                None
-            };
-            attrs.push(Attr { ident, value });
+        while input.fork().parse::<AttrIdent>().is_ok() {
+            attrs.push(input.parse()?);
         }
 
         if input.parse::<Token![/]>().is_ok() {
@@ -169,22 +159,54 @@ impl Parse for TagNode {
 
 #[derive(Debug, Clone)]
 struct Attr {
-    ident: Punctuated<Ident, Token![-]>,
+    ident: AttrIdent,
     value: Option<AttrValue>,
 }
 
-impl Attr {
-    fn ident(&self) -> String {
-        let mut out = String::new();
-        let mut iter = self.ident.iter().peekable();
-        while let Some(ident) = iter.next() {
-            if iter.peek().is_some() {
-                let _ = write!(out, "{}-", ident);
+impl Parse for Attr {
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        let ident = input.parse::<AttrIdent>()?;
+
+        let value = if input.parse::<Token![=]>().is_ok() {
+            if let Ok(block) = input.parse().map(AttrValue::Block) {
+                Some(block)
             } else {
-                let _ = write!(out, "{}", ident);
+                Some(input.parse().map(AttrValue::LitStr)?)
             }
-        }
-        out
+        } else {
+            None
+        };
+
+        Ok(Self { ident, value })
+    }
+}
+
+#[derive(Debug, Clone)]
+struct AttrIdent {
+    ident: String,
+}
+
+impl Parse for AttrIdent {
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        let ident = if input.parse::<Token![type]>().is_ok() {
+            "type".to_string()
+        } else if input.parse::<Token![for]>().is_ok() {
+            "for".to_string()
+        } else {
+            let idents = Punctuated::<Ident, Token![-]>::parse_separated_nonempty(input)?;
+            let mut out = String::new();
+            let mut iter = idents.iter().peekable();
+            while let Some(ident) = iter.next() {
+                if iter.peek().is_some() {
+                    let _ = write!(out, "{}-", ident);
+                } else {
+                    let _ = write!(out, "{}", ident);
+                }
+            }
+            out
+        };
+
+        Ok(Self { ident })
     }
 }
 
@@ -354,8 +376,7 @@ fn nodes_to_tokens(mut nodes_queue: VecDeque<HtmlNode>, out: &mut proc_macro2::T
 
                     let mut attrs = attrs.iter().peekable();
                     while let Some(attr) = attrs.next() {
-                        let ident = attr.ident();
-                        write!(buf, "{}", ident);
+                        write!(buf, "{}", attr.ident.ident);
 
                         match &attr.value {
                             Some(AttrValue::LitStr(lit_str)) => {
@@ -369,8 +390,14 @@ fn nodes_to_tokens(mut nodes_queue: VecDeque<HtmlNode>, out: &mut proc_macro2::T
                                 });
                                 buf.clear();
                                 out.extend(quote! {
+                                    // TODO(david): using `Debug` to escape qoutes
+                                    // not sure if thats ideal. Do we need to consider newlines
+                                    // etc?
                                     #[allow(unused_braces)]
-                                    axum_liveview::html::__private::dynamic(&mut html, #block);
+                                    axum_liveview::html::__private::dynamic(
+                                        &mut html,
+                                        format!("{:?}", #block),
+                                    );
                                 });
                             }
                             None => {}

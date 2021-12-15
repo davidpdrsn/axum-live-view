@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::{collections::HashMap, fmt};
 
+#[derive(Debug)]
 pub struct Html {
     fixed: Vec<String>,
     dynamic: Vec<Dynamic>,
@@ -11,7 +12,7 @@ pub struct Html {
 
 #[doc(hidden)]
 pub mod __private {
-    /// Private API. Do _not_ use anything here!
+    /// Private API. Do _not_ use anything from this module!
     use super::*;
 
     pub fn html() -> Html {
@@ -29,6 +30,7 @@ pub mod __private {
         html.dynamic.push(part.into());
     }
 
+    #[derive(Debug)]
     pub enum Dynamic {
         String(String),
         Html(Html),
@@ -180,42 +182,59 @@ mod tests {
     use crate::html;
 
     #[test]
-    #[allow(unused_variables)]
-    fn these_should_compile() {
-        let view = html! {
-            <div></div>
-        };
+    fn basic() {
+        let view = html! { <div></div> };
+        assert_eq!(view.render(), "<div></div>");
+    }
 
-        let view = html! {
-            <!DOCTYPE html>
-        };
+    #[test]
+    fn doctype() {
+        let view = html! { <!DOCTYPE html> };
+        assert_eq!(view.render(), "<!DOCTYPE html>");
+    }
 
-        let view = html! {
-            "hi there"
-        };
+    #[test]
+    fn text() {
+        let view = html! { "foo" };
+        assert_eq!(view.render(), "foo");
+    }
 
+    #[test]
+    fn text_inside_tag() {
+        let view = html! { <div>"foo"</div> };
+        assert_eq!(view.render(), "<div>foo</div>");
+    }
+
+    #[test]
+    fn interpolate() {
+        let count = 1;
+        let view = html! { <div>{ count }</div> };
+        assert_eq!(view.render(), "<div>1</div>");
+    }
+
+    #[test]
+    fn fixed_next_to_dynamic() {
+        let count = 1;
         let view = html! {
             <div>"foo"</div>
-        };
-
-        let count = 1;
-        html! {
             <div>{ count }</div>
         };
+        assert_eq!(view.render(), "<div>foo</div><div>1</div>");
+    }
 
-        let count = 1;
-        html! {
-            <div>"foo"</div>
-            <div>{ count }</div>
-        };
-
+    #[test]
+    fn nested_tags() {
         let view = html! {
             <div>
-                <p>"some paragraph..."</p>
+                <p>"foo"</p>
             </div>
         };
+        assert_eq!(view.render(), "<div><p>foo</p></div>");
+    }
 
-        let count = 3;
+    #[test]
+    fn deeply_nested() {
+        let count = 1;
         let view = html! {
             <div>
                 <ul>
@@ -225,8 +244,15 @@ mod tests {
                 </ul>
             </div>
         };
+        assert_eq!(
+            view.render(),
+            "<div><ul><li>1</li><li>2</li><li>3</li></ul></div>"
+        );
+    }
 
-        html! {
+    #[test]
+    fn nested_with_more_html_calls() {
+        let view = html! {
             <div>
                 <ul>
                     {
@@ -239,44 +265,66 @@ mod tests {
                 </ul>
             </div>
         };
+        assert_eq!(
+            view.render(),
+            "<div><ul><li>1</li><li>2</li><li>3</li></ul></div>"
+        );
+    }
 
-        html! {
+    #[test]
+    fn attribute() {
+        let view = html! {
             <div class="col-md">"foo"</div>
         };
+        assert_eq!(view.render(), "<div class=\"col-md\">foo</div>");
+    }
 
-        html! {
+    #[test]
+    fn multiple_attributes() {
+        let view = html! {
             <div class="col-md" id="the-thing">"foo"</div>
         };
+        assert_eq!(
+            view.render(),
+            "<div class=\"col-md\" id=\"the-thing\">foo</div>"
+        );
+    }
 
-        html! {
+    #[test]
+    fn attribute_with_dash() {
+        let view = html! {
             <div on-click="do thing">"foo"</div>
         };
+        assert_eq!(view.render(), "<div on-click=\"do thing\">foo</div>");
+    }
 
+    #[test]
+    fn interpolate_class() {
         let size = 8;
-        html! {
+        let view = html! {
             <div class={ format!("col-{}", size) }>"foo"</div>
         };
+        assert_eq!(view.render(), "<div class=\"col-8\">foo</div>");
+    }
 
+    #[test]
+    fn empty_attribute() {
         let view = html! {
-            <div
-                class="foo"
-                class="foo"
-                class={
-                    let foo = 123;
-                    format!("col-{}", foo)
-                }
-                class="foo"
-            >"foo"</div>
-        };
-
-        html! {
             <button disabled>"foo"</button>
         };
+        assert_eq!(view.render(), "<button disabled>foo</button>");
+    }
 
-        html! {
+    #[test]
+    fn empty_tag() {
+        let view = html! {
             <img src="foo.png" />
         };
+        assert_eq!(view.render(), "<img src=\"foo.png\">");
+    }
 
+    #[test]
+    fn conditional() {
         let view = html! {
             <div>
                 if true {
@@ -284,30 +332,41 @@ mod tests {
                 }
             </div>
         };
+        assert_eq!(view.render(), "<div><p>some paragraph...</p></div>");
+    }
 
-        let something = || true;
-        let view = html! {
-            <div>
-                if something() {
-                    <p>"something"</p>
-                } else {
-                    <p>"something else"</p>
-                }
-            </div>
-        };
-
+    #[test]
+    fn conditional_else() {
         let view = html! {
             <div>
                 if true {
                     <p>"some paragraph..."</p>
-                } else if true {
-                    <p>"some paragraph..."</p>
                 } else {
-                    <p>"some paragraph..."</p>
+                    <p>"wat"</p>
                 }
             </div>
         };
+        assert_eq!(view.render(), "<div><p>some paragraph...</p></div>");
+    }
 
+    #[test]
+    fn conditional_else_if() {
+        let view = html! {
+            <div>
+                if true {
+                    <p>"some paragraph..."</p>
+                } else if false {
+                    <p>"wat"</p>
+                } else {
+                    <p>"wat"</p>
+                }
+            </div>
+        };
+        assert_eq!(view.render(), "<div><p>some paragraph...</p></div>");
+    }
+
+    #[test]
+    fn if_let() {
         let name = Some("bob");
         let view = html! {
             <div>
@@ -318,7 +377,11 @@ mod tests {
                 }
             </div>
         };
+        assert_eq!(view.render(), "<div><p>Hi bob</p></div>");
+    }
 
+    #[test]
+    fn for_loop() {
         let names = ["alice", "bob", "cindy"];
         let view = html! {
             <ul>
@@ -327,7 +390,14 @@ mod tests {
                 }
             </ul>
         };
+        assert_eq!(
+            view.render(),
+            "<ul><li>alice</li><li>bob</li><li>cindy</li></ul>"
+        );
+    }
 
+    #[test]
+    fn match_() {
         let name = Some("bob");
         let view = html! {
             <div>
@@ -337,7 +407,11 @@ mod tests {
                 }
             </div>
         };
+        assert_eq!(view.render(), "<div><p>Hi bob</p></div>");
+    }
 
+    #[test]
+    fn match_guard() {
         let count = Some(10);
         let view = html! {
             <div>
@@ -348,12 +422,25 @@ mod tests {
                 }
             </div>
         };
+        assert_eq!(view.render(), "<div><p>10</p></div>");
+    }
 
-        // TODO(david): attributes that are rust keywords, like `type`
+    #[test]
+    fn keyword_attribute() {
+        let view = html! {
+            <input type="text" />
+        };
+        assert_eq!(view.render(), "<input type=\"text\">");
+    }
 
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&view.serialize()).unwrap()
-        );
+    #[test]
+    fn if_up_front() {
+        let content = "bar";
+        let view = html! {
+            if false {}
+            "foo"
+            { content }
+        };
+        assert_eq!(view.render(), "foobar");
     }
 }

@@ -84,14 +84,16 @@ pub fn assets() -> html::Html {
 }
 
 async fn js() -> impl IntoResponse {
-    let morphdom = fs::File::open("axum-liveview/src/morphdom.js")
-        .await
-        .unwrap();
+    let morphdom =
+        fs::File::open("/Users/davidpdrsn/dev/major/axum-liveview/axum-liveview/src/morphdom.js")
+            .await
+            .unwrap();
     let morphdom = tokio_util::io::ReaderStream::new(morphdom);
 
-    let liveview = fs::File::open("axum-liveview/src/liveview.js")
-        .await
-        .unwrap();
+    let liveview =
+        fs::File::open("/Users/davidpdrsn/dev/major/axum-liveview/axum-liveview/src/liveview.js")
+            .await
+            .unwrap();
     let liveview = tokio_util::io::ReaderStream::new(liveview);
 
     let stream = morphdom.chain(liveview);
