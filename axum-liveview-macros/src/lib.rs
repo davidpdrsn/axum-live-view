@@ -115,7 +115,7 @@ impl Parse for TagNode {
         let open = input.parse()?;
 
         let mut attrs = Vec::new();
-        while input.fork().parse::<AttrIdent>().is_ok() {
+        while input.fork().parse::<Attr>().is_ok() {
             attrs.push(input.parse()?);
         }
 
@@ -385,10 +385,7 @@ fn nodes_to_tokens(mut nodes_queue: VecDeque<HtmlNode>, out: &mut proc_macro2::T
                             }
                             Some(AttrValue::Block(block)) => {
                                 write!(buf, "=");
-                                out.extend(quote! {
-                                    axum_liveview::html::__private::fixed(&mut html, #buf);
-                                });
-                                buf.clear();
+                                write_temp_buf(out, &mut buf);
                                 out.extend(quote! {
                                     // TODO(david): using `Debug` to escape qoutes
                                     // not sure if thats ideal. Do we need to consider newlines
@@ -429,10 +426,7 @@ fn nodes_to_tokens(mut nodes_queue: VecDeque<HtmlNode>, out: &mut proc_macro2::T
                 write!(buf, "</{}>", close);
             }
             HtmlNode::Block(block) => {
-                out.extend(quote! {
-                    axum_liveview::html::__private::fixed(&mut html, #buf);
-                });
-                buf.clear();
+                write_temp_buf(out, &mut buf);
 
                 out.extend(quote! {
                     #[allow(unused_braces)]
@@ -444,10 +438,7 @@ fn nodes_to_tokens(mut nodes_queue: VecDeque<HtmlNode>, out: &mut proc_macro2::T
                 then_tree,
                 else_tree,
             }) => {
-                out.extend(quote! {
-                    axum_liveview::html::__private::fixed(&mut html, #buf);
-                });
-                buf.clear();
+                write_temp_buf(out, &mut buf);
 
                 if let Some(else_tree) = else_tree {
                     out.extend(quote! {
@@ -461,15 +452,14 @@ fn nodes_to_tokens(mut nodes_queue: VecDeque<HtmlNode>, out: &mut proc_macro2::T
                     out.extend(quote! {
                         if #cond {
                             axum_liveview::html::__private::dynamic(&mut html, #then_tree);
+                        } else {
+                            axum_liveview::html::__private::dynamic(&mut html, "");
                         }
                     });
                 }
             }
             HtmlNode::For(For { pat, expr, tree }) => {
-                out.extend(quote! {
-                    axum_liveview::html::__private::fixed(&mut html, #buf);
-                });
-                buf.clear();
+                write_temp_buf(out, &mut buf);
 
                 out.extend(quote! {
                     let mut __first = true;
@@ -485,10 +475,7 @@ fn nodes_to_tokens(mut nodes_queue: VecDeque<HtmlNode>, out: &mut proc_macro2::T
                 })
             }
             HtmlNode::Match(Match { expr, arms }) => {
-                out.extend(quote! {
-                    axum_liveview::html::__private::fixed(&mut html, #buf);
-                });
-                buf.clear();
+                write_temp_buf(out, &mut buf);
 
                 let arms = arms
                     .iter()
@@ -515,4 +502,13 @@ fn nodes_to_tokens(mut nodes_queue: VecDeque<HtmlNode>, out: &mut proc_macro2::T
     out.extend(quote! {
         axum_liveview::html::__private::fixed(&mut html, #buf);
     });
+}
+
+fn write_temp_buf(out: &mut TokenStream, buf: &mut String) {
+    if !buf.is_empty() {
+        out.extend(quote! {
+            axum_liveview::html::__private::fixed(&mut html, #buf);
+        });
+        buf.clear();
+    }
 }

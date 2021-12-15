@@ -443,4 +443,17 @@ mod tests {
         };
         assert_eq!(view.render(), "foobar");
     }
+
+    #[test]
+    fn if_up_front_nested() {
+        let content = "bar";
+        let view = html! {
+            <div>
+                if false {}
+                "foo"
+                { content }
+            </div>
+        };
+        assert_eq!(view.render(), "<div>foobar</div>");
+    }
 }
