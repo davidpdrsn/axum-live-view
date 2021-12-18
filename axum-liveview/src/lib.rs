@@ -54,8 +54,6 @@ mod manager;
 mod ws;
 
 pub use axum_liveview_macros::html;
-use futures_util::StreamExt;
-use tokio::fs;
 
 #[doc(inline)]
 pub use self::{
@@ -88,7 +86,6 @@ async fn js() -> impl IntoResponse {
     (Headers([("content-type", "application/javascript")]), JS)
 }
 
-// TODO(david): make return type private
 pub fn layer<P>(pubsub: P) -> AddExtensionLayer<LiveViewManager>
 where
     P: pubsub::PubSub,
