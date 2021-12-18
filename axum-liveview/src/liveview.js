@@ -87,11 +87,7 @@ class LiveView {
         })
 
         element.querySelectorAll("[live-input]").forEach((element) => {
-            console.log("binding to live-input")
-
             element.addEventListener("input", (event) => {
-                console.log("input event fired")
-
                 let liveviewId = element.closest('[data-liveview-id]').getAttribute("data-liveview-id")
                 let eventName = element.getAttribute("live-input")
 
