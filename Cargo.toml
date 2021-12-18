@@ -2,4 +2,5 @@
 members = [
     "axum-liveview",
     "axum-liveview-macros",
+    "examples/*",
 ]
