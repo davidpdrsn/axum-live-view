@@ -42,14 +42,14 @@
 use axum::{
     response::{Headers, IntoResponse},
     routing::get,
-    AddExtensionLayer, Router,
+    Router,
 };
 
+pub mod html;
 pub mod liveview;
-pub mod message;
+pub mod middleware;
 pub mod pubsub;
 
-pub mod html;
 mod manager;
 mod ws;
 
@@ -60,7 +60,8 @@ pub use self::{
     html::Html,
     liveview::{LiveView, ShouldRender, Subscriptions},
     manager::LiveViewManager,
-    pubsub::PubSubExt,
+    middleware::layer,
+    pubsub::PubSub,
 };
 
 const APP_JS_PATH: &str = "/live/app.js";
@@ -84,11 +85,4 @@ pub fn assets() -> html::Html {
 async fn js() -> impl IntoResponse {
     const JS: &str = concat!(include_str!("morphdom.js"), include_str!("liveview.js"));
     (Headers([("content-type", "application/javascript")]), JS)
-}
-
-pub fn layer<P>(pubsub: P) -> AddExtensionLayer<LiveViewManager>
-where
-    P: pubsub::PubSub,
-{
-    AddExtensionLayer::new(LiveViewManager::new(pubsub::Logging::new(pubsub)))
 }

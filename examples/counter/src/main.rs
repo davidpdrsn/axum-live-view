@@ -1,5 +1,5 @@
 use axum::{response::IntoResponse, routing::get, Router};
-use axum_liveview::{html, Html, LiveView, LiveViewManager, PubSubExt, Subscriptions};
+use axum_liveview::{html, Html, LiveView, LiveViewManager, PubSub, Subscriptions};
 use std::{
     net::SocketAddr,
     time::{Duration, Instant},

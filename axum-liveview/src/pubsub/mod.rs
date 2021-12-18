@@ -1,4 +1,3 @@
-use crate::message::Message;
 use axum::async_trait;
 use bytes::Bytes;
 use futures_util::stream::{BoxStream, StreamExt};
@@ -7,19 +6,22 @@ use tokio::sync::broadcast;
 use tokio_stream::wrappers::BroadcastStream;
 
 mod in_process;
-pub use in_process::InProcess;
+mod message;
+
+pub use self::{
+    in_process::InProcess,
+    message::{Bincode, Message},
+};
 
 #[async_trait]
 pub trait PubSub: Send + Sync + 'static {
     async fn send_raw(&self, topic: &str, msg: Bytes) -> anyhow::Result<()>;
 
     async fn subscribe_raw(&self, topic: &str) -> BoxStream<'static, Bytes>;
-}
 
-#[async_trait]
-pub trait PubSubExt: PubSub {
     async fn broadcast<T>(&self, topic: &str, msg: T) -> anyhow::Result<()>
     where
+        Self: Sized,
         T: Message + Send + Sync + 'static,
     {
         match msg.encode() {
@@ -30,6 +32,7 @@ pub trait PubSubExt: PubSub {
 
     async fn subscribe<T>(&self, topic: &str) -> BoxStream<'static, T>
     where
+        Self: Sized,
         T: Message + Send + Sync + 'static,
     {
         let mut stream = self.subscribe_raw(topic).await;
@@ -53,8 +56,6 @@ pub trait PubSubExt: PubSub {
         Box::pin(decoded_stream)
     }
 }
-
-impl<P> PubSubExt for P where P: PubSub {}
 
 #[async_trait]
 impl PubSub for Arc<dyn PubSub> {

@@ -1,7 +1,4 @@
-use crate::{
-    html, html::DiffResult, liveview::liveview_local_topic, pubsub::PubSub, Html, LiveView,
-    PubSubExt,
-};
+use crate::{html, html::DiffResult, liveview::topics, pubsub::PubSub, Html, LiveView};
 use axum::{
     async_trait,
     extract::{Extension, FromRequest, RequestParts},
@@ -63,12 +60,10 @@ where
 
     futures_util::pin_mut!(markup_stream);
 
-    let mut mounted_stream = pubsub
-        .subscribe::<()>(&liveview_local_topic(liveview_id, "mounted"))
-        .await;
+    let mut mounted_stream = pubsub.subscribe::<()>(&topics::mounted(liveview_id)).await;
 
     let mut disconnected_stream = pubsub
-        .subscribe::<()>(&liveview_local_topic(liveview_id, "socket-disconnected"))
+        .subscribe::<()>(&topics::socket_disconnected(liveview_id))
         .await;
 
     loop {
@@ -80,7 +75,7 @@ where
                         markup = new_markup;
                         if let Err(err) = pubsub
                             .broadcast(
-                                &liveview_local_topic(liveview_id, "rendered"),
+                                &topics::rendered(liveview_id),
                                 Json(diff),
                             )
                             .await
@@ -95,7 +90,7 @@ where
             Some(_) = mounted_stream.next() => {
                 if let Err(err) = pubsub
                     .broadcast(
-                        &liveview_local_topic(liveview_id, "initial-render"),
+                        &topics::initial_render(liveview_id),
                         Json(markup.serialize()),
                     )
                     .await
