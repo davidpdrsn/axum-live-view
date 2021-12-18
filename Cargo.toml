@@ -1,9 +1,5 @@
 [workspace]
 members = [
     "axum-liveview",
-    "demo-app",
+    "axum-liveview-macros",
 ]
-
-[patch.crates-io]
-tokio = { git = "https://github.com/tokio-rs/tokio.git" }
-tokio-stream = { git = "https://github.com/tokio-rs/tokio.git" }

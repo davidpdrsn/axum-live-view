@@ -1,10 +1,13 @@
-use crate::{liveview::liveview_local_topic, pubsub::PubSub, LiveView, PubSubExt};
+use crate::{
+    html, html::DiffResult, liveview::liveview_local_topic, pubsub::PubSub, Html, LiveView,
+    PubSubExt,
+};
 use axum::{
     async_trait,
     extract::{Extension, FromRequest, RequestParts},
+    Json,
 };
 use futures_util::StreamExt;
-use maud::{html, Markup};
 use std::sync::Arc;
 use uuid::Uuid;
 
@@ -29,7 +32,7 @@ impl LiveViewManager {
 }
 
 impl LiveViewManager {
-    pub fn embed<T>(&self, liveview: T) -> Markup
+    pub fn embed<T>(&self, liveview: T) -> Html
     where
         T: LiveView + Send + 'static,
     {
@@ -40,11 +43,12 @@ impl LiveViewManager {
     }
 }
 
-fn wrap_in_liveview_container(liveview_id: Uuid, markup: Markup) -> Markup {
+fn wrap_in_liveview_container(liveview_id: Uuid, markup: Html) -> Html {
+    use crate as axum_liveview;
     html! {
-        div.liveview-container data-liveview-id=(liveview_id) {
-            (markup)
-        }
+        <div class="liveview-container" data-liveview-id={ liveview_id }>
+            { markup }
+        </div>
     }
 }
 
@@ -53,9 +57,15 @@ where
     T: LiveView,
     P: PubSub + Clone,
 {
+    let mut markup = wrap_in_liveview_container(liveview_id, liveview.render());
+
     let markup_stream = crate::liveview::run_to_stream(liveview, pubsub.clone(), liveview_id).await;
 
     futures_util::pin_mut!(markup_stream);
+
+    let mut mounted_stream = pubsub
+        .subscribe::<()>(&liveview_local_topic(liveview_id, "mounted"))
+        .await;
 
     let mut disconnected_stream = pubsub
         .subscribe::<()>(&liveview_local_topic(liveview_id, "socket-disconnected"))
@@ -63,16 +73,34 @@ where
 
     loop {
         tokio::select! {
-            Some(markup) = markup_stream.next() => {
-                let markup = wrap_in_liveview_container(liveview_id, markup);
+            Some(new_markup) = markup_stream.next() => {
+                let new_markup = wrap_in_liveview_container(liveview_id, new_markup);
+                match markup.diff(&new_markup) {
+                    DiffResult::Changed(diff) => {
+                        markup = new_markup;
+                        if let Err(err) = pubsub
+                            .broadcast(
+                                &liveview_local_topic(liveview_id, "rendered"),
+                                Json(diff),
+                            )
+                            .await
+                        {
+                            tracing::error!(%err, "failed to send markup on pubsub");
+                        }
+                    }
+                    DiffResult::Unchanged => {}
+                }
+            }
+
+            Some(_) = mounted_stream.next() => {
                 if let Err(err) = pubsub
                     .broadcast(
-                        &liveview_local_topic(liveview_id, "rendered"),
-                        markup.into_string(),
+                        &liveview_local_topic(liveview_id, "initial-render"),
+                        Json(markup.serialize()),
                     )
                     .await
                 {
-                    tracing::error!(%err, "failed to send markup on pubsub");
+                    tracing::error!(%err, "failed to send `initial-render` on pubsub");
                 }
             }
 

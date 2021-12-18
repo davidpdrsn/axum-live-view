@@ -1,4 +1,4 @@
-use crate::{message::Message, pubsub::PubSub};
+use crate::{html::Html, message::Message, pubsub::PubSub};
 use async_stream::stream;
 use bytes::Bytes;
 use futures_util::{
@@ -6,7 +6,6 @@ use futures_util::{
     stream::StreamExt,
     Stream,
 };
-use maud::Markup;
 use std::sync::Arc;
 use std::{
     any::TypeId,
@@ -21,7 +20,7 @@ use uuid::Uuid;
 pub trait LiveView: Sized + Send + Sync + 'static {
     fn setup(&self, sub: &mut Subscriptions<Self>);
 
-    fn render(&self) -> Markup;
+    fn render(&self) -> Html;
 }
 
 pub enum ShouldRender<T> {
@@ -39,7 +38,7 @@ pub(crate) async fn run_to_stream<T, P>(
     mut liveview: T,
     pubsub: P,
     liveview_id: Uuid,
-) -> impl Stream<Item = Markup> + Send
+) -> impl Stream<Item = Html> + Send
 where
     T: LiveView,
     P: PubSub,
@@ -55,7 +54,7 @@ where
                     .subscribe_raw(&liveview_local_topic(liveview_id, &topic))
                     .await
             }
-            SubscriptionKind::Global(topic) => pubsub.subscribe_raw(&topic).await,
+            SubscriptionKind::Broadcast(topic) => pubsub.subscribe_raw(&topic).await,
         };
         stream_map.insert(callback, stream);
     }
@@ -86,7 +85,7 @@ pub struct Subscriptions<T> {
 
 enum SubscriptionKind {
     Local(String),
-    Global(String),
+    Broadcast(String),
 }
 
 impl<T> Subscriptions<T> {
@@ -105,13 +104,13 @@ impl<T> Subscriptions<T> {
         self.on_kind(SubscriptionKind::Local(topic.to_owned()), callback)
     }
 
-    pub fn on_global<F, Msg>(&mut self, topic: &str, callback: F) -> &mut Self
+    pub fn on_broadcast<F, Msg>(&mut self, topic: &str, callback: F) -> &mut Self
     where
         F: SubscriptionCallback<T, Msg>,
         T: Send + 'static,
         Msg: Message,
     {
-        self.on_kind(SubscriptionKind::Global(topic.to_owned()), callback)
+        self.on_kind(SubscriptionKind::Broadcast(topic.to_owned()), callback)
     }
 
     fn on_kind<F, Msg>(&mut self, kind: SubscriptionKind, callback: F) -> &mut Self

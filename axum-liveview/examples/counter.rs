@@ -1,12 +1,9 @@
-use axum::{
-    async_trait,
-    response::{Html, IntoResponse},
-    routing::get,
-    Router,
+use axum::{response::IntoResponse, routing::get, Router};
+use axum_liveview::{html, Html, LiveView, LiveViewManager, PubSubExt, Subscriptions};
+use std::{
+    net::SocketAddr,
+    time::{Duration, Instant},
 };
-use axum_liveview::{LiveView, LiveViewManager, Subscriptions};
-use maud::{html, Markup};
-use std::net::SocketAddr;
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 #[tokio::main]
@@ -17,6 +14,17 @@ async fn main() {
         .init();
 
     let pubsub = axum_liveview::pubsub::InProcess::new();
+
+    {
+        let pubsub = pubsub.clone();
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(Duration::from_secs(1) / 30);
+            loop {
+                interval.tick().await;
+                let _ = pubsub.broadcast(topics::ping, ()).await;
+            }
+        });
+    }
 
     let app = Router::new()
         .route("/", get(root))
@@ -33,48 +41,68 @@ async fn main() {
 async fn root(live: LiveViewManager) -> impl IntoResponse {
     let counter = Counter::default();
 
-    Html(
-        html! {
-            (maud::DOCTYPE)
-            html {
-                head {
-                    (axum_liveview::assets())
-                }
-                body {
-                    (live.embed(counter))
-
-                    script {
-                        r#"
-                            const liveView = new LiveView('localhost', 4000)
-                            liveView.connect()
-                        "#
-                    }
-                }
-            }
-        }
-        .into_string(),
-    )
+    html! {
+        <!DOCTYPE html>
+        <html>
+            <head>
+                { axum_liveview::assets() }
+            </head>
+            <body>
+                { live.embed(counter) }
+                <script>
+                    r#"
+                        const liveView = new LiveView('localhost', 4000)
+                        liveView.connect()
+                    "#
+                </script>
+            </body>
+        </html>
+    }
 }
 
 #[derive(Default)]
 struct Counter {
     count: u64,
+    previous_click: Option<Instant>,
 }
 
 impl LiveView for Counter {
     fn setup(&self, subscriptions: &mut Subscriptions<Self>) {
-        subscriptions.on("increment", Self::increment);
-        subscriptions.on("decrement", Self::decrement);
+        subscriptions.on(topics::incr, Self::increment);
+        subscriptions.on(topics::decr, Self::decrement);
+        subscriptions.on_broadcast(topics::ping, Self::re_render);
     }
 
-    fn render(&self) -> Markup {
+    fn render(&self) -> Html {
         html! {
-            div {
-                (self.count)
-            }
-            div {
-                button live-click="increment" { "+" }
-                button live-click="decrement" { "-" }
+            <div>
+                <button live-click={ topics::incr }>"+"</button>
+                <button live-click={ topics::decr }>"-"</button>
+            </div>
+
+            <div>
+                "Counter value: "
+                if self.count == 0 {
+                    "zero... how boring"
+                } else {
+                    { self.count }
+                }
+            </div>
+
+            if let Some(previous_click) = &self.previous_click {
+                <div>
+                    <small>
+                        { format!("Your previous click as {:?} seconds ago", previous_click.elapsed().as_secs()) }
+
+                        if previous_click.elapsed().as_secs() == 0 {
+                            ". much engagement, so wow"
+                        }
+
+                        if previous_click.elapsed().as_secs() >= 10 {
+                            ". Anybody still there?"
+                        }
+                    </small>
+                </div>
             }
         }
     }
@@ -83,13 +111,32 @@ impl LiveView for Counter {
 impl Counter {
     async fn increment(mut self) -> Self {
         self.count += 1;
+        let _ = self.previous_click.insert(Instant::now());
         self
     }
 
     async fn decrement(mut self) -> Self {
+        let _ = self.previous_click.insert(Instant::now());
         if self.count > 0 {
             self.count -= 1;
         }
         self
     }
+
+    async fn re_render(self) -> Self {
+        self
+    }
+}
+
+mod topics {
+    macro_rules! declare_topic {
+        ($name:ident) => {
+            #[allow(non_upper_case_globals)]
+            pub const $name: &str = stringify!($name);
+        };
+    }
+
+    declare_topic!(incr);
+    declare_topic!(decr);
+    declare_topic!(ping);
 }
