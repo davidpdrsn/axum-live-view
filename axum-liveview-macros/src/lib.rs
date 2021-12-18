@@ -502,6 +502,8 @@ fn nodes_to_tokens(mut nodes_queue: VecDeque<HtmlNode>, out: &mut proc_macro2::T
                     out.extend(quote! {
                         if #cond {
                             axum_liveview::html::__private::dynamic(&mut html, #then_tree);
+                        } else {
+                            axum_liveview::html::__private::dynamic(&mut html, "");
                         }
                     });
                 }

@@ -165,6 +165,7 @@ impl IntoResponse for Html {
 #[serde(transparent)]
 pub(crate) struct Serialized(Value);
 
+#[derive(Debug)]
 pub(crate) enum DiffResult {
     Changed(Diff),
     Unchanged,
@@ -442,5 +443,18 @@ mod tests {
             { content }
         };
         assert_eq!(view.render(), "foobar");
+    }
+
+    #[test]
+    fn if_up_front_nested() {
+        let content = "bar";
+        let view = html! {
+            <div>
+                if false {}
+                "foo"
+                { content }
+            </div>
+        };
+        assert_eq!(view.render(), "<div>foobar</div>");
     }
 }

@@ -124,13 +124,22 @@ const buildHtmlFromState = (variables) => {
 }
 
 const patchViewState = (state, diff) => {
+    if (typeof state !== 'object') {
+        throw "Cannot merge non-object"
+    }
+
     const deepMerge = (state, diff) => {
         for (const [key, val] of Object.entries(diff)) {
             if (val !== null && typeof val === `object` && val.length === undefined) {
                 if (state[key] === undefined) {
-                    state[key] = new val.__proto__.constructor()
+                    console.log(state[key])
+                    state[key] = {}
                 }
-                patchViewState(state[key], val)
+                if (typeof state[key] === 'string') {
+                    state[key] = val
+                } else {
+                    patchViewState(state[key], val)
+                }
             } else {
                 state[key] = val
             }
