@@ -46,8 +46,7 @@ impl Message for () {
         Ok(Bytes::new())
     }
 
-    fn decode(msg: Bytes) -> anyhow::Result<Self> {
-        anyhow::ensure!(msg.is_empty());
+    fn decode(_msg: Bytes) -> anyhow::Result<Self> {
         Ok(())
     }
 }
@@ -81,5 +80,39 @@ where
 
     fn decode(msg: Bytes) -> anyhow::Result<Self> {
         Ok(Self(bincode::deserialize(&msg)?))
+    }
+}
+
+impl<T> Message for Option<T>
+where
+    T: Message,
+{
+    fn encode(&self) -> anyhow::Result<Bytes> {
+        if let Some(msg) = self {
+            Ok(msg.encode()?)
+        } else {
+            Ok(Bytes::new())
+        }
+    }
+
+    fn decode(msg: Bytes) -> anyhow::Result<Self> {
+        Ok(T::decode(msg).ok())
+    }
+}
+
+impl<T> Message for anyhow::Result<T>
+where
+    T: Message,
+{
+    fn encode(&self) -> anyhow::Result<Bytes> {
+        if let Ok(msg) = self {
+            Ok(msg.encode()?)
+        } else {
+            Ok(Bytes::new())
+        }
+    }
+
+    fn decode(msg: Bytes) -> anyhow::Result<Self> {
+        Ok(T::decode(msg))
     }
 }

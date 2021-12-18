@@ -11,7 +11,7 @@ use axum::{
     Json, Router,
 };
 use futures_util::{stream::BoxStream, StreamExt};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{from_value, json, Value};
 use tokio_stream::StreamMap;
 use uuid::Uuid;
@@ -104,57 +104,6 @@ async fn handle_message_from_socket<P>(
 where
     P: PubSub,
 {
-    #[derive(Debug, Deserialize)]
-    struct RawMessage {
-        liveview_id: Uuid,
-        topic: String,
-        data: Value,
-    }
-
-    impl TryFrom<RawMessage> for Message {
-        type Error = anyhow::Error;
-
-        fn try_from(value: RawMessage) -> Result<Self, Self::Error> {
-            let RawMessage {
-                topic,
-                data,
-                liveview_id: _,
-            } = value;
-
-            match &*topic {
-                "axum/mount-liveview" => Ok(Message::Mount),
-                "axum/live-click" => Ok(Message::LiveClick(from_value(data)?)),
-                "axum/live-input" => Ok(Message::LiveInput(from_value(data)?)),
-                other => {
-                    anyhow::bail!("unknown message topic: {:?}", other)
-                }
-            }
-        }
-    }
-
-    #[derive(Debug)]
-    enum Message {
-        Mount,
-        LiveClick(LiveClick),
-        LiveInput(LiveInput),
-    }
-
-    #[derive(Debug, Deserialize)]
-    struct LiveClick {
-        #[serde(rename = "e")]
-        event_name: String,
-        #[serde(rename = "d")]
-        additional_data: Option<Value>,
-    }
-
-    #[derive(Debug, Deserialize)]
-    struct LiveInput {
-        #[serde(rename = "e")]
-        event_name: String,
-        #[serde(rename = "v")]
-        value: String,
-    }
-
     macro_rules! try_ {
         ($expr:expr, $pattern:path $(,)?) => {
             match $expr {
@@ -170,12 +119,12 @@ where
     let text = try_!(msg, ws::Message::Text);
     let msg: RawMessage = try_!(serde_json::from_str(&text), Ok);
     let liveview_id = msg.liveview_id;
-    let msg = try_!(Message::try_from(msg), Ok);
+    let msg = try_!(EventBindingMessage::try_from(msg), Ok);
 
     tracing::trace!(?msg, "received message from websocket");
 
     match msg {
-        Message::Mount => {
+        EventBindingMessage::Mount => {
             let mut initial_render_stream = pubsub
                 .subscribe::<Json<html::Serialized>>(&topics::initial_render(liveview_id))
                 .await;
@@ -196,29 +145,105 @@ where
                 .diff_streams
                 .insert(liveview_id, Box::pin(diff_stream));
 
-            Some((liveview_id, msg))
+            return Some((liveview_id, msg));
         }
-        Message::LiveClick(LiveClick {
-            event_name,
-            additional_data,
-        }) => {
+        EventBindingMessage::Click(Click { event_name, data }) => {
             let topic = topics::liveview_local(liveview_id, &event_name);
-            if let Some(additional_data) = additional_data {
-                try_!(
-                    pubsub.broadcast(&topic, axum::Json(additional_data)).await,
-                    Ok
-                );
+            if let Some(data) = data {
+                try_!(pubsub.broadcast(&topic, axum::Json(data)).await, Ok);
             } else {
                 try_!(pubsub.broadcast(&topic, ()).await, Ok);
             }
-
-            None
         }
-        Message::LiveInput(LiveInput { event_name, value }) => {
+        EventBindingMessage::InputEvent(InputEvent {
+            event_name,
+            data,
+            value,
+        }) => {
             let topic = topics::liveview_local(liveview_id, &event_name);
-            try_!(pubsub.broadcast(&topic, value).await, Ok);
+            if let Some(data) = data {
+                #[derive(Serialize, Deserialize)]
+                struct DataAndValue {
+                    data: Value,
+                    value: String,
+                }
 
-            None
+                try_!(
+                    pubsub
+                        .broadcast(&topic, axum::Json(DataAndValue { data, value }))
+                        .await,
+                    Ok
+                );
+            } else {
+                #[derive(Serialize, Deserialize)]
+                struct JustValue {
+                    value: String,
+                }
+
+                try_!(
+                    pubsub
+                        .broadcast(&topic, axum::Json(JustValue { value }))
+                        .await,
+                    Ok
+                );
+            }
         }
     }
+
+    None
+}
+
+#[derive(Debug, Deserialize)]
+struct RawMessage {
+    liveview_id: Uuid,
+    topic: String,
+    data: Value,
+}
+
+impl TryFrom<RawMessage> for EventBindingMessage {
+    type Error = anyhow::Error;
+
+    fn try_from(value: RawMessage) -> Result<Self, Self::Error> {
+        let RawMessage {
+            topic,
+            data,
+            liveview_id: _,
+        } = value;
+
+        match &*topic {
+            "axum/mount-liveview" => Ok(EventBindingMessage::Mount),
+            "axum/live-click" => Ok(EventBindingMessage::Click(from_value(data)?)),
+            "axum/live-input" | "axum/live-change" | "axum/live-focus" | "axum/live-blur" => {
+                Ok(EventBindingMessage::InputEvent(from_value(data)?))
+            }
+            other => {
+                anyhow::bail!("unknown message topic: {:?}", other)
+            }
+        }
+    }
+}
+
+#[derive(Debug)]
+enum EventBindingMessage {
+    Mount,
+    Click(Click),
+    InputEvent(InputEvent),
+}
+
+#[derive(Debug, Deserialize)]
+struct Click {
+    #[serde(rename = "e")]
+    event_name: String,
+    #[serde(rename = "d")]
+    data: Option<Value>,
+}
+
+#[derive(Debug, Deserialize)]
+struct InputEvent {
+    #[serde(rename = "e")]
+    event_name: String,
+    #[serde(rename = "v")]
+    value: String,
+    #[serde(rename = "d")]
+    data: Option<Value>,
 }
