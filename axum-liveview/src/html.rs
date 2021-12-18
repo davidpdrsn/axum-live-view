@@ -165,6 +165,7 @@ impl IntoResponse for Html {
 #[serde(transparent)]
 pub(crate) struct Serialized(Value);
 
+#[derive(Debug)]
 pub(crate) enum DiffResult {
     Changed(Diff),
     Unchanged,
