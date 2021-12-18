@@ -1,4 +1,7 @@
-use crate::{html::Html, message::Message, pubsub::PubSub};
+use crate::{
+    html::Html,
+    pubsub::{Message, PubSub},
+};
 use async_stream::stream;
 use bytes::Bytes;
 use futures_util::{
@@ -51,7 +54,7 @@ where
         let stream = match topic {
             SubscriptionKind::Local(topic) => {
                 pubsub
-                    .subscribe_raw(&liveview_local_topic(liveview_id, &topic))
+                    .subscribe_raw(&topics::liveview_local(liveview_id, &topic))
                     .await
             }
             SubscriptionKind::Broadcast(topic) => pubsub.subscribe_raw(&topic).await,
@@ -73,8 +76,28 @@ where
     }
 }
 
-pub(crate) fn liveview_local_topic(liveview_id: Uuid, topic: &str) -> String {
-    format!("liveview/{}/{}", liveview_id, topic)
+pub(crate) mod topics {
+    use uuid::Uuid;
+
+    pub(crate) fn mounted(liveview_id: Uuid) -> String {
+        liveview_local(liveview_id, "mounted")
+    }
+
+    pub(crate) fn initial_render(liveview_id: Uuid) -> String {
+        liveview_local(liveview_id, "initial-render")
+    }
+
+    pub(crate) fn rendered(liveview_id: Uuid) -> String {
+        liveview_local(liveview_id, "rendered")
+    }
+
+    pub(crate) fn socket_disconnected(liveview_id: Uuid) -> String {
+        liveview_local(liveview_id, "socket-disconnected")
+    }
+
+    pub(crate) fn liveview_local(liveview_id: Uuid, topic: &str) -> String {
+        format!("liveview/{}/{}", liveview_id, topic)
+    }
 }
 
 // ---- Subscriptions ----

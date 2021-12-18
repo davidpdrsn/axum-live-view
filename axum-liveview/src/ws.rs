@@ -1,8 +1,8 @@
 use crate::{
     html::{self, Diff},
-    liveview::liveview_local_topic,
+    liveview::topics,
     pubsub::PubSub,
-    LiveViewManager, PubSubExt,
+    LiveViewManager,
 };
 use axum::{
     extract::ws::{self, WebSocket, WebSocketUpgrade},
@@ -72,10 +72,7 @@ where
 
     for liveview_id in liveview_ids {
         let _ = pubsub
-            .broadcast(
-                &liveview_local_topic(liveview_id, "socket-disconnected"),
-                (),
-            )
+            .broadcast(&topics::socket_disconnected(liveview_id), ())
             .await;
     }
 }
@@ -180,23 +177,18 @@ where
     match msg {
         Message::Mount => {
             let mut initial_render_stream = pubsub
-                .subscribe::<Json<html::Serialized>>(&liveview_local_topic(
-                    liveview_id,
-                    "initial-render",
-                ))
+                .subscribe::<Json<html::Serialized>>(&topics::initial_render(liveview_id))
                 .await;
 
             try_!(
-                pubsub
-                    .broadcast(&liveview_local_topic(liveview_id, "mounted"), ())
-                    .await,
+                pubsub.broadcast(&topics::mounted(liveview_id), ()).await,
                 Ok,
             );
 
             let Json(msg) = try_!(initial_render_stream.next().await, Some);
 
             let diff_stream = pubsub
-                .subscribe::<Json<Diff>>(&liveview_local_topic(liveview_id, "rendered"))
+                .subscribe::<Json<Diff>>(&topics::rendered(liveview_id))
                 .await
                 .map(|Json(diff)| diff);
 
@@ -210,7 +202,7 @@ where
             event_name,
             additional_data,
         }) => {
-            let topic = liveview_local_topic(liveview_id, &event_name);
+            let topic = topics::liveview_local(liveview_id, &event_name);
             if let Some(additional_data) = additional_data {
                 try_!(
                     pubsub.broadcast(&topic, axum::Json(additional_data)).await,
@@ -223,7 +215,7 @@ where
             None
         }
         Message::LiveInput(LiveInput { event_name, value }) => {
-            let topic = liveview_local_topic(liveview_id, &event_name);
+            let topic = topics::liveview_local(liveview_id, &event_name);
             try_!(pubsub.broadcast(&topic, value).await, Ok);
 
             None
