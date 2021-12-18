@@ -106,6 +106,7 @@ pub struct Subscriptions<T> {
     handlers: Vec<(SubscriptionKind, AsyncCallback<T>)>,
 }
 
+#[derive(Clone)]
 enum SubscriptionKind {
     Local(String),
     Broadcast(String),
@@ -145,17 +146,21 @@ impl<T> Subscriptions<T> {
         let callback = Arc::new(
             move |receiver: T, raw_msg: Bytes| match Msg::decode(raw_msg) {
                 Ok(msg) => Box::pin(callback.call(receiver, msg).map(|value| value.into())) as _,
-                // TODO(david): handle error someshow
                 Err(err) => {
                     tracing::warn!(?err, "failed to decode message for subscriber");
                     Box::pin(ready(ShouldRender::No(receiver))) as _
                 }
             },
         );
+        let topic: Arc<str> = match kind.clone() {
+            SubscriptionKind::Local(topic) => topic.into(),
+            SubscriptionKind::Broadcast(topic) => topic.into(),
+        };
         self.handlers.push((
             kind,
             AsyncCallback {
                 type_id: TypeId::of::<F>(),
+                topic,
                 callback,
             },
         ));
@@ -201,6 +206,7 @@ where
 
 struct AsyncCallback<T> {
     type_id: TypeId,
+    topic: Arc<str>,
     callback: Arc<dyn Fn(T, Bytes) -> BoxFuture<'static, ShouldRender<T>> + Send + Sync + 'static>,
 }
 
@@ -208,6 +214,7 @@ impl<T> Clone for AsyncCallback<T> {
     fn clone(&self) -> Self {
         Self {
             type_id: self.type_id,
+            topic: self.topic.clone(),
             callback: self.callback.clone(),
         }
     }
@@ -216,12 +223,13 @@ impl<T> Clone for AsyncCallback<T> {
 impl<T> Hash for AsyncCallback<T> {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.type_id.hash(state);
+        self.topic.hash(state);
     }
 }
 
 impl<T> PartialEq for AsyncCallback<T> {
     fn eq(&self, other: &Self) -> bool {
-        self.type_id == other.type_id
+        self.type_id == other.type_id && self.topic == other.topic
     }
 }
 
