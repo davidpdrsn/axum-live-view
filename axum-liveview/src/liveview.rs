@@ -21,7 +21,7 @@ use uuid::Uuid;
 // ---- LiveView ----
 
 pub trait LiveView: Sized + Send + Sync + 'static {
-    fn setup(&self, sub: &mut Subscriptions<Self>);
+    fn setup(&self, sub: &mut Setup<Self>);
 
     fn render(&self) -> Html;
 }
@@ -46,11 +46,11 @@ where
     T: LiveView,
     P: PubSub,
 {
-    let mut subscriptions = Subscriptions::new();
-    liveview.setup(&mut subscriptions);
+    let mut setup = Setup::new();
+    liveview.setup(&mut setup);
 
     let mut stream_map = StreamMap::new();
-    for (topic, callback) in subscriptions.handlers {
+    for (topic, callback) in setup.subscriptions {
         let stream = match topic {
             SubscriptionKind::Local(topic) => {
                 pubsub
@@ -100,10 +100,8 @@ pub(crate) mod topics {
     }
 }
 
-// ---- Subscriptions ----
-
-pub struct Subscriptions<T> {
-    handlers: Vec<(SubscriptionKind, AsyncCallback<T>)>,
+pub struct Setup<T> {
+    subscriptions: Vec<(SubscriptionKind, AsyncCallback<T>)>,
 }
 
 #[derive(Clone)]
@@ -112,14 +110,14 @@ enum SubscriptionKind {
     Broadcast(String),
 }
 
-impl<T> Subscriptions<T> {
+impl<T> Setup<T> {
     fn new() -> Self {
         Self {
-            handlers: Default::default(),
+            subscriptions: Default::default(),
         }
     }
 
-    pub fn on<F, Msg>(&mut self, topic: &str, callback: F) -> &mut Self
+    pub fn on<F, Msg>(&mut self, topic: &str, callback: F)
     where
         F: SubscriptionCallback<T, Msg>,
         T: Send + 'static,
@@ -128,7 +126,7 @@ impl<T> Subscriptions<T> {
         self.on_kind(SubscriptionKind::Local(topic.to_owned()), callback)
     }
 
-    pub fn on_broadcast<F, Msg>(&mut self, topic: &str, callback: F) -> &mut Self
+    pub fn on_broadcast<F, Msg>(&mut self, topic: &str, callback: F)
     where
         F: SubscriptionCallback<T, Msg>,
         T: Send + 'static,
@@ -137,7 +135,7 @@ impl<T> Subscriptions<T> {
         self.on_kind(SubscriptionKind::Broadcast(topic.to_owned()), callback)
     }
 
-    fn on_kind<F, Msg>(&mut self, kind: SubscriptionKind, callback: F) -> &mut Self
+    fn on_kind<F, Msg>(&mut self, kind: SubscriptionKind, callback: F)
     where
         F: SubscriptionCallback<T, Msg>,
         T: Send + 'static,
@@ -156,7 +154,7 @@ impl<T> Subscriptions<T> {
             SubscriptionKind::Local(topic) => topic.into(),
             SubscriptionKind::Broadcast(topic) => topic.into(),
         };
-        self.handlers.push((
+        self.subscriptions.push((
             kind,
             AsyncCallback {
                 type_id: TypeId::of::<F>(),
@@ -164,7 +162,6 @@ impl<T> Subscriptions<T> {
                 callback,
             },
         ));
-        self
     }
 }
 

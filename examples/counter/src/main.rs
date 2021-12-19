@@ -1,5 +1,5 @@
 use axum::{response::IntoResponse, routing::get, Router};
-use axum_liveview::{html, Html, LiveView, LiveViewManager, PubSub, Subscriptions};
+use axum_liveview::{html, Html, LiveView, LiveViewManager, PubSub, Setup};
 use std::{
     net::SocketAddr,
     time::{Duration, Instant},
@@ -63,7 +63,7 @@ struct Counter {
 }
 
 impl LiveView for Counter {
-    fn setup(&self, subscriptions: &mut Subscriptions<Self>) {
+    fn setup(&self, subscriptions: &mut Setup<Self>) {
         subscriptions.on(topics::incr, Self::increment);
         subscriptions.on(topics::decr, Self::decrement);
         subscriptions.on_broadcast(topics::ping, Self::re_render);

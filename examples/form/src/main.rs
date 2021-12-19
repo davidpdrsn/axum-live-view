@@ -1,7 +1,7 @@
 use self::input::Input;
 use crate::input::{greater_than, less_than, not_empty, present, BoxedValidation, Validation};
 use axum::{extract::Form, response::IntoResponse, routing::get, Router};
-use axum_liveview::{html, messages::InputEvent, Html, LiveView, LiveViewManager, Subscriptions};
+use axum_liveview::{html, messages::InputEvent, Html, LiveView, LiveViewManager, Setup};
 use serde::Deserialize;
 use std::net::SocketAddr;
 
@@ -76,54 +76,52 @@ struct FormView {
 }
 
 impl LiveView for FormView {
-    fn setup(&self, subscriptions: &mut Subscriptions<Self>) {
-        subscriptions
-            .on(
-                &self.name_input.changed_topic(),
-                |mut this: Self, event| async move {
-                    this.name_input.update_value(event);
-                    this
-                },
-            )
-            .on(
-                &self.name_input.blur_topic(),
-                |mut this: Self, event| async move {
-                    this.name_input.update_validations(event);
-                    this.name_focus = false;
-                    this
-                },
-            )
-            .on(
-                &self.name_input.focus_topic(),
-                |mut this: Self, _event: InputEvent| async move {
-                    this.name_focus = true;
-                    this
-                },
-            );
+    fn setup(&self, setup: &mut Setup<Self>) {
+        setup.on(
+            &self.name_input.changed_topic(),
+            |mut this: Self, event| async move {
+                this.name_input.update_value(event);
+                this
+            },
+        );
+        setup.on(
+            &self.name_input.blur_topic(),
+            |mut this: Self, event| async move {
+                this.name_input.update_validations(event);
+                this.name_focus = false;
+                this
+            },
+        );
+        setup.on(
+            &self.name_input.focus_topic(),
+            |mut this: Self, _event: InputEvent| async move {
+                this.name_focus = true;
+                this
+            },
+        );
 
-        subscriptions
-            .on(
-                &self.age_input.changed_topic(),
-                |mut this: Self, event| async move {
-                    this.age_input.update_value(event);
-                    this
-                },
-            )
-            .on(
-                &self.age_input.blur_topic(),
-                |mut this: Self, event| async move {
-                    this.age_input.update_validations(event);
-                    this.age_focus = false;
-                    this
-                },
-            )
-            .on(
-                &self.age_input.focus_topic(),
-                |mut this: Self, _event: InputEvent| async move {
-                    this.age_focus = true;
-                    this
-                },
-            );
+        setup.on(
+            &self.age_input.changed_topic(),
+            |mut this: Self, event| async move {
+                this.age_input.update_value(event);
+                this
+            },
+        );
+        setup.on(
+            &self.age_input.blur_topic(),
+            |mut this: Self, event| async move {
+                this.age_input.update_validations(event);
+                this.age_focus = false;
+                this
+            },
+        );
+        setup.on(
+            &self.age_input.focus_topic(),
+            |mut this: Self, _event: InputEvent| async move {
+                this.age_focus = true;
+                this
+            },
+        );
     }
 
     fn render(&self) -> Html {
