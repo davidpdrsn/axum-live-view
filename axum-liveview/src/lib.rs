@@ -64,6 +64,10 @@ pub use self::{
     pubsub::PubSub,
 };
 
+pub mod messages {
+    pub use crate::ws::InputEvent;
+}
+
 const APP_JS_PATH: &str = "/live/app.js";
 
 pub fn routes<B>() -> Router<B>

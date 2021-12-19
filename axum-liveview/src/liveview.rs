@@ -1,6 +1,6 @@
 use crate::{
     html::Html,
-    pubsub::{Message, PubSub},
+    pubsub::{Decode, PubSub},
 };
 use async_stream::stream;
 use bytes::Bytes;
@@ -123,7 +123,7 @@ impl<T> Subscriptions<T> {
     where
         F: SubscriptionCallback<T, Msg>,
         T: Send + 'static,
-        Msg: Message,
+        Msg: Decode,
     {
         self.on_kind(SubscriptionKind::Local(topic.to_owned()), callback)
     }
@@ -132,7 +132,7 @@ impl<T> Subscriptions<T> {
     where
         F: SubscriptionCallback<T, Msg>,
         T: Send + 'static,
-        Msg: Message,
+        Msg: Decode,
     {
         self.on_kind(SubscriptionKind::Broadcast(topic.to_owned()), callback)
     }
@@ -141,7 +141,7 @@ impl<T> Subscriptions<T> {
     where
         F: SubscriptionCallback<T, Msg>,
         T: Send + 'static,
-        Msg: Message,
+        Msg: Decode,
     {
         let callback = Arc::new(
             move |receiver: T, raw_msg: Bytes| match Msg::decode(raw_msg) {
@@ -194,7 +194,7 @@ where
     F: Fn(T, Msg) -> Fut + Copy + Send + Sync + 'static,
     Fut: Future<Output = K> + Send + 'static,
     K: Into<ShouldRender<T>>,
-    Msg: Message,
+    Msg: Decode,
 {
     type Output = K;
     type Future = Fut;
