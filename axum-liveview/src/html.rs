@@ -115,7 +115,10 @@ impl Html {
         if self.fixed.len() != other.fixed.len()
             || self.fixed.iter().zip(&other.fixed).any(|(a, b)| a != b)
         {
-            out.insert("s".to_owned(), serde_json::to_value(&other.fixed).unwrap());
+            out.insert(
+                FIXED.to_owned(),
+                serde_json::to_value(&other.fixed).unwrap(),
+            );
         }
 
         if out.is_empty() {
@@ -137,7 +140,7 @@ impl Html {
 
         out.as_object_mut()
             .unwrap()
-            .insert("s".to_owned(), serde_json::to_value(&self.fixed).unwrap());
+            .insert(FIXED.to_owned(), serde_json::to_value(&self.fixed).unwrap());
 
         Serialized(out)
     }
@@ -154,6 +157,8 @@ impl Html {
             .collect::<String>()
     }
 }
+
+const FIXED: &str = "f";
 
 impl IntoResponse for Html {
     fn into_response(self) -> axum::response::Response {
