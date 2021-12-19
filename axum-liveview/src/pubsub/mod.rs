@@ -10,7 +10,7 @@ mod message;
 
 pub use self::{
     in_process::InProcess,
-    message::{Bincode, Message},
+    message::{Bincode, Decode, Encode},
 };
 
 #[async_trait]
@@ -22,7 +22,7 @@ pub trait PubSub: Send + Sync + 'static {
     async fn broadcast<T>(&self, topic: &str, msg: T) -> anyhow::Result<()>
     where
         Self: Sized,
-        T: Message + Send + Sync + 'static,
+        T: Encode + Send + Sync + 'static,
     {
         match msg.encode() {
             Ok(bytes) => self.send_raw(topic, bytes).await,
@@ -33,7 +33,7 @@ pub trait PubSub: Send + Sync + 'static {
     async fn subscribe<T>(&self, topic: &str) -> BoxStream<'static, T>
     where
         Self: Sized,
-        T: Message + Send + Sync + 'static,
+        T: Decode + Send + Sync + 'static,
     {
         let mut stream = self.subscribe_raw(topic).await;
         let topic = topic.to_owned();

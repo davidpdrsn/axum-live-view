@@ -1,7 +1,9 @@
+use std::collections::HashMap;
+
 use crate::{
     html::{self, Diff},
     liveview::topics,
-    pubsub::PubSub,
+    pubsub::{Decode, Encode, PubSub},
     LiveViewManager,
 };
 use axum::{
@@ -155,42 +157,54 @@ where
                 try_!(pubsub.broadcast(&topic, ()).await, Ok);
             }
         }
-        EventBindingMessage::InputEvent(InputEvent {
+        EventBindingMessage::InputEvent(InputEventMessage {
             event_name,
             data,
             value,
         }) => {
             let topic = topics::liveview_local(liveview_id, &event_name);
-            if let Some(data) = data {
-                #[derive(Serialize, Deserialize)]
-                struct DataAndValue {
-                    data: Value,
-                    value: String,
-                }
-
-                try_!(
-                    pubsub
-                        .broadcast(&topic, axum::Json(DataAndValue { data, value }))
-                        .await,
-                    Ok
-                );
+            let data = if let Some(data) = data {
+                serde_json::from_value(data.clone())
+                    .unwrap_or_else(|_| panic!("invalid data from `InputEventMessage`: {:?}", data))
             } else {
-                #[derive(Serialize, Deserialize)]
-                struct JustValue {
-                    value: String,
-                }
-
-                try_!(
-                    pubsub
-                        .broadcast(&topic, axum::Json(JustValue { value }))
-                        .await,
-                    Ok
-                );
-            }
+                Default::default()
+            };
+            try_!(
+                pubsub.broadcast(&topic, InputEvent { value, data }).await,
+                Ok
+            );
         }
     }
 
     None
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct InputEvent {
+    value: String,
+    data: HashMap<String, String>,
+}
+
+impl InputEvent {
+    pub fn value(&self) -> &str {
+        &self.value
+    }
+
+    pub fn get(&self, key: &str) -> Option<&str> {
+        self.data.get(key).map(|s| s.as_str())
+    }
+}
+
+impl Encode for InputEvent {
+    fn encode(&self) -> anyhow::Result<bytes::Bytes> {
+        axum::Json(self).encode()
+    }
+}
+
+impl Decode for InputEvent {
+    fn decode(msg: bytes::Bytes) -> anyhow::Result<Self> {
+        Ok(axum::Json::<Self>::decode(msg)?.0)
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -227,7 +241,7 @@ impl TryFrom<RawMessage> for EventBindingMessage {
 enum EventBindingMessage {
     Mount,
     Click(Click),
-    InputEvent(InputEvent),
+    InputEvent(InputEventMessage),
 }
 
 #[derive(Debug, Deserialize)]
@@ -239,7 +253,7 @@ struct Click {
 }
 
 #[derive(Debug, Deserialize)]
-struct InputEvent {
+struct InputEventMessage {
     #[serde(rename = "e")]
     event_name: String,
     #[serde(rename = "v")]

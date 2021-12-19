@@ -1,66 +1,84 @@
 use bytes::Bytes;
 use serde::{de::DeserializeOwned, Serialize};
 
-pub trait Message: Sized {
+pub trait Encode {
     fn encode(&self) -> anyhow::Result<Bytes>;
+}
 
+pub trait Decode: Sized {
     fn decode(msg: Bytes) -> anyhow::Result<Self>;
 }
 
-impl<T> Message for (T,)
+impl<T> Encode for (T,)
 where
-    T: Message,
+    T: Encode,
 {
     fn encode(&self) -> anyhow::Result<Bytes> {
         self.0.encode()
     }
+}
 
+impl<T> Decode for (T,)
+where
+    T: Decode,
+{
     fn decode(msg: Bytes) -> anyhow::Result<Self> {
         let t = T::decode(msg)?;
         Ok((t,))
     }
 }
 
-impl Message for Bytes {
+impl Encode for Bytes {
     fn encode(&self) -> anyhow::Result<Bytes> {
         Ok(self.clone())
     }
+}
 
+impl Decode for Bytes {
     fn decode(msg: Bytes) -> anyhow::Result<Self> {
         Ok(msg)
     }
 }
 
-impl Message for String {
+impl Encode for String {
     fn encode(&self) -> anyhow::Result<Bytes> {
         Ok(Bytes::copy_from_slice(self.as_bytes()))
     }
+}
 
+impl Decode for String {
     fn decode(msg: Bytes) -> anyhow::Result<Self> {
         Ok(std::str::from_utf8(&*msg)?.to_owned())
     }
 }
 
-impl Message for () {
+impl Encode for () {
     fn encode(&self) -> anyhow::Result<Bytes> {
         Ok(Bytes::new())
     }
+}
 
+impl Decode for () {
     fn decode(_msg: Bytes) -> anyhow::Result<Self> {
         Ok(())
     }
 }
 
-impl<T> Message for axum::Json<T>
+impl<T> Encode for axum::Json<T>
 where
-    T: Serialize + DeserializeOwned,
+    T: Serialize,
 {
     fn encode(&self) -> anyhow::Result<Bytes> {
         let bytes = serde_json::to_vec(&self.0)?;
         let bytes = Bytes::copy_from_slice(&bytes);
         Ok(bytes)
     }
+}
 
+impl<T> Decode for axum::Json<T>
+where
+    T: DeserializeOwned,
+{
     fn decode(msg: Bytes) -> anyhow::Result<Self> {
         Ok(Self(serde_json::from_slice(&msg)?))
     }
@@ -68,7 +86,7 @@ where
 
 pub struct Bincode<T>(pub T);
 
-impl<T> Message for Bincode<T>
+impl<T> Encode for Bincode<T>
 where
     T: Serialize + DeserializeOwned,
 {
@@ -77,15 +95,20 @@ where
         let bytes = Bytes::copy_from_slice(&bytes);
         Ok(bytes)
     }
+}
 
+impl<T> Decode for Bincode<T>
+where
+    T: Serialize + DeserializeOwned,
+{
     fn decode(msg: Bytes) -> anyhow::Result<Self> {
         Ok(Self(bincode::deserialize(&msg)?))
     }
 }
 
-impl<T> Message for Option<T>
+impl<T> Encode for Option<T>
 where
-    T: Message,
+    T: Encode,
 {
     fn encode(&self) -> anyhow::Result<Bytes> {
         if let Some(msg) = self {
@@ -94,15 +117,20 @@ where
             Ok(Bytes::new())
         }
     }
+}
 
+impl<T> Decode for Option<T>
+where
+    T: Decode,
+{
     fn decode(msg: Bytes) -> anyhow::Result<Self> {
         Ok(T::decode(msg).ok())
     }
 }
 
-impl<T> Message for anyhow::Result<T>
+impl<T> Encode for anyhow::Result<T>
 where
-    T: Message,
+    T: Encode,
 {
     fn encode(&self) -> anyhow::Result<Bytes> {
         if let Ok(msg) = self {
@@ -111,7 +139,12 @@ where
             Ok(Bytes::new())
         }
     }
+}
 
+impl<T> Decode for anyhow::Result<T>
+where
+    T: Decode,
+{
     fn decode(msg: Bytes) -> anyhow::Result<Self> {
         Ok(T::decode(msg))
     }

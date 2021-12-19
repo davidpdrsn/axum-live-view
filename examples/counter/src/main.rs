@@ -4,14 +4,10 @@ use std::{
     net::SocketAddr,
     time::{Duration, Instant},
 };
-use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 #[tokio::main]
 async fn main() {
-    tracing_subscriber::registry()
-        .with(fmt::layer())
-        .with(EnvFilter::from_default_env())
-        .init();
+    tracing_subscriber::fmt::init();
 
     let pubsub = axum_liveview::pubsub::InProcess::new();
 
