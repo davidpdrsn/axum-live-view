@@ -77,7 +77,6 @@
 
         bindToChildren(element, { attr, bindTo }) {
             var attr = `live-${attr}`
-            console.log(element)
             element.addEventListener(bindTo, (event) => {
                 if (element === window) debugger;
 
@@ -127,7 +126,6 @@
             for (const [key, val] of Object.entries(diff)) {
                 if (val !== null && typeof val === `object` && val.length === undefined) {
                     if (state[key] === undefined) {
-                        console.log(state[key])
                         state[key] = {}
                     }
                     if (typeof state[key] === 'string') {
