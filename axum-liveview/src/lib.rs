@@ -58,7 +58,7 @@ pub use axum_liveview_macros::html;
 #[doc(inline)]
 pub use self::{
     html::Html,
-    liveview::{LiveView, Setup, ShouldRender},
+    liveview::{LiveView, RenderResult, Setup},
     manager::LiveViewManager,
     middleware::layer,
     pubsub::PubSub,

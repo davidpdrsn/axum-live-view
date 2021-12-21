@@ -1,5 +1,5 @@
 use axum::{response::IntoResponse, routing::get, Router};
-use axum_liveview::{html, Html, LiveView, LiveViewManager, PubSub, Setup};
+use axum_liveview::{html, Html, LiveView, LiveViewManager, PubSub, RenderResult, Setup};
 use std::{
     net::SocketAddr,
     time::{Duration, Instant},
@@ -66,6 +66,7 @@ impl LiveView for Counter {
     fn setup(&self, subscriptions: &mut Setup<Self>) {
         subscriptions.on(topics::incr, Self::increment);
         subscriptions.on(topics::decr, Self::decrement);
+        subscriptions.on(topics::goto, Self::goto);
         subscriptions.on_broadcast(topics::ping, Self::re_render);
     }
 
@@ -75,6 +76,8 @@ impl LiveView for Counter {
                 <button live-click={ topics::incr }>"+"</button>
                 <button live-click={ topics::decr }>"-"</button>
             </div>
+
+            <button live-click={ topics::goto }>"Goto"</button>
 
             <div>
                 "Counter value: "
@@ -122,6 +125,10 @@ impl Counter {
     async fn re_render(self) -> Self {
         self
     }
+
+    async fn goto(self) -> RenderResult<Self> {
+        RenderResult::navigate_to("/".parse().unwrap())
+    }
 }
 
 mod topics {
@@ -135,4 +142,5 @@ mod topics {
     declare_topic!(incr);
     declare_topic!(decr);
     declare_topic!(ping);
+    declare_topic!(goto);
 }

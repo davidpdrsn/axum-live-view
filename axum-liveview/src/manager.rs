@@ -1,4 +1,7 @@
-use crate::{html, html::DiffResult, liveview::topics, pubsub::PubSub, Html, LiveView};
+use crate::{
+    html, html::DiffResult, liveview::topics, liveview::LiveViewStreamItem, pubsub::PubSub,
+    ws::JsCommand, Html, LiveView,
+};
 use axum::{
     async_trait,
     extract::{Extension, FromRequest, RequestParts},
@@ -68,22 +71,21 @@ where
 
     loop {
         tokio::select! {
-            Some(new_markup) = markup_stream.next() => {
-                let new_markup = wrap_in_liveview_container(liveview_id, new_markup);
-                match markup.diff(&new_markup) {
-                    DiffResult::Changed(diff) => {
-                        markup = new_markup;
+            Some(item) = markup_stream.next() => {
+                match item {
+                    LiveViewStreamItem::Html(new_markup) => {
+                        handle_new_markup(liveview_id, &mut markup, new_markup, &pubsub).await;
+                    },
+                    LiveViewStreamItem::NavigateTo(uri) => {
+                        let msg = JsCommand::NavigateTo { uri: uri.to_string() };
+
                         if let Err(err) = pubsub
-                            .broadcast(
-                                &topics::rendered(liveview_id),
-                                Json(diff),
-                            )
+                            .broadcast(&topics::js_command(liveview_id), Json(msg))
                             .await
                         {
                             tracing::error!(%err, "failed to send markup on pubsub");
                         }
                     }
-                    DiffResult::Unchanged => {}
                 }
             }
 
@@ -101,9 +103,30 @@ where
 
             Some(_) = disconnected_stream.next() => {
                 tracing::trace!(%liveview_id, "shutting down liveview task");
-                return;
+                break;
             }
         }
+    }
+}
+
+async fn handle_new_markup<P>(liveview_id: Uuid, markup: &mut Html, new_markup: Html, pubsub: &P)
+where
+    P: PubSub,
+{
+    let new_markup = wrap_in_liveview_container(liveview_id, new_markup);
+
+    match markup.diff(&new_markup) {
+        DiffResult::Changed(diff) => {
+            *markup = new_markup;
+
+            if let Err(err) = pubsub
+                .broadcast(&topics::rendered(liveview_id), Json(diff))
+                .await
+            {
+                tracing::error!(%err, "failed to send markup on pubsub");
+            }
+        }
+        DiffResult::Unchanged => {}
     }
 }
 
