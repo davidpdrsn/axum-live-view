@@ -3,6 +3,7 @@ use crate::{
     pubsub::{Decode, PubSub},
 };
 use async_stream::stream;
+use axum::http::Uri;
 use bytes::Bytes;
 use futures_util::{
     future::{BoxFuture, FutureExt},
@@ -26,14 +27,39 @@ pub trait LiveView: Sized + Send + Sync + 'static {
     fn render(&self) -> Html;
 }
 
-pub enum ShouldRender<T> {
-    Yes(T),
-    No(T),
+pub struct RenderResult<T> {
+    kind: Kind<T>,
 }
 
-impl<T> From<T> for ShouldRender<T> {
+pub(crate) enum Kind<T> {
+    Render(T),
+    DontRender(T),
+    NavigateTo(Uri),
+}
+
+impl<T> RenderResult<T> {
+    pub fn render(value: T) -> Self {
+        Self {
+            kind: Kind::Render(value),
+        }
+    }
+
+    pub fn dont_render(value: T) -> Self {
+        Self {
+            kind: Kind::DontRender(value),
+        }
+    }
+
+    pub fn navigate_to(uri: Uri) -> Self {
+        Self {
+            kind: Kind::NavigateTo(uri),
+        }
+    }
+}
+
+impl<T> From<T> for RenderResult<T> {
     fn from(value: T) -> Self {
-        Self::Yes(value)
+        Self::render(value)
     }
 }
 
@@ -41,7 +67,7 @@ pub(crate) async fn run_to_stream<T, P>(
     mut liveview: T,
     pubsub: P,
     liveview_id: Uuid,
-) -> impl Stream<Item = Html> + Send
+) -> impl Stream<Item = LiveViewStreamItem> + Send
 where
     T: LiveView,
     P: PubSub,
@@ -64,16 +90,26 @@ where
 
     stream! {
         while let Some((callback, msg)) = stream_map.next().await {
-            liveview = match (callback.callback)(liveview, msg).await {
-                ShouldRender::Yes(liveview) => {
+            let result = (callback.callback)(liveview, msg).await;
+            liveview = match result.kind {
+                Kind::Render(liveview) => {
                     let markup = liveview.render();
-                    yield markup;
+                    yield LiveViewStreamItem::Html(markup);
                     liveview
                 }
-                ShouldRender::No(liveview) => liveview,
+                Kind::DontRender(liveview) => liveview,
+                Kind::NavigateTo(uri) => {
+                    yield LiveViewStreamItem::NavigateTo(uri);
+                    break;
+                }
             };
         }
     }
+}
+
+pub(crate) enum LiveViewStreamItem {
+    Html(Html),
+    NavigateTo(Uri),
 }
 
 pub(crate) mod topics {
@@ -89,6 +125,10 @@ pub(crate) mod topics {
 
     pub(crate) fn rendered(liveview_id: Uuid) -> String {
         liveview_local(liveview_id, "rendered")
+    }
+
+    pub(crate) fn js_command(liveview_id: Uuid) -> String {
+        liveview_local(liveview_id, "js-command")
     }
 
     pub(crate) fn socket_disconnected(liveview_id: Uuid) -> String {
@@ -146,7 +186,7 @@ impl<T> Setup<T> {
                 Ok(msg) => Box::pin(callback.call(receiver, msg).map(|value| value.into())) as _,
                 Err(err) => {
                     tracing::warn!(?err, "failed to decode message for subscriber");
-                    Box::pin(ready(ShouldRender::No(receiver))) as _
+                    Box::pin(ready(RenderResult::dont_render(receiver))) as _
                 }
             },
         );
@@ -166,7 +206,7 @@ impl<T> Setup<T> {
 }
 
 pub trait SubscriptionCallback<T, Msg>: Copy + Send + Sync + 'static {
-    type Output: Into<ShouldRender<T>>;
+    type Output: Into<RenderResult<T>>;
     type Future: Future<Output = Self::Output> + Send + 'static;
 
     fn call(self, receiver: T, input: Msg) -> Self::Future;
@@ -176,7 +216,7 @@ impl<T, F, Fut, K> SubscriptionCallback<T, ()> for F
 where
     F: Fn(T) -> Fut + Copy + Send + Sync + 'static,
     Fut: Future<Output = K> + Send + 'static,
-    K: Into<ShouldRender<T>>,
+    K: Into<RenderResult<T>>,
 {
     type Output = K;
     type Future = Fut;
@@ -190,7 +230,7 @@ impl<T, Msg, F, Fut, K> SubscriptionCallback<T, (Msg,)> for F
 where
     F: Fn(T, Msg) -> Fut + Copy + Send + Sync + 'static,
     Fut: Future<Output = K> + Send + 'static,
-    K: Into<ShouldRender<T>>,
+    K: Into<RenderResult<T>>,
     Msg: Decode,
 {
     type Output = K;
@@ -204,7 +244,7 @@ where
 struct AsyncCallback<T> {
     type_id: TypeId,
     topic: Arc<str>,
-    callback: Arc<dyn Fn(T, Bytes) -> BoxFuture<'static, ShouldRender<T>> + Send + Sync + 'static>,
+    callback: Arc<dyn Fn(T, Bytes) -> BoxFuture<'static, RenderResult<T>> + Send + Sync + 'static>,
 }
 
 impl<T> Clone for AsyncCallback<T> {

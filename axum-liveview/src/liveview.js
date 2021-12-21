@@ -31,8 +31,11 @@
                     this.updateDom(element, html)
                     this.viewStates[liveviewId] = data
 
+                } else if (topic === "j") {
+                    this.handleJsCommand(data)
+
                 } else {
-                    console.error("unknown event", topic, data)
+                    console.error("unknown topic", topic, data)
                 }
             })
         }
@@ -43,6 +46,20 @@
                     this.addEventListeners(node)
                 },
             })
+        }
+
+        handleJsCommand({ type, data }) {
+            if (type == "navigate_to") {
+                const uri = data.uri
+                if (uri.startsWith("http")) {
+                    window.location.href = uri
+                } else {
+                    window.location.pathname = uri
+                }
+
+            } else {
+                console.error("unknown type", data)
+            }
         }
 
         send(liveviewId, topic, data) {

@@ -32,6 +32,7 @@ async fn ws(upgrade: WebSocketUpgrade, live: LiveViewManager) -> impl IntoRespon
 #[derive(Default)]
 struct SocketState {
     diff_streams: StreamMap<Uuid, BoxStream<'static, Diff>>,
+    js_command_streams: StreamMap<Uuid, BoxStream<'static, JsCommand>>,
 }
 
 async fn handle_socket<P>(mut socket: WebSocket, pubsub: P)
@@ -63,6 +64,21 @@ where
                     break;
                 }
             }
+
+            Some((liveview_id, js_command)) = state.js_command_streams.next() => {
+                let msg = match js_command {
+                    JsCommand::NavigateTo { uri } => json!({
+                        "type": "navigate_to",
+                        "data": {
+                            "uri": uri,
+                        }
+                    }),
+                };
+
+                if send_message_to_socket(&mut socket, liveview_id, JS_COMMAND_TOPIC, msg).await.is_err() {
+                    break;
+                }
+            }
         }
     }
 
@@ -81,6 +97,7 @@ where
 
 const INITIAL_RENDER_TOPIC: &str = "i";
 const RENDERED_TOPIC: &str = "r";
+const JS_COMMAND_TOPIC: &str = "j";
 
 async fn send_message_to_socket<T>(
     socket: &mut WebSocket,
@@ -142,10 +159,17 @@ where
                 .subscribe::<Json<Diff>>(&topics::rendered(liveview_id))
                 .await
                 .map(|Json(diff)| diff);
-
             state
                 .diff_streams
                 .insert(liveview_id, Box::pin(diff_stream));
+
+            let js_command_stream = pubsub
+                .subscribe::<Json<JsCommand>>(&topics::js_command(liveview_id))
+                .await
+                .map(|Json(js_command)| js_command);
+            state
+                .js_command_streams
+                .insert(liveview_id, Box::pin(js_command_stream));
 
             return Some((liveview_id, msg));
         }
@@ -260,4 +284,9 @@ struct InputEventMessage {
     value: String,
     #[serde(rename = "d")]
     data: Option<Value>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub(crate) enum JsCommand {
+    NavigateTo { uri: String },
 }
