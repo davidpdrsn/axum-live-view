@@ -1,20 +1,19 @@
-use self::input::Input;
-use crate::input::{greater_than, less_than, not_empty, present, BoxedValidation, Validation};
-use axum::{extract::Form, response::IntoResponse, routing::get, Router};
-use axum_liveview::{html, messages::InputEvent, Html, LiveView, LiveViewManager, Setup};
+use axum::{response::IntoResponse, routing::get, Router};
+use axum_liveview::{html, messages::FormEvent, Html, LiveView, LiveViewManager, Setup};
 use serde::Deserialize;
-use std::net::SocketAddr;
-
-mod input;
+use std::{collections::HashMap, net::SocketAddr};
+use tracing_subscriber::fmt::format::FmtSpan;
 
 #[tokio::main]
 async fn main() {
-    tracing_subscriber::fmt::init();
+    tracing_subscriber::fmt::fmt()
+        .with_span_events(FmtSpan::ENTER)
+        .init();
 
     let pubsub = axum_liveview::pubsub::InProcess::new();
 
     let app = Router::new()
-        .route("/", get(root).post(post_form))
+        .route("/", get(root))
         .merge(axum_liveview::routes())
         .layer(axum_liveview::layer(pubsub));
 
@@ -26,34 +25,13 @@ async fn main() {
 }
 
 async fn root(live: LiveViewManager) -> impl IntoResponse {
-    let name_input = Input::new("name")
-        .type_("text")
-        .validation(not_empty().and(present()).boxed());
-
-    let age_input = Input::new("age")
-        .type_("number")
-        .validation(greater_than(9).and(less_than(21)).and(present()).boxed());
-
-    let form = FormView {
-        name_input,
-        name_focus: false,
-        age_input,
-        age_focus: false,
-    };
+    let form = FormView::default();
 
     html! {
         <!DOCTYPE html>
         <html>
             <head>
                 { axum_liveview::assets() }
-                <link rel="stylesheet" href="https://cdn.simplecss.org/simple.min.css" />
-                <style>
-                    r#"
-                    .focus input {
-                        background: rgb(60, 60, 60);
-                    }
-                    "#
-                </style>
             </head>
             <body>
                 { live.embed(form) }
@@ -68,85 +46,221 @@ async fn root(live: LiveViewManager) -> impl IntoResponse {
     }
 }
 
+#[derive(Default)]
 struct FormView {
-    name_input: Input<String, BoxedValidation<String>>,
-    name_focus: bool,
-    age_input: Input<u32, BoxedValidation<u32>>,
-    age_focus: bool,
+    text_input_value: String,
+    textarea_value: String,
+    errors: Vec<String>,
+    values: Option<FormValues>,
 }
 
 impl LiveView for FormView {
     fn setup(&self, setup: &mut Setup<Self>) {
-        setup.on(
-            &self.name_input.changed_topic(),
-            |mut this: Self, event| async move {
-                this.name_input.update_value(event);
-                this
-            },
-        );
-        setup.on(
-            &self.name_input.blur_topic(),
-            |mut this: Self, event| async move {
-                this.name_input.update_validations(event);
-                this.name_focus = false;
-                this
-            },
-        );
-        setup.on(
-            &self.name_input.focus_topic(),
-            |mut this: Self, _event: InputEvent| async move {
-                this.name_focus = true;
-                this
-            },
-        );
-
-        setup.on(
-            &self.age_input.changed_topic(),
-            |mut this: Self, event| async move {
-                this.age_input.update_value(event);
-                this
-            },
-        );
-        setup.on(
-            &self.age_input.blur_topic(),
-            |mut this: Self, event| async move {
-                this.age_input.update_validations(event);
-                this.age_focus = false;
-                this
-            },
-        );
-        setup.on(
-            &self.age_input.focus_topic(),
-            |mut this: Self, _event: InputEvent| async move {
-                this.age_focus = true;
-                this
-            },
-        );
+        setup.on("text_input_changed", Self::text_input_changed);
+        setup.on("textarea_changed", Self::textarea_changed);
+        setup.on("changed", Self::changed);
+        setup.on("validate", Self::validate);
+        setup.on("submit", Self::submit);
     }
 
     fn render(&self) -> Html {
         html! {
-            <form method="POST" action="/">
-                <div class={ if self.name_focus { "focus" } else { "" } }>
-                    { self.name_input.render() }
+            <form live-change="validate" live-submit="submit">
+                <label>
+                    <div>"Text input"</div>
+                    <input type="text" name="input" live-input="text_input_changed" />
+                    if !self.text_input_value.is_empty() {
+                        <div>
+                            "Value: " { &self.text_input_value }
+                        </div>
+                    }
+                </label>
+
+                <label>
+                    <div>"Textarea"</div>
+                    <textarea name="textarea" live-input="textarea_changed"></textarea>
+                    <div>
+                        "Chars remaining: " { TEXTAREA_MAX_LEN - self.textarea_value.len() as i32 }
+                    </div>
+                </label>
+
+                <label>
+                    <div>"Select"</div>
+                    <select name="number" live-change="changed" live-data-input="select">
+                        for n in 0..5 {
+                            <option value={ n }>{ n }</option>
+                        }
+                    </select>
+                </label>
+
+                // broken
+                <label>
+                    <div>"Multi select"</div>
+                    <select name="numbers" size="6" multiple live-change="changed" live-data-input="multi-select">
+                        for n in 0..5 {
+                            <option value={ n }>{ n }</option>
+                        }
+                    </select>
+                </label>
+
+                <div>
+                    <div>"Radio buttons"</div>
+                    for n in 0..5 {
+                        <div>
+                            <label>
+                                <input
+                                    type="radio"
+                                    name="radio"
+                                    value={ n }
+                                    live-change="changed"
+                                    live-data-input={ format!("radio-{}", n) }
+                                />
+                                { n }
+                            </label>
+                        </div>
+                    }
                 </div>
 
-                <div class={ if self.age_focus { "focus" } else { "" } }>
-                    { self.age_input.render() }
+                // broken
+                <div>
+                    <div>"Check boxes"</div>
+                    for n in 0..5 {
+                        <div>
+                            <label>
+                                <input
+                                    type="checkbox"
+                                    name="checkboxes"
+                                    value={ n }
+                                    live-change="changed"
+                                    live-data-input={ format!("checkbox-{}", n) }
+                                />
+                                { n }
+                            </label>
+                        </div>
+                    }
                 </div>
 
-                <input type="submit" value="Submit" />
+
+                if !self.errors.is_empty() {
+                    <ul>
+                        for error in &self.errors {
+                            <li>{ error }</li>
+                        }
+                    </ul>
+                }
+
+                <input type="submit" value="Submit!" />
+
+                if let Some(values) = &self.values {
+                    <div>
+                        <code><pre>{ format!("{:#?}", values) }</pre></code>
+                    </div>
+                }
             </form>
         }
     }
 }
 
-#[derive(Debug, Deserialize)]
-struct Payload {
-    name: String,
-    age: u32,
+impl FormView {
+    #[tracing::instrument(skip(self))]
+    async fn text_input_changed(mut self, event: FormEvent) -> Self {
+        self.text_input_value = event.into_value();
+        self
+    }
+
+    #[tracing::instrument(skip(self))]
+    async fn changed(self, _event: FormEvent<ChangedInputValue, ChangedInput>) -> Self {
+        self
+    }
+
+    #[tracing::instrument(skip(self))]
+    async fn textarea_changed(mut self, event: FormEvent) -> Self {
+        self.textarea_value = event.into_value();
+        self
+    }
+
+    #[tracing::instrument(skip(self))]
+    async fn validate(mut self, event: FormEvent<FormValues>) -> Self {
+        self.perform_validations(event.value());
+        self
+    }
+
+    #[tracing::instrument(skip(self))]
+    async fn submit(mut self, event: FormEvent<FormValues>) -> Self {
+        self.perform_validations(event.value());
+        if self.errors.is_empty() {
+            tracing::info!("submitting");
+        } else {
+            tracing::info!("there are warnings, not submitting");
+        }
+        self.values = Some(event.into_value());
+        self
+    }
+
+    fn perform_validations(&mut self, values: &FormValues) {
+        self.errors.clear();
+
+        let FormValues {
+            input,
+            textarea,
+            number,
+            numbers,
+            radio,
+            checkboxes,
+        } = values;
+
+        if input.is_empty() {
+            self.errors.push("`input` cannot be empty".to_owned());
+        }
+
+        if textarea.len() > TEXTAREA_MAX_LEN as _ {
+            self.errors.push(format!(
+                "textarea cannot be longer than {} characters",
+                TEXTAREA_MAX_LEN
+            ));
+        }
+
+        if number == "1" {
+            self.errors.push("`number` cannot be 1".to_owned());
+        }
+
+        if numbers.len() > 3 {
+            self.errors
+                .push("cannot select more than 3 options".to_owned());
+        }
+
+        if radio.is_none() {
+            self.errors.push("no radio option checked".to_owned());
+        }
+
+        if checkboxes.values().filter(|value| **value).count() > 3 {
+            self.errors
+                .push("cannot check more than 3 boxes".to_owned());
+        }
+    }
 }
 
-async fn post_form(Form(payload): Form<Payload>) -> impl IntoResponse {
-    format!("{:#?}", payload)
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum ChangedInputValue {
+    Select(String),
+    MultiSelect(Vec<String>),
+    RadioOrCheckbox(bool),
 }
+
+#[derive(Debug, Deserialize)]
+struct ChangedInput {
+    input: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct FormValues {
+    input: String,
+    textarea: String,
+    number: String,
+    numbers: Vec<String>,
+    radio: Option<String>,
+    checkboxes: HashMap<String, bool>,
+}
+
+const TEXTAREA_MAX_LEN: i32 = 10;

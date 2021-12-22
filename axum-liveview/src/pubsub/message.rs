@@ -88,7 +88,7 @@ pub struct Bincode<T>(pub T);
 
 impl<T> Encode for Bincode<T>
 where
-    T: Serialize + DeserializeOwned,
+    T: Serialize,
 {
     fn encode(&self) -> anyhow::Result<Bytes> {
         let bytes = bincode::serialize(&self.0)?;
@@ -99,7 +99,7 @@ where
 
 impl<T> Decode for Bincode<T>
 where
-    T: Serialize + DeserializeOwned,
+    T: DeserializeOwned,
 {
     fn decode(msg: Bytes) -> anyhow::Result<Self> {
         Ok(Self(bincode::deserialize(&msg)?))

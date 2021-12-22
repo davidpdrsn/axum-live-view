@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use crate::{
     html::{self, Diff},
     liveview::topics,
@@ -13,7 +11,7 @@ use axum::{
     Json, Router,
 };
 use futures_util::{stream::BoxStream, StreamExt};
-use serde::{Deserialize, Serialize};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::{from_value, json, Value};
 use tokio_stream::StreamMap;
 use uuid::Uuid;
@@ -123,22 +121,22 @@ async fn handle_message_from_socket<P>(
 where
     P: PubSub,
 {
-    macro_rules! try_ {
+    macro_rules! tri {
         ($expr:expr, $pattern:path $(,)?) => {
             match $expr {
                 $pattern(inner) => inner,
                 other => {
-                    tracing::error!(?other);
+                    tracing::error!(line = line!(), ?other);
                     return None;
                 }
             }
         };
     }
 
-    let text = try_!(msg, ws::Message::Text);
-    let msg: RawMessage = try_!(serde_json::from_str(&text), Ok);
+    let text = tri!(msg, ws::Message::Text);
+    let msg: RawMessage = tri!(serde_json::from_str(&text), Ok);
     let liveview_id = msg.liveview_id;
-    let msg = try_!(EventBindingMessage::try_from(msg), Ok);
+    let msg = tri!(EventBindingMessage::try_from(msg), Ok);
 
     tracing::trace!(?msg, "received message from websocket");
 
@@ -148,12 +146,12 @@ where
                 .subscribe::<Json<html::Serialized>>(&topics::initial_render(liveview_id))
                 .await;
 
-            try_!(
+            tri!(
                 pubsub.broadcast(&topics::mounted(liveview_id), ()).await,
                 Ok,
             );
 
-            let Json(msg) = try_!(initial_render_stream.next().await, Some);
+            let Json(msg) = tri!(initial_render_stream.next().await, Some);
 
             let diff_stream = pubsub
                 .subscribe::<Json<Diff>>(&topics::rendered(liveview_id))
@@ -176,25 +174,30 @@ where
         EventBindingMessage::Click(Click { event_name, data }) => {
             let topic = topics::liveview_local(liveview_id, &event_name);
             if let Some(data) = data {
-                try_!(pubsub.broadcast(&topic, axum::Json(data)).await, Ok);
+                tri!(pubsub.broadcast(&topic, axum::Json(data)).await, Ok);
             } else {
-                try_!(pubsub.broadcast(&topic, ()).await, Ok);
+                tri!(pubsub.broadcast(&topic, ()).await, Ok);
             }
         }
-        EventBindingMessage::InputEvent(InputEventMessage {
+        EventBindingMessage::FormEvent(FormEventMessage {
             event_name,
             data,
             value,
         }) => {
             let topic = topics::liveview_local(liveview_id, &event_name);
             let data = if let Some(data) = data {
-                serde_json::from_value(data.clone())
-                    .unwrap_or_else(|_| panic!("invalid data from `InputEventMessage`: {:?}", data))
+                match serde_json::from_value::<Value>(data.clone()) {
+                    Ok(data) => data,
+                    Err(err) => {
+                        tracing::warn!("invalid data from `InputEventMessage`: {:?}. Error: {}", data, err);
+                        return None;
+                    }
+                }
             } else {
                 Default::default()
             };
-            try_!(
-                pubsub.broadcast(&topic, InputEvent { value, data }).await,
+            tri!(
+                pubsub.broadcast(&topic, FormEvent { value, data }).await,
                 Ok
             );
         }
@@ -204,28 +207,48 @@ where
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct InputEvent {
-    value: String,
-    data: HashMap<String, String>,
+pub struct FormEvent<V = String, D = ()> {
+    value: V,
+    data: D,
 }
 
-impl InputEvent {
-    pub fn value(&self) -> &str {
+impl<V, D> FormEvent<V, D> {
+    pub fn value(&self) -> &V {
         &self.value
     }
 
-    pub fn get(&self, key: &str) -> Option<&str> {
-        self.data.get(key).map(|s| s.as_str())
+    pub fn data(&self) -> &D {
+        &self.data
+    }
+
+    pub fn into_value(self) -> V {
+        self.value
+    }
+
+    pub fn into_data(self) -> D {
+        self.data
+    }
+
+    pub fn into_parts(self) -> (V, D) {
+        (self.value, self.data)
     }
 }
 
-impl Encode for InputEvent {
+impl<V, D> Encode for FormEvent<V, D>
+where
+    V: Serialize,
+    D: Serialize,
+{
     fn encode(&self) -> anyhow::Result<bytes::Bytes> {
         axum::Json(self).encode()
     }
 }
 
-impl Decode for InputEvent {
+impl<V, D> Decode for FormEvent<V, D>
+where
+    V: DeserializeOwned,
+    D: DeserializeOwned,
+{
     fn decode(msg: bytes::Bytes) -> anyhow::Result<Self> {
         Ok(axum::Json::<Self>::decode(msg)?.0)
     }
@@ -251,8 +274,8 @@ impl TryFrom<RawMessage> for EventBindingMessage {
         match &*topic {
             "axum/mount-liveview" => Ok(EventBindingMessage::Mount),
             "axum/live-click" => Ok(EventBindingMessage::Click(from_value(data)?)),
-            "axum/live-input" | "axum/live-change" | "axum/live-focus" | "axum/live-blur" => {
-                Ok(EventBindingMessage::InputEvent(from_value(data)?))
+            "axum/live-input" | "axum/live-change" | "axum/live-focus" | "axum/live-blur" | "axum/live-submit" => {
+                Ok(EventBindingMessage::FormEvent(from_value(data)?))
             }
             other => {
                 anyhow::bail!("unknown message topic: {:?}", other)
@@ -265,7 +288,7 @@ impl TryFrom<RawMessage> for EventBindingMessage {
 enum EventBindingMessage {
     Mount,
     Click(Click),
-    InputEvent(InputEventMessage),
+    FormEvent(FormEventMessage),
 }
 
 #[derive(Debug, Deserialize)]
@@ -277,11 +300,11 @@ struct Click {
 }
 
 #[derive(Debug, Deserialize)]
-struct InputEventMessage {
+struct FormEventMessage {
     #[serde(rename = "e")]
     event_name: String,
     #[serde(rename = "v")]
-    value: String,
+    value: Value,
     #[serde(rename = "d")]
     data: Option<Value>,
 }

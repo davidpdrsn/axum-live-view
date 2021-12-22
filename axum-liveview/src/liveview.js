@@ -9,7 +9,6 @@
         connect() {
             this.socket.addEventListener("open", () => {
                 this.mountComponents()
-                this.addEventListeners(document)
             })
 
             this.socket.addEventListener("message", (event) => {
@@ -33,6 +32,7 @@
                     this.viewStates[liveviewId] = data
 
                 } else if (topic === "j") {
+                    // js-command
                     this.handleJsCommand(data)
 
                 } else {
@@ -45,6 +45,31 @@
             window.morphdom(element, html, {
                 onNodeAdded: (node) => {
                     this.addEventListeners(node)
+                },
+                onBeforeElUpdated: function(fromEl, toEl) {
+                    const tag = toEl.tagName
+
+                    if (tag === 'INPUT') {
+                        if (toEl.getAttribute("type") === "radio" || toEl.getAttribute("type") === "checkbox") {
+                            toEl.checked = fromEl.checked;
+                        } else {
+                            toEl.value = fromEl.value;
+                        }
+                    }
+
+                    if (tag === "TEXTAREA") {
+                        toEl.value = fromEl.value;
+                    }
+
+                    if (tag === 'OPTION') {
+                        if (toEl.closest("select").hasAttribute("multiple")) {
+                            toEl.selected = fromEl.selected
+                        }
+                    }
+
+                    if (tag === "SELECT" && !toEl.hasAttribute("multiple")) {
+                        toEl.value = fromEl.value
+                    }
                 },
             })
         }
@@ -73,6 +98,28 @@
                 let liveviewId = component.getAttribute("data-liveview-id")
                 this.send(liveviewId, "axum/mount-liveview", {})
             })
+
+            const defs = this.liveBindingDefs()
+            var elements = new Set()
+            for (var i = 0; i < defs.length; i++) {
+                document.querySelectorAll(`[${defs[i].attr}]`).forEach((el) => {
+                    if (!elements.has(el)) {
+                        this.addEventListeners(el)
+                    }
+                    elements.add(el)
+                })
+            }
+        }
+
+        liveBindingDefs() {
+            return [
+                { attr: "live-click", bindTo: "click" },
+                { attr: "live-input", bindTo: "input" },
+                { attr: "live-blur", bindTo: "blur" },
+                { attr: "live-focus", bindTo: "focus" },
+                { attr: "live-change", bindTo: "change" },
+                { attr: "live-submit", bindTo: "submit" },
+            ]
         }
 
         addEventListeners(element) {
@@ -80,32 +127,31 @@
                 return;
             }
 
-            this.addBindingToChildren(element, { attr: "click", bindTo: "click" })
-            this.addBindingToChildren(element, { attr: "input", bindTo: "input" })
-            this.addBindingToChildren(element, { attr: "blur", bindTo: "blur" })
-            this.addBindingToChildren(element, { attr: "focus", bindTo: "focus" })
-            this.addBindingToChildren(element, { attr: "change", bindTo: "change" })
+            const defs = this.liveBindingDefs()
+            for (var i = 0; i < defs.length; i++) {
+                this.bindLiveEvent(element, defs[i])
+            }
         }
 
-        addBindingToChildren(el, { attr, bindTo }) {
-            el.querySelectorAll(`[live-${attr}]`).forEach((element) => {
-                this.bindToChildren(element, { attr: attr, bindTo: bindTo })
-            })
-        }
+        bindLiveEvent(element, { attr, bindTo }) {
+            if (!element.getAttribute?.(attr)) {
+                return;
+            }
 
-        bindToChildren(element, { attr, bindTo }) {
-            var attr = `live-${attr}`
             element.addEventListener(bindTo, (event) => {
-                if (element === window) debugger;
-
                 event.preventDefault()
 
                 let liveviewId = element.closest('[data-liveview-id]').getAttribute("data-liveview-id")
                 let eventName = element.getAttribute(attr)
 
-                var data = { "e": eventName, "v": element.value }
-                addAdditionalData(element, data)
+                var data;
+                if (element.nodeName === "FORM") {
+                    data = { "e": eventName, "v": serializeForm(element) }
+                } else {
+                    data = { "e": eventName, "v": inputValue(element) }
+                }
 
+                addAdditionalData(element, data)
                 this.send(liveviewId, `axum/${attr}`, data)
             })
         }
@@ -189,6 +235,72 @@
     }
 
     const fixed = "f";
+
+    const serializeForm = (element) => {
+        var formData = {}
+
+        element.querySelectorAll("textarea").forEach((child) => {
+            const name = child.getAttribute("name")
+            if (!name) return
+
+            formData[name] = child.value
+        })
+
+        element.querySelectorAll("input").forEach((child) => {
+            const name = child.getAttribute("name")
+            if (!name) return
+
+            if (child.getAttribute("type") === "radio") {
+                if (child.checked) {
+                    formData[name] = child.value
+                }
+            } else if (child.getAttribute("type") === "checkbox") {
+                if (!formData[name]) {
+                    formData[name] = {}
+                }
+                formData[name][child.value] = child.checked
+            } else {
+                formData[name] = child.value
+            }
+        })
+
+        element.querySelectorAll("select").forEach((child) => {
+            const name = child.getAttribute("name")
+            if (!name) return
+
+            if (child.hasAttribute("multiple")) {
+                const values = Array.from(child.selectedOptions).map((opt) => opt.value)
+                formData[name] = values
+            } else {
+                formData[name] = child.value
+            }
+        })
+
+        return formData
+    }
+
+    const inputValue = (element) => {
+        if (element.nodeName === "TEXTAREA") {
+            return element.value
+
+        } else if (element.nodeName == "INPUT") {
+            if (element.getAttribute("type") === "radio" || element.getAttribute("type") === "checkbox") {
+                return element.checked
+            } else {
+                return element.value
+            }
+
+        } else if (element.nodeName == "SELECT") {
+            if (element.hasAttribute("multiple")) {
+                return Array.from(element.selectedOptions).map((opt) => opt.value)
+            } else {
+                return element.value
+            }
+
+        } else {
+            console.error("what input element is this?", element)
+        }
+    }
 
     window.LiveView = LiveView
 })()
