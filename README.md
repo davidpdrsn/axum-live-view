@@ -127,11 +127,11 @@ impl LiveView for Counter {
             </div>
 
             <div>
-                // Elements with the `live-click` attribute will send a message
+                // Elements with the `axm-click` attribute will send a message
                 // on the corresponding pubsub topic which will call a callback,
                 // update the liveview state, and call `render` again.
-                <button live-click="increment">"+"</button>
-                <button live-click="decrement">"-"</button>
+                <button axm-click="increment">"+"</button>
+                <button axm-click="decrement">"-"</button>
             </div>
         }
     }

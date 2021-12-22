@@ -65,10 +65,10 @@ impl LiveView for FormView {
 
     fn render(&self) -> Html {
         html! {
-            <form live-change="validate" live-submit="submit" live-throttle="1000">
+            <form axm-change="validate" axm-submit="submit" axm-throttle="1000">
                 <label>
                     <div>"Text input"</div>
-                    <input type="text" name="input" live-input="text_input_changed" live-debounce="1000" />
+                    <input type="text" name="input" axm-input="text_input_changed" axm-debounce="1000" />
                     if !self.text_input_value.is_empty() {
                         <div>
                             "Value: " { &self.text_input_value }
@@ -78,7 +78,7 @@ impl LiveView for FormView {
 
                 <label>
                     <div>"Textarea"</div>
-                    <textarea name="textarea" live-input="textarea_changed"></textarea>
+                    <textarea name="textarea" axm-input="textarea_changed"></textarea>
                     <div>
                         "Chars remaining: " { TEXTAREA_MAX_LEN - self.textarea_value.len() as i32 }
                     </div>
@@ -86,7 +86,7 @@ impl LiveView for FormView {
 
                 <label>
                     <div>"Select"</div>
-                    <select name="number" live-change="changed" live-data-input="select">
+                    <select name="number" axm-change="changed" axm-data-input="select">
                         for n in 0..5 {
                             <option value={ n }>{ n }</option>
                         }
@@ -96,7 +96,7 @@ impl LiveView for FormView {
                 // broken
                 <label>
                     <div>"Multi select"</div>
-                    <select name="numbers" size="6" multiple live-change="changed" live-data-input="multi-select">
+                    <select name="numbers" size="6" multiple axm-change="changed" axm-data-input="multi-select">
                         for n in 0..5 {
                             <option value={ n }>{ n }</option>
                         }
@@ -112,8 +112,8 @@ impl LiveView for FormView {
                                     type="radio"
                                     name="radio"
                                     value={ n }
-                                    live-change="changed"
-                                    live-data-input={ format!("radio-{}", n) }
+                                    axm-change="changed"
+                                    axm-data-input={ format!("radio-{}", n) }
                                 />
                                 { n }
                             </label>
@@ -131,8 +131,8 @@ impl LiveView for FormView {
                                     type="checkbox"
                                     name="checkboxes"
                                     value={ n }
-                                    live-change="changed"
-                                    live-data-input={ format!("checkbox-{}", n) }
+                                    axm-change="changed"
+                                    axm-data-input={ format!("checkbox-{}", n) }
                                 />
                                 { n }
                             </label>

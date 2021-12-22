@@ -73,11 +73,11 @@ impl LiveView for Counter {
     fn render(&self) -> Html {
         html! {
             <div>
-                <button live-click={ topics::incr }>"+"</button>
-                <button live-click={ topics::decr }>"-"</button>
+                <button axm-click={ topics::incr }>"+"</button>
+                <button axm-click={ topics::decr }>"-"</button>
             </div>
 
-            <button live-click={ topics::goto }>"Goto"</button>
+            <button axm-click={ topics::goto }>"Goto"</button>
 
             <div>
                 "Counter value: "
