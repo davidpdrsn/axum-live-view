@@ -113,12 +113,12 @@
 
         liveBindingDefs() {
             return [
-                { attr: "live-click", bindTo: "click" },
-                { attr: "live-input", bindTo: "input" },
-                { attr: "live-blur", bindTo: "blur" },
-                { attr: "live-focus", bindTo: "focus" },
-                { attr: "live-change", bindTo: "change" },
-                { attr: "live-submit", bindTo: "submit" },
+                { attr: "axm-click", bindTo: "click" },
+                { attr: "axm-input", bindTo: "input" },
+                { attr: "axm-blur", bindTo: "blur" },
+                { attr: "axm-focus", bindTo: "focus" },
+                { attr: "axm-change", bindTo: "change" },
+                { attr: "axm-submit", bindTo: "submit" },
             ]
         }
 
@@ -153,12 +153,12 @@
                 this.send(liveviewId, `axum/${attr}`, data)
             }
 
-            var delayMs = numberAttr(element, "live-debounce")
+            var delayMs = numberAttr(element, "axm-debounce")
             if (delayMs) {
                 f = debounce(f, delayMs)
             }
 
-            var delayMs = numberAttr(element, "live-throttle")
+            var delayMs = numberAttr(element, "axm-throttle")
             if (delayMs) {
                 f = throttle(f, delayMs)
             }
@@ -236,8 +236,8 @@
         var additionalData = {}
         for (var i = 0; i < element.attributes.length; i++) {
             var attr = element.attributes[i];
-            if (attr.name.startsWith("live-data-")) {
-                additionalData[attr.name.slice("live-data-".length)] = attr.value
+            if (attr.name.startsWith("axm-data-")) {
+                additionalData[attr.name.slice("axm-data-".length)] = attr.value
                 hasAdditionalData = true
             }
         }
