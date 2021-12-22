@@ -245,10 +245,16 @@ impl TryFrom<RawMessage> for EventBindingMessage {
 
         match &*topic {
             "axum/mount-liveview" => Ok(EventBindingMessage::Mount),
+
             "axum/axm-click" => Ok(EventBindingMessage::Click(from_value(data)?)),
+
             "axum/axm-input" | "axum/axm-change" | "axum/axm-focus" | "axum/axm-blur"
             | "axum/axm-submit" => Ok(EventBindingMessage::FormEvent(from_value(data)?)),
-            "axum/axm-keydown" => Ok(EventBindingMessage::KeyEvent(from_value(data)?)),
+
+            "axum/axm-keydown" | "axum/axm-keyup" => {
+                Ok(EventBindingMessage::KeyEvent(from_value(data)?))
+            }
+
             other => {
                 anyhow::bail!("unknown message topic: {:?}", other)
             }

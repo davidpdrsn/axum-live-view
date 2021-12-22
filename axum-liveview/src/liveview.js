@@ -120,6 +120,7 @@
                 { attr: "axm-change", bindTo: "change" },
                 { attr: "axm-submit", bindTo: "submit" },
                 { attr: "axm-keydown", bindTo: "keydown" },
+                { attr: "axm-keyup", bindTo: "keyup" },
             ]
         }
 
@@ -143,6 +144,8 @@
                 let liveviewId = element.closest('[data-liveview-id]').getAttribute("data-liveview-id")
                 let eventName = element.getAttribute(attr)
 
+                var send = true;
+
                 var data;
                 if (element.nodeName === "FORM") {
                     data = { "e": eventName, "v": serializeForm(element) }
@@ -151,6 +154,13 @@
                 }
 
                 if (event.keyIdentifier) {
+                    if (
+                        element.hasAttribute("axm-key") &&
+                        element.getAttribute("axm-key").toLowerCase() !== event.key.toLowerCase()
+                    ) {
+                        send = false;
+                    }
+
                     data.k = event.key
                     data.kc = event.code
                     data.a = event.altKey
@@ -159,8 +169,10 @@
                     data.m = event.metaKey
                 }
 
-                addAdditionalData(element, data)
-                this.send(liveviewId, `axum/${attr}`, data)
+                if (send) {
+                    addAdditionalData(element, data)
+                    this.send(liveviewId, `axum/${attr}`, data)
+                }
             }
 
             var delayMs = numberAttr(element, "axm-debounce")

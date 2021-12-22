@@ -1,13 +1,10 @@
 use axum::{response::IntoResponse, routing::get, Router};
 use axum_liveview::{html, messages::KeyEvent, Html, LiveView, LiveViewManager, Setup};
 use std::net::SocketAddr;
-use tracing_subscriber::fmt::format::FmtSpan;
 
 #[tokio::main]
 async fn main() {
-    tracing_subscriber::fmt::fmt()
-        .with_span_events(FmtSpan::ENTER)
-        .init();
+    tracing_subscriber::fmt::init();
 
     let pubsub = axum_liveview::pubsub::InProcess::new();
 
@@ -46,23 +43,60 @@ async fn root(live: LiveViewManager) -> impl IntoResponse {
 }
 
 #[derive(Default)]
-struct View {}
+struct View {
+    count: u64,
+    prev: Option<KeyEvent>,
+}
 
 impl LiveView for View {
     fn setup(&self, setup: &mut Setup<Self>) {
-        setup.on("keydown", Self::keydown);
+        setup.on("keydown", Self::key);
+        setup.on("keyup", Self::key);
     }
 
     fn render(&self) -> Html {
         html! {
-            <input type="text" axm-keydown="keydown" />
+            <div>
+                "Keydown"
+                <br />
+                <input type="text" axm-keydown="keydown" />
+            </div>
+
+            <div>
+                "Keydown (w debounce)"
+                <br />
+                <input type="text" axm-keydown="keydown" axm-debounce="500" />
+            </div>
+
+            <div>
+                "Keyup"
+                <br />
+                <input type="text" axm-keyup="keyup" />
+            </div>
+
+            <div>
+                "Keyup (only escape)"
+                <br />
+                <input type="text" axm-keyup="keyup" axm-key="escape" />
+            </div>
+
+            if let Some(event) = &self.prev {
+                <hr />
+                <div>"Event count: " { self.count }</div>
+                <pre>
+                    <code>
+                        { format!("{:#?}", event) }
+                    </code>
+                </pre>
+            }
         }
     }
 }
 
 impl View {
-    #[tracing::instrument(skip(self))]
-    async fn keydown(self, event: KeyEvent) -> Self {
+    async fn key(mut self, event: KeyEvent) -> Self {
+        self.prev = Some(event);
+        self.count += 1;
         self
     }
 }
