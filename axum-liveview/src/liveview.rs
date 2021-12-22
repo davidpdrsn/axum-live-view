@@ -185,7 +185,12 @@ impl<T> Setup<T> {
             move |receiver: T, raw_msg: Bytes| match Msg::decode(raw_msg) {
                 Ok(msg) => Box::pin(callback.call(receiver, msg).map(|value| value.into())) as _,
                 Err(err) => {
-                    tracing::warn!(?err, "failed to decode message for subscriber");
+                    tracing::warn!(
+                        ?err,
+                        t_type_name = %std::any::type_name::<T>(),
+                        msg_type_name = %std::any::type_name::<Msg>(),
+                        "failed to decode message for subscriber",
+                    );
                     Box::pin(ready(RenderResult::dont_render(receiver))) as _
                 }
             },
