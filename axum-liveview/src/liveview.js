@@ -119,6 +119,7 @@
                 { attr: "axm-focus", bindTo: "focus" },
                 { attr: "axm-change", bindTo: "change" },
                 { attr: "axm-submit", bindTo: "submit" },
+                { attr: "axm-keydown", bindTo: "keydown" },
             ]
         }
 
@@ -149,6 +150,15 @@
                     data = { "e": eventName, "v": inputValue(element) }
                 }
 
+                if (event.keyIdentifier) {
+                    data.k = event.key
+                    data.kc = event.code
+                    data.a = event.altKey
+                    data.c = event.ctrlKey
+                    data.s = event.shiftKey
+                    data.m = event.metaKey
+                }
+
                 addAdditionalData(element, data)
                 this.send(liveviewId, `axum/${attr}`, data)
             }
@@ -164,7 +174,9 @@
             }
 
             element.addEventListener(bindTo, (event) => {
-                event.preventDefault()
+                if (!event.keyIdentifier) {
+                    event.preventDefault()
+                }
                 f(event)
             })
         }

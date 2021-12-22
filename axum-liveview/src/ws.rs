@@ -185,29 +185,144 @@ where
             value,
         }) => {
             let topic = topics::liveview_local(liveview_id, &event_name);
-            let data = if let Some(data) = data {
-                match serde_json::from_value::<Value>(data.clone()) {
-                    Ok(data) => data,
-                    Err(err) => {
-                        tracing::warn!(
-                            "invalid data from `InputEventMessage`: {:?}. Error: {}",
-                            data,
-                            err
-                        );
-                        return None;
-                    }
-                }
-            } else {
-                Default::default()
-            };
+            let data = deserialize_data(data)?;
             tri!(
                 pubsub.broadcast(&topic, FormEvent { value, data }).await,
+                Ok
+            );
+        }
+        EventBindingMessage::KeyEvent(KeyEventMessage {
+            event_name,
+            key,
+            code,
+            alt,
+            ctrl,
+            shift,
+            meta,
+            data,
+        }) => {
+            let topic = topics::liveview_local(liveview_id, &event_name);
+            let data = deserialize_data(data)?;
+            tri!(
+                pubsub
+                    .broadcast(
+                        &topic,
+                        KeyEvent {
+                            key,
+                            code,
+                            alt,
+                            ctrl,
+                            shift,
+                            meta,
+                            data,
+                        }
+                    )
+                    .await,
                 Ok
             );
         }
     }
 
     None
+}
+
+#[derive(Debug, Deserialize)]
+struct RawMessage {
+    liveview_id: Uuid,
+    topic: String,
+    data: Value,
+}
+
+impl TryFrom<RawMessage> for EventBindingMessage {
+    type Error = anyhow::Error;
+
+    fn try_from(value: RawMessage) -> Result<Self, Self::Error> {
+        let RawMessage {
+            topic,
+            data,
+            liveview_id: _,
+        } = value;
+
+        match &*topic {
+            "axum/mount-liveview" => Ok(EventBindingMessage::Mount),
+            "axum/axm-click" => Ok(EventBindingMessage::Click(from_value(data)?)),
+            "axum/axm-input" | "axum/axm-change" | "axum/axm-focus" | "axum/axm-blur"
+            | "axum/axm-submit" => Ok(EventBindingMessage::FormEvent(from_value(data)?)),
+            "axum/axm-keydown" => Ok(EventBindingMessage::KeyEvent(from_value(data)?)),
+            other => {
+                anyhow::bail!("unknown message topic: {:?}", other)
+            }
+        }
+    }
+}
+
+#[derive(Debug)]
+enum EventBindingMessage {
+    Mount,
+    Click(Click),
+    FormEvent(FormEventMessage),
+    KeyEvent(KeyEventMessage),
+}
+
+#[derive(Debug, Deserialize)]
+struct Click {
+    #[serde(rename = "e")]
+    event_name: String,
+    #[serde(rename = "d")]
+    data: Option<Value>,
+}
+
+#[derive(Debug, Deserialize)]
+struct FormEventMessage {
+    #[serde(rename = "e")]
+    event_name: String,
+    #[serde(rename = "v")]
+    value: Value,
+    #[serde(rename = "d")]
+    data: Option<Value>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub(crate) enum JsCommand {
+    NavigateTo { uri: String },
+}
+
+#[derive(Debug, Deserialize)]
+struct KeyEventMessage {
+    #[serde(rename = "e")]
+    event_name: String,
+    #[serde(rename = "k")]
+    key: String,
+    #[serde(rename = "kc")]
+    code: String,
+    #[serde(rename = "a")]
+    alt: bool,
+    #[serde(rename = "c")]
+    ctrl: bool,
+    #[serde(rename = "s")]
+    shift: bool,
+    #[serde(rename = "m")]
+    meta: bool,
+    #[serde(rename = "d")]
+    data: Option<Value>,
+}
+
+fn deserialize_data(data: Option<Value>) -> Option<Value> {
+    if let Some(data) = data {
+        match serde_json::from_value::<Value>(data.clone()) {
+            Ok(data) => Some(data),
+            Err(err) => {
+                tracing::warn!(
+                    "invalid data from `InputEventMessage`: {:?}. Error: {}",
+                    data,
+                    err
+                );
+                None
+            }
+        }
+    } else {
+        Some(Default::default())
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -221,12 +336,12 @@ impl<V, D> FormEvent<V, D> {
         &self.value
     }
 
-    pub fn data(&self) -> &D {
-        &self.data
-    }
-
     pub fn into_value(self) -> V {
         self.value
+    }
+
+    pub fn data(&self) -> &D {
+        &self.data
     }
 
     pub fn into_data(self) -> D {
@@ -258,61 +373,65 @@ where
     }
 }
 
-#[derive(Debug, Deserialize)]
-struct RawMessage {
-    liveview_id: Uuid,
-    topic: String,
-    data: Value,
+#[derive(Serialize, Deserialize, Debug)]
+pub struct KeyEvent<D = Value> {
+    key: String,
+    code: String,
+    alt: bool,
+    ctrl: bool,
+    shift: bool,
+    meta: bool,
+    data: D,
 }
 
-impl TryFrom<RawMessage> for EventBindingMessage {
-    type Error = anyhow::Error;
+impl<D> KeyEvent<D> {
+    pub fn key(&self) -> &str {
+        &self.key
+    }
 
-    fn try_from(value: RawMessage) -> Result<Self, Self::Error> {
-        let RawMessage {
-            topic,
-            data,
-            liveview_id: _,
-        } = value;
+    pub fn code(&self) -> &str {
+        &self.key
+    }
 
-        match &*topic {
-            "axum/mount-liveview" => Ok(EventBindingMessage::Mount),
-            "axum/axm-click" => Ok(EventBindingMessage::Click(from_value(data)?)),
-            "axum/axm-input" | "axum/axm-change" | "axum/axm-focus" | "axum/axm-blur"
-            | "axum/axm-submit" => Ok(EventBindingMessage::FormEvent(from_value(data)?)),
-            other => {
-                anyhow::bail!("unknown message topic: {:?}", other)
-            }
-        }
+    pub fn alt(&self) -> bool {
+        self.alt
+    }
+
+    pub fn ctrl(&self) -> bool {
+        self.ctrl
+    }
+
+    pub fn shift(&self) -> bool {
+        self.shift
+    }
+
+    pub fn meta(&self) -> bool {
+        self.meta
+    }
+
+    pub fn data(&self) -> &D {
+        &self.data
+    }
+
+    pub fn into_data(self) -> D {
+        self.data
     }
 }
 
-#[derive(Debug)]
-enum EventBindingMessage {
-    Mount,
-    Click(Click),
-    FormEvent(FormEventMessage),
+impl<D> Encode for KeyEvent<D>
+where
+    D: Serialize,
+{
+    fn encode(&self) -> anyhow::Result<bytes::Bytes> {
+        axum::Json(self).encode()
+    }
 }
 
-#[derive(Debug, Deserialize)]
-struct Click {
-    #[serde(rename = "e")]
-    event_name: String,
-    #[serde(rename = "d")]
-    data: Option<Value>,
-}
-
-#[derive(Debug, Deserialize)]
-struct FormEventMessage {
-    #[serde(rename = "e")]
-    event_name: String,
-    #[serde(rename = "v")]
-    value: Value,
-    #[serde(rename = "d")]
-    data: Option<Value>,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-pub(crate) enum JsCommand {
-    NavigateTo { uri: String },
+impl<D> Decode for KeyEvent<D>
+where
+    D: DeserializeOwned,
+{
+    fn decode(msg: bytes::Bytes) -> anyhow::Result<Self> {
+        Ok(axum::Json::<Self>::decode(msg)?.0)
+    }
 }
