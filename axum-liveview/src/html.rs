@@ -462,4 +462,90 @@ mod tests {
         };
         assert_eq!(view.render(), "<div>foobar</div>");
     }
+
+    #[test]
+    fn optional_attribute() {
+        let view = html! { <input required=() /> };
+        assert_eq!(view.render(), "<input required>");
+
+        let view = html! { <input required=Some(()) /> };
+        assert_eq!(view.render(), "<input required>");
+
+        let view = html! { <input required=Some("true") /> };
+        assert_eq!(view.render(), "<input required=\"true\">");
+
+        let view = html! { <input required=Some(Some("true")) /> };
+        assert_eq!(view.render(), "<input required=\"true\">");
+
+        let view = html! { <input required=Some(Some(None)) /> };
+        assert_eq!(view.render(), "<input>");
+
+        let view = html! { <input required=Some(Some({ (1 + 2).to_string() })) /> };
+        assert_eq!(view.render(), "<input required=\"3\">");
+
+        let view = html! { <input required=None /> };
+        assert_eq!(view.render(), "<input>");
+
+        let view = html! {
+            <input required=if true { "true" } />
+        };
+        assert_eq!(view.render(), "<input required=\"true\">");
+
+        let view = html! {
+            <input required=if false { "wat" } else { "true" } />
+        };
+        assert_eq!(view.render(), "<input required=\"true\">");
+
+        let view = html! {
+            <input required=if true { () } />
+        };
+        assert_eq!(view.render(), "<input required>");
+
+        let view = html! {
+            <input required=if false { "wat" } else { () } />
+        };
+        assert_eq!(view.render(), "<input required>");
+
+        let view = html! {
+            <input required=if true { Some(()) } />
+        };
+        assert_eq!(view.render(), "<input required>");
+
+        let view = html! {
+            <input required=if true { None } />
+        };
+        assert_eq!(view.render(), "<input>");
+
+        let view = html! {
+            <input required=if true { Some(()) } else { None } />
+        };
+        assert_eq!(view.render(), "<input required>");
+
+        let view = html! {
+            <input required=if false { Some(()) } else { None } />
+        };
+        assert_eq!(view.render(), "<input>");
+
+        let view = html! {
+            <input required=if true { Some("true") } else { None } />
+        };
+        assert_eq!(view.render(), "<input required=\"true\">");
+
+        let view = html! {
+            <input required=if false { Some("true") } else { None } />
+        };
+        assert_eq!(view.render(), "<input>");
+
+        let value = Some("true");
+        let view = html! {
+            <input required=if let Some(value) = value { Some({ value }) } else { None } />
+        };
+        assert_eq!(view.render(), "<input required=\"true\">");
+
+        let value = None::<String>;
+        let view = html! {
+            <input required=if let Some(value) = value { Some({ value }) } else { None } />
+        };
+        assert_eq!(view.render(), "<input>");
+    }
 }

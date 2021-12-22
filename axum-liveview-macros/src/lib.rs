@@ -41,8 +41,12 @@
 
 use proc_macro2::TokenStream;
 use quote::{quote, ToTokens};
-use std::{collections::VecDeque, fmt::Write};
-use syn::{parse::Parse, punctuated::Punctuated, Block, Ident, LitStr, Token};
+use std::fmt::Write;
+use syn::{
+    parse::{Parse, ParseStream},
+    punctuated::Punctuated,
+    Block, Ident, LitStr, Token,
+};
 
 #[proc_macro]
 pub fn html(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
@@ -65,13 +69,13 @@ struct Tree {
 }
 
 impl Parse for Tree {
-    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
         let nodes = parse_many(input)?;
         Ok(Self { nodes })
     }
 }
 
-fn parse_many<P>(input: syn::parse::ParseStream) -> syn::Result<Vec<P>>
+fn parse_many<P>(input: ParseStream) -> syn::Result<Vec<P>>
 where
     P: Parse,
 {
@@ -88,14 +92,13 @@ enum HtmlNode {
     TagNode(TagNode),
     LitStr(LitStr),
     Block(Block),
-    If(If),
+    If(If<Tree>),
     For(For),
     Match(Match),
-    Close(Ident),
 }
 
 impl Parse for HtmlNode {
-    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
         if input.peek(Token![<]) && input.peek2(Token![!]) {
             input.parse().map(Self::Doctype)
         } else if input.peek(Token![<]) && !input.peek2(Token![/]) {
@@ -121,7 +124,7 @@ impl Parse for HtmlNode {
 struct Doctype;
 
 impl Parse for Doctype {
-    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
         mod kw {
             syn::custom_keyword!(DOCTYPE);
             syn::custom_keyword!(html);
@@ -147,11 +150,11 @@ struct TagNode {
 #[derive(Debug, Clone)]
 struct TagClose {
     inner: Vec<HtmlNode>,
-    close: Ident,
+    close: Close,
 }
 
 impl Parse for TagNode {
-    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
         input.parse::<Token![<]>()?;
         let open = input.parse()?;
 
@@ -179,14 +182,14 @@ impl Parse for TagNode {
 
         input.parse::<Token![<]>()?;
         input.parse::<Token![/]>()?;
-        let close = input.parse::<Ident>()?;
+        let close = input.parse::<Close>()?;
         input.parse::<Token![>]>()?;
 
-        if open != close {
+        if open != close.0 {
             let span = open
                 .span()
-                .join(close.span())
-                .unwrap_or_else(|| close.span());
+                .join(close.0.span())
+                .unwrap_or_else(|| close.0.span());
             return Err(syn::Error::new(span, "Unmatched close tag"));
         }
 
@@ -201,21 +204,17 @@ impl Parse for TagNode {
 #[derive(Debug, Clone)]
 struct Attr {
     ident: AttrIdent,
-    value: Option<AttrValue>,
+    value: AttrValue,
 }
 
 impl Parse for Attr {
-    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
         let ident = input.parse::<AttrIdent>()?;
 
         let value = if input.parse::<Token![=]>().is_ok() {
-            if let Ok(block) = input.parse().map(AttrValue::Block) {
-                Some(block)
-            } else {
-                Some(input.parse().map(AttrValue::LitStr)?)
-            }
+            input.parse()?
         } else {
-            None
+            AttrValue::Unit(Unit)
         };
 
         Ok(Self { ident, value })
@@ -228,7 +227,7 @@ struct AttrIdent {
 }
 
 impl Parse for AttrIdent {
-    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
         let ident = if input.parse::<Token![type]>().is_ok() {
             "type".to_owned()
         } else if input.parse::<Token![for]>().is_ok() {
@@ -252,38 +251,113 @@ impl Parse for AttrIdent {
 }
 
 #[derive(Debug, Clone)]
+#[allow(clippy::large_enum_variant)]
 enum AttrValue {
     LitStr(LitStr),
     Block(Block),
+    Unit(Unit),
+    If(If<Box<AttrValue>>),
+    None,
+}
+
+impl Parse for AttrValue {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let lh = input.lookahead1();
+
+        if lh.peek(syn::token::Brace) {
+            input.parse().map(AttrValue::Block)
+        } else if lh.peek(syn::token::Paren) {
+            input.parse().map(AttrValue::Unit)
+        } else if lh.peek(syn::LitStr) {
+            input.parse().map(AttrValue::LitStr)
+        } else if lh.peek(Token![if]) {
+            input.parse().map(AttrValue::If)
+        } else if lh.peek(syn::Ident) {
+            let ident = input.parse::<Ident>()?;
+
+            if ident == "Some" {
+                let content;
+                syn::parenthesized!(content in input);
+                content.parse()
+            } else if ident == "None" {
+                Ok(AttrValue::None)
+            } else {
+                Err(syn::Error::new_spanned(ident, "expected `Some` or `None`"))
+            }
+        } else {
+            Err(lh.error())
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct Unit;
+
+impl Parse for Unit {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let content;
+        syn::parenthesized!(content in input);
+
+        if content.is_empty() {
+            Ok(Self)
+        } else {
+            Err(content.error("expected empty tuple"))
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
-struct If {
+struct If<T> {
     cond: syn::Expr,
-    then_tree: Tree,
-    else_tree: Option<Tree>,
+    then_tree: T,
+    else_tree: Option<ElseBranch<T>>,
 }
 
-impl Parse for If {
-    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+impl<T> If<T> {
+    fn map<F, K>(self, f: F) -> If<K>
+    where
+        F: Fn(T) -> K,
+    {
+        let then_tree = f(self.then_tree);
+        let else_tree = self.else_tree.map(|else_tree| match else_tree {
+            ElseBranch::If(if_) => ElseBranch::If(Box::new(if_.map(f))),
+            ElseBranch::Else(else_) => ElseBranch::Else(f(else_)),
+        });
+
+        If {
+            cond: self.cond,
+            then_tree,
+            else_tree,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+enum ElseBranch<T> {
+    If(Box<If<T>>),
+    Else(T),
+}
+
+impl<T> Parse for If<T>
+where
+    T: Parse,
+{
+    fn parse(input: ParseStream) -> syn::Result<Self> {
         input.parse::<Token![if]>()?;
 
         let cond = input.parse::<syn::Expr>()?;
 
         let content;
         syn::braced!(content in input);
-        let then_tree = content.parse::<Tree>()?;
+        let then_tree = content.parse::<T>()?;
 
         let else_tree = if input.parse::<Token![else]>().is_ok() {
-            if let Ok(nested) = input.parse::<Self>() {
-                let tree = Tree {
-                    nodes: vec![HtmlNode::If(nested)],
-                };
-                Some(tree)
+            if let Ok(else_if) = input.parse::<Self>() {
+                Some(ElseBranch::If(Box::new(else_if)))
             } else {
                 let content;
                 syn::braced!(content in input);
-                Some(content.parse::<Tree>()?)
+                Some(content.parse::<T>().map(ElseBranch::Else)?)
             }
         } else {
             None
@@ -305,7 +379,7 @@ struct For {
 }
 
 impl Parse for For {
-    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
         input.parse::<Token![for]>()?;
         let pat = input.parse::<syn::Pat>()?;
 
@@ -327,7 +401,7 @@ struct Match {
 }
 
 impl Parse for Match {
-    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
         input.parse::<Token![match]>()?;
 
         let expr = input.call(syn::Expr::parse_without_eager_brace)?;
@@ -351,7 +425,7 @@ struct Arm {
 }
 
 impl Parse for Arm {
-    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
         let pat = input.parse::<syn::Pat>()?;
 
         let guard = if input.parse::<Token![if]>().is_ok() {
@@ -379,6 +453,15 @@ impl Parse for Arm {
     }
 }
 
+#[derive(Debug, Clone)]
+struct Close(Ident);
+
+impl Parse for Close {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        Ok(Self(input.parse()?))
+    }
+}
+
 // like `std::write` but infallible
 macro_rules! write {
     ( $($tt:tt)* ) => {
@@ -386,15 +469,57 @@ macro_rules! write {
     };
 }
 
-impl ToTokens for Tree {
-    fn to_tokens(&self, out: &mut proc_macro2::TokenStream) {
+trait NodeToTokens {
+    fn node_to_tokens(&self, buf: &mut String, out: &mut TokenStream);
+}
+
+impl<T> NodeToTokens for &T
+where
+    T: NodeToTokens,
+{
+    fn node_to_tokens(&self, buf: &mut String, out: &mut TokenStream) {
+        NodeToTokens::node_to_tokens(*self, buf, out)
+    }
+}
+
+impl<T> NodeToTokens for Box<T>
+where
+    T: NodeToTokens,
+{
+    fn node_to_tokens(&self, buf: &mut String, out: &mut TokenStream) {
+        NodeToTokens::node_to_tokens(&**self, buf, out)
+    }
+}
+
+impl<T> NodeToTokens for Vec<T>
+where
+    T: NodeToTokens,
+{
+    fn node_to_tokens(&self, buf: &mut String, out: &mut TokenStream) {
+        for node in self {
+            node.node_to_tokens(buf, out)
+        }
+    }
+}
+
+struct ToTokensViaNodeToTokens<T>(T);
+
+impl<T> ToTokens for ToTokensViaNodeToTokens<T>
+where
+    T: NodeToTokens,
+{
+    fn to_tokens(&self, out: &mut TokenStream) {
         let mut inside_braces = TokenStream::new();
 
         inside_braces.extend(quote! {
             let mut html = axum_liveview::html::__private::html();
         });
 
-        nodes_to_tokens(self.nodes.iter().cloned().collect(), &mut inside_braces);
+        let mut buf = String::new();
+        self.0.node_to_tokens(&mut buf, &mut inside_braces);
+        inside_braces.extend(quote! {
+            axum_liveview::html::__private::fixed(&mut html, #buf);
+        });
 
         out.extend(quote! {
             {
@@ -405,157 +530,229 @@ impl ToTokens for Tree {
     }
 }
 
-fn nodes_to_tokens(mut nodes_queue: VecDeque<HtmlNode>, out: &mut proc_macro2::TokenStream) {
-    let mut buf = String::new();
-    while let Some(node) = nodes_queue.pop_front() {
-        match node {
-            HtmlNode::TagNode(TagNode { open, attrs, close }) => {
-                write!(buf, "<{}", open);
+impl ToTokens for Tree {
+    fn to_tokens(&self, out: &mut proc_macro2::TokenStream) {
+        ToTokensViaNodeToTokens(self).to_tokens(out)
+    }
+}
 
-                if !attrs.is_empty() {
-                    write!(buf, " ");
-
-                    let mut attrs = attrs.iter().peekable();
-                    while let Some(attr) = attrs.next() {
-                        write!(buf, "{}", attr.ident.ident);
-
-                        match &attr.value {
-                            Some(AttrValue::LitStr(lit_str)) => {
-                                write!(buf, "=");
-                                write!(buf, "{:?}", lit_str.value());
-                            }
-                            Some(AttrValue::Block(block)) => {
-                                write!(buf, "=");
-                                out.extend(quote! {
-                                    axum_liveview::html::__private::fixed(&mut html, #buf);
-                                });
-                                buf.clear();
-                                out.extend(quote! {
-                                    // TODO(david): using `Debug` to escape qoutes
-                                    // not sure if thats ideal. Do we need to consider newlines
-                                    // etc?
-                                    #[allow(unused_braces)]
-                                    axum_liveview::html::__private::dynamic(
-                                        &mut html,
-                                        format!("{:?}", #block),
-                                    );
-                                });
-                            }
-                            None => {}
-                        }
-
-                        if attrs.peek().is_some() {
-                            write!(buf, " ");
-                        }
-                    }
-                }
-
-                write!(buf, ">");
-                if let Some(TagClose {
-                    inner: inner_nodes,
-                    close,
-                }) = close
-                {
-                    nodes_queue.push_front(HtmlNode::Close(close.clone()));
-
-                    for node in inner_nodes.iter().rev() {
-                        nodes_queue.push_front(node.clone());
-                    }
-                }
-            }
-            HtmlNode::LitStr(lit_str) => {
-                write!(buf, "{}", lit_str.value());
-            }
-            HtmlNode::Close(close) => {
-                write!(buf, "</{}>", close);
-            }
-            HtmlNode::Block(block) => {
-                out.extend(quote! {
-                    axum_liveview::html::__private::fixed(&mut html, #buf);
-                });
-                buf.clear();
-
-                out.extend(quote! {
-                    #[allow(unused_braces)]
-                    axum_liveview::html::__private::dynamic(&mut html, #block);
-                });
-            }
-            HtmlNode::If(If {
-                cond,
-                then_tree,
-                else_tree,
-            }) => {
-                out.extend(quote! {
-                    axum_liveview::html::__private::fixed(&mut html, #buf);
-                });
-                buf.clear();
-
-                if let Some(else_tree) = else_tree {
-                    out.extend(quote! {
-                        if #cond {
-                            axum_liveview::html::__private::dynamic(&mut html, #then_tree);
-                        } else {
-                            axum_liveview::html::__private::dynamic(&mut html, #else_tree);
-                        }
-                    });
-                } else {
-                    out.extend(quote! {
-                        if #cond {
-                            axum_liveview::html::__private::dynamic(&mut html, #then_tree);
-                        } else {
-                            axum_liveview::html::__private::dynamic(&mut html, "");
-                        }
-                    });
-                }
-            }
-            HtmlNode::For(For { pat, expr, tree }) => {
-                out.extend(quote! {
-                    axum_liveview::html::__private::fixed(&mut html, #buf);
-                });
-                buf.clear();
-
-                out.extend(quote! {
-                    let mut __first = true;
-                    for #pat in #expr {
-                        axum_liveview::html::__private::dynamic(&mut html, #tree);
-
-                        // add some empty segments so the number of placeholders matches up
-                        if !__first {
-                            axum_liveview::html::__private::fixed(&mut html, "");
-                        }
-                        __first = false;
-                    }
-                })
-            }
-            HtmlNode::Match(Match { expr, arms }) => {
-                out.extend(quote! {
-                    axum_liveview::html::__private::fixed(&mut html, #buf);
-                });
-                buf.clear();
-
-                let arms = arms
-                    .iter()
-                    .map(|Arm { pat, guard, tree }| {
-                        let guard = guard.as_ref().map(|guard| quote! { if #guard });
-                        quote! {
-                            #pat #guard => axum_liveview::html::__private::dynamic(&mut html, #tree),
-                        }
-                    })
-                    .collect::<TokenStream>();
-
-                out.extend(quote! {
-                    match #expr {
-                        #arms
-                    }
-                })
-            }
-            HtmlNode::Doctype(_) => {
-                write!(buf, "<!DOCTYPE html>");
-            }
+impl NodeToTokens for Tree {
+    fn node_to_tokens(&self, buf: &mut String, out: &mut TokenStream) {
+        for node in &self.nodes {
+            node.node_to_tokens(buf, out)
         }
     }
+}
 
-    out.extend(quote! {
-        axum_liveview::html::__private::fixed(&mut html, #buf);
-    });
+impl NodeToTokens for HtmlNode {
+    fn node_to_tokens(&self, buf: &mut String, out: &mut TokenStream) {
+        match self {
+            HtmlNode::Doctype(inner) => inner.node_to_tokens(buf, out),
+            HtmlNode::TagNode(inner) => inner.node_to_tokens(buf, out),
+            HtmlNode::LitStr(inner) => inner.node_to_tokens(buf, out),
+            HtmlNode::Block(inner) => inner.node_to_tokens(buf, out),
+            HtmlNode::If(inner) => inner.node_to_tokens(buf, out),
+            HtmlNode::For(inner) => inner.node_to_tokens(buf, out),
+            HtmlNode::Match(inner) => inner.node_to_tokens(buf, out),
+        }
+    }
+}
+
+impl NodeToTokens for Doctype {
+    fn node_to_tokens(&self, buf: &mut String, _out: &mut TokenStream) {
+        write!(buf, "<!DOCTYPE html>");
+    }
+}
+
+impl NodeToTokens for TagNode {
+    fn node_to_tokens(&self, buf: &mut String, out: &mut TokenStream) {
+        let Self { open, attrs, close } = self;
+
+        write!(buf, "<{}", open);
+
+        if !attrs.is_empty() {
+            attrs.node_to_tokens(buf, out);
+        }
+
+        write!(buf, ">");
+        if let Some(TagClose {
+            inner: inner_nodes,
+            close,
+        }) = close
+        {
+            for node in inner_nodes {
+                node.node_to_tokens(buf, out);
+            }
+
+            close.node_to_tokens(buf, out);
+        }
+    }
+}
+
+impl NodeToTokens for Attr {
+    fn node_to_tokens(&self, buf: &mut String, out: &mut TokenStream) {
+        match &self.value {
+            AttrValue::LitStr(lit_str) => {
+                write!(buf, " {}={:?}", self.ident.ident, lit_str.value());
+            }
+            AttrValue::Block(block) => {
+                write!(buf, " {}=", self.ident.ident);
+                out.extend(quote! {
+                    axum_liveview::html::__private::fixed(&mut html, #buf);
+                });
+                buf.clear();
+                out.extend(quote! {
+                    // TODO(david): using `Debug` to escape qoutes
+                    // not sure if thats ideal. Do we need to consider newlines
+                    // etc?
+                    #[allow(unused_braces)]
+                    axum_liveview::html::__private::dynamic(
+                        &mut html,
+                        format!("{:?}", #block),
+                    );
+                });
+            }
+            AttrValue::If(if_) => {
+                let if_ = if_.clone().map(|attr_value| Self {
+                    ident: self.ident.clone(),
+                    value: *attr_value,
+                });
+                if_.node_to_tokens(buf, out);
+            }
+            AttrValue::Unit(_) => {
+                write!(buf, " {}", self.ident.ident);
+            }
+            AttrValue::None => {}
+        }
+    }
+}
+
+impl NodeToTokens for LitStr {
+    fn node_to_tokens(&self, buf: &mut String, _out: &mut TokenStream) {
+        write!(buf, "{}", self.value());
+    }
+}
+
+impl NodeToTokens for Block {
+    fn node_to_tokens(&self, buf: &mut String, out: &mut TokenStream) {
+        out.extend(quote! {
+            axum_liveview::html::__private::fixed(&mut html, #buf);
+        });
+        buf.clear();
+
+        out.extend(quote! {
+            #[allow(unused_braces)]
+            axum_liveview::html::__private::dynamic(&mut html, #self);
+        });
+    }
+}
+
+impl<T> NodeToTokens for If<T>
+where
+    T: NodeToTokens,
+{
+    fn node_to_tokens(&self, buf: &mut String, out: &mut TokenStream) {
+        let Self {
+            cond,
+            then_tree,
+            else_tree,
+        } = self;
+
+        out.extend(quote! {
+            axum_liveview::html::__private::fixed(&mut html, #buf);
+        });
+        buf.clear();
+
+        let then_tree = ToTokensViaNodeToTokens(then_tree);
+
+        if let Some(else_tree) = else_tree {
+            match else_tree {
+                ElseBranch::If(else_if) => {
+                    let else_if = ToTokensViaNodeToTokens(else_if);
+                    out.extend(quote! {
+                        if #cond {
+                            axum_liveview::html::__private::dynamic(&mut html, #then_tree);
+                        } else {
+                            axum_liveview::html::__private::dynamic(&mut html, #else_if);
+                        }
+                    });
+                }
+                ElseBranch::Else(else_) => {
+                    let else_ = ToTokensViaNodeToTokens(else_);
+                    out.extend(quote! {
+                        if #cond {
+                            axum_liveview::html::__private::dynamic(&mut html, #then_tree);
+                        } else {
+                            axum_liveview::html::__private::dynamic(&mut html, #else_);
+                        }
+                    });
+                }
+            };
+        } else {
+            out.extend(quote! {
+                if #cond {
+                    axum_liveview::html::__private::dynamic(&mut html, #then_tree);
+                } else {
+                    axum_liveview::html::__private::dynamic(&mut html, "");
+                }
+            });
+        }
+    }
+}
+
+impl NodeToTokens for For {
+    fn node_to_tokens(&self, buf: &mut String, out: &mut TokenStream) {
+        let Self { pat, expr, tree } = self;
+
+        out.extend(quote! {
+            axum_liveview::html::__private::fixed(&mut html, #buf);
+        });
+        buf.clear();
+
+        out.extend(quote! {
+            let mut __first = true;
+            for #pat in #expr {
+                axum_liveview::html::__private::dynamic(&mut html, #tree);
+
+                // add some empty segments so the number of placeholders matches up
+                if !__first {
+                    axum_liveview::html::__private::fixed(&mut html, "");
+                }
+                __first = false;
+            }
+        })
+    }
+}
+
+impl NodeToTokens for Match {
+    fn node_to_tokens(&self, buf: &mut String, out: &mut TokenStream) {
+        let Match { expr, arms } = self;
+
+        out.extend(quote! {
+            axum_liveview::html::__private::fixed(&mut html, #buf);
+        });
+        buf.clear();
+
+        let arms = arms
+            .iter()
+            .map(|Arm { pat, guard, tree }| {
+                let guard = guard.as_ref().map(|guard| quote! { if #guard });
+                quote! {
+                    #pat #guard => axum_liveview::html::__private::dynamic(&mut html, #tree),
+                }
+            })
+            .collect::<TokenStream>();
+
+        out.extend(quote! {
+            match #expr {
+                #arms
+            }
+        })
+    }
+}
+
+impl NodeToTokens for Close {
+    fn node_to_tokens(&self, buf: &mut String, _out: &mut TokenStream) {
+        write!(buf, "</{}>", self.0);
+    }
 }
