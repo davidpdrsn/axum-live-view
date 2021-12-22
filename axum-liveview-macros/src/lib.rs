@@ -1,6 +1,6 @@
 #![warn(
     clippy::all,
-    clippy::dbg_macro,
+    // clippy::dbg_macro,
     clippy::todo,
     clippy::empty_enum,
     clippy::enum_glob_use,
@@ -42,7 +42,11 @@
 use proc_macro2::TokenStream;
 use quote::{quote, ToTokens};
 use std::{collections::VecDeque, fmt::Write};
-use syn::{parse::Parse, punctuated::Punctuated, Block, Ident, LitStr, Token};
+use syn::{
+    parse::{Parse, ParseStream},
+    punctuated::Punctuated,
+    Block, Expr, Ident, LitStr, Token,
+};
 
 #[proc_macro]
 pub fn html(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
@@ -65,13 +69,13 @@ struct Tree {
 }
 
 impl Parse for Tree {
-    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
         let nodes = parse_many(input)?;
         Ok(Self { nodes })
     }
 }
 
-fn parse_many<P>(input: syn::parse::ParseStream) -> syn::Result<Vec<P>>
+fn parse_many<P>(input: ParseStream) -> syn::Result<Vec<P>>
 where
     P: Parse,
 {
@@ -95,7 +99,7 @@ enum HtmlNode {
 }
 
 impl Parse for HtmlNode {
-    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
         if input.peek(Token![<]) && input.peek2(Token![!]) {
             input.parse().map(Self::Doctype)
         } else if input.peek(Token![<]) && !input.peek2(Token![/]) {
@@ -121,7 +125,7 @@ impl Parse for HtmlNode {
 struct Doctype;
 
 impl Parse for Doctype {
-    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
         mod kw {
             syn::custom_keyword!(DOCTYPE);
             syn::custom_keyword!(html);
@@ -151,7 +155,7 @@ struct TagClose {
 }
 
 impl Parse for TagNode {
-    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
         input.parse::<Token![<]>()?;
         let open = input.parse()?;
 
@@ -201,21 +205,47 @@ impl Parse for TagNode {
 #[derive(Debug, Clone)]
 struct Attr {
     ident: AttrIdent,
-    value: Option<AttrValue>,
+    value: AttrValue,
 }
 
 impl Parse for Attr {
-    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
         let ident = input.parse::<AttrIdent>()?;
 
         let value = if input.parse::<Token![=]>().is_ok() {
-            if let Ok(block) = input.parse().map(AttrValue::Block) {
-                Some(block)
+            let lh = input.lookahead1();
+            if lh.peek(syn::token::Brace) {
+                input.parse().map(AttrValue::Block)?
+            } else if lh.peek(syn::token::Paren) {
+                input.parse().map(AttrValue::Unit)?
+            } else if lh.peek(syn::LitStr) {
+                input.parse().map(AttrValue::LitStr)?
+            } else if lh.peek(syn::Ident) {
+                let ident = input.parse::<Ident>()?;
+
+                if ident == "Some" {
+                    let content;
+                    syn::parenthesized!(content in input);
+                    let lh = content.lookahead1();
+
+                    if lh.peek(syn::LitStr) {
+                        content.parse().map(AttrValue::LitStr)?
+                    } else if lh.peek(syn::token::Paren) {
+                        content.parse::<Unit>()?;
+                        AttrValue::Unit(Unit)
+                    } else {
+                        return Err(lh.error());
+                    }
+                } else if ident == "None" {
+                    AttrValue::None
+                } else {
+                    return Err(syn::Error::new_spanned(ident, "expected `Some` or `None`"));
+                }
             } else {
-                Some(input.parse().map(AttrValue::LitStr)?)
+                return Err(lh.error());
             }
         } else {
-            None
+            AttrValue::Unit(Unit)
         };
 
         Ok(Self { ident, value })
@@ -228,7 +258,7 @@ struct AttrIdent {
 }
 
 impl Parse for AttrIdent {
-    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
         let ident = if input.parse::<Token![type]>().is_ok() {
             "type".to_owned()
         } else if input.parse::<Token![for]>().is_ok() {
@@ -255,6 +285,24 @@ impl Parse for AttrIdent {
 enum AttrValue {
     LitStr(LitStr),
     Block(Block),
+    Unit(Unit),
+    None,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct Unit;
+
+impl Parse for Unit {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let content;
+        syn::parenthesized!(content in input);
+
+        if content.is_empty() {
+            Ok(Self)
+        } else {
+            Err(content.error("expected empty tuple"))
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -265,7 +313,7 @@ struct If {
 }
 
 impl Parse for If {
-    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
         input.parse::<Token![if]>()?;
 
         let cond = input.parse::<syn::Expr>()?;
@@ -305,7 +353,7 @@ struct For {
 }
 
 impl Parse for For {
-    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
         input.parse::<Token![for]>()?;
         let pat = input.parse::<syn::Pat>()?;
 
@@ -327,7 +375,7 @@ struct Match {
 }
 
 impl Parse for Match {
-    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
         input.parse::<Token![match]>()?;
 
         let expr = input.call(syn::Expr::parse_without_eager_brace)?;
@@ -351,7 +399,7 @@ struct Arm {
 }
 
 impl Parse for Arm {
-    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
         let pat = input.parse::<syn::Pat>()?;
 
         let guard = if input.parse::<Token![if]>().is_ok() {
@@ -413,18 +461,26 @@ fn nodes_to_tokens(mut nodes_queue: VecDeque<HtmlNode>, out: &mut proc_macro2::T
                 write!(buf, "<{}", open);
 
                 if !attrs.is_empty() {
-                    write!(buf, " ");
-
+                    let mut first = true;
                     let mut attrs = attrs.iter().peekable();
                     while let Some(attr) = attrs.next() {
+                        if let AttrValue::None = &attr.value {
+                            continue;
+                        }
+
+                        if first {
+                            write!(buf, " ");
+                            first = false;
+                        }
+
                         write!(buf, "{}", attr.ident.ident);
 
                         match &attr.value {
-                            Some(AttrValue::LitStr(lit_str)) => {
+                            AttrValue::LitStr(lit_str) => {
                                 write!(buf, "=");
                                 write!(buf, "{:?}", lit_str.value());
                             }
-                            Some(AttrValue::Block(block)) => {
+                            AttrValue::Block(block) => {
                                 write!(buf, "=");
                                 out.extend(quote! {
                                     axum_liveview::html::__private::fixed(&mut html, #buf);
@@ -441,7 +497,8 @@ fn nodes_to_tokens(mut nodes_queue: VecDeque<HtmlNode>, out: &mut proc_macro2::T
                                     );
                                 });
                             }
-                            None => {}
+                            AttrValue::Unit(_) => {}
+                            AttrValue::None => unreachable!(),
                         }
 
                         if attrs.peek().is_some() {
