@@ -1,6 +1,6 @@
 #![warn(
     clippy::all,
-    // clippy::dbg_macro,
+    clippy::dbg_macro,
     clippy::todo,
     clippy::empty_enum,
     clippy::enum_glob_use,
@@ -313,6 +313,25 @@ struct If<T> {
     else_tree: Option<ElseBranch<T>>,
 }
 
+impl<T> If<T> {
+    fn map<F, K>(self, f: F) -> If<K>
+    where
+        F: Fn(T) -> K,
+    {
+        let then_tree = f(self.then_tree);
+        let else_tree = self.else_tree.map(|else_tree| match else_tree {
+            ElseBranch::If(if_) => ElseBranch::If(Box::new(if_.map(f))),
+            ElseBranch::Else(else_) => ElseBranch::Else(f(else_)),
+        });
+
+        If {
+            cond: self.cond,
+            then_tree,
+            else_tree,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 enum ElseBranch<T> {
     If(Box<If<T>>),
@@ -472,13 +491,24 @@ where
     }
 }
 
+impl<T> NodeToTokens for Vec<T>
+where
+    T: NodeToTokens,
+{
+    fn node_to_tokens(&self, buf: &mut String, out: &mut TokenStream) {
+        for node in self {
+            node.node_to_tokens(buf, out)
+        }
+    }
+}
+
 struct ToTokensViaNodeToTokens<T>(T);
 
 impl<T> ToTokens for ToTokensViaNodeToTokens<T>
 where
     T: NodeToTokens,
 {
-    fn to_tokens(&self, tokens: &mut TokenStream) {
+    fn to_tokens(&self, out: &mut TokenStream) {
         let mut inside_braces = TokenStream::new();
 
         inside_braces.extend(quote! {
@@ -491,7 +521,7 @@ where
             axum_liveview::html::__private::fixed(&mut html, #buf);
         });
 
-        tokens.extend(quote! {
+        out.extend(quote! {
             {
                 #inside_braces
                 html
@@ -502,26 +532,7 @@ where
 
 impl ToTokens for Tree {
     fn to_tokens(&self, out: &mut proc_macro2::TokenStream) {
-        let mut inside_braces = TokenStream::new();
-
-        inside_braces.extend(quote! {
-            let mut html = axum_liveview::html::__private::html();
-        });
-
-        let mut buf = String::new();
-        for node in &self.nodes {
-            node.node_to_tokens(&mut buf, &mut inside_braces)
-        }
-        inside_braces.extend(quote! {
-            axum_liveview::html::__private::fixed(&mut html, #buf);
-        });
-
-        out.extend(quote! {
-            {
-                #inside_braces
-                html
-            }
-        });
+        ToTokensViaNodeToTokens(self).to_tokens(out)
     }
 }
 
@@ -530,9 +541,6 @@ impl NodeToTokens for Tree {
         for node in &self.nodes {
             node.node_to_tokens(buf, out)
         }
-        out.extend(quote! {
-            axum_liveview::html::__private::fixed(&mut html, #buf);
-        });
     }
 }
 
@@ -581,40 +589,14 @@ impl NodeToTokens for TagNode {
     }
 }
 
-impl NodeToTokens for Vec<Attr> {
+impl NodeToTokens for Attr {
     fn node_to_tokens(&self, buf: &mut String, out: &mut TokenStream) {
-        let mut first = true;
-        let mut attrs = self.iter().peekable();
-        while let Some(attr) = attrs.next() {
-            if let AttrValue::None = &attr.value {
-                continue;
-            }
-
-            if first {
-                write!(buf, " ");
-                first = false;
-            }
-
-            write!(buf, "{}", attr.ident.ident);
-
-            attr.value.node_to_tokens(buf, out);
-
-            if attrs.peek().is_some() {
-                write!(buf, " ");
-            }
-        }
-    }
-}
-
-impl NodeToTokens for AttrValue {
-    fn node_to_tokens(&self, buf: &mut String, out: &mut TokenStream) {
-        match self {
+        match &self.value {
             AttrValue::LitStr(lit_str) => {
-                write!(buf, "=");
-                write!(buf, "{:?}", lit_str.value());
+                write!(buf, " {}={:?}", self.ident.ident, lit_str.value());
             }
             AttrValue::Block(block) => {
-                write!(buf, "=");
+                write!(buf, " {}=", self.ident.ident);
                 out.extend(quote! {
                     axum_liveview::html::__private::fixed(&mut html, #buf);
                 });
@@ -630,22 +612,17 @@ impl NodeToTokens for AttrValue {
                     );
                 });
             }
-            AttrValue::If(If {
-                cond,
-                then_tree,
-                else_tree,
-            }) => {
-                write!(buf, "=");
-                out.extend(quote! {
-                    axum_liveview::html::__private::fixed(&mut html, #buf);
+            AttrValue::If(if_) => {
+                let if_ = if_.clone().map(|attr_value| Self {
+                    ident: self.ident.clone(),
+                    value: *attr_value,
                 });
-                buf.clear();
-
-                println!("{}", out.to_string());
-                todo!("if_tree")
+                if_.node_to_tokens(buf, out);
             }
-            AttrValue::Unit(_) => {}
-            AttrValue::None => unreachable!(),
+            AttrValue::Unit(_) => {
+                write!(buf, " {}", self.ident.ident);
+            }
+            AttrValue::None => {}
         }
     }
 }
@@ -670,7 +647,10 @@ impl NodeToTokens for Block {
     }
 }
 
-impl NodeToTokens for If<Tree> {
+impl<T> NodeToTokens for If<T>
+where
+    T: NodeToTokens,
+{
     fn node_to_tokens(&self, buf: &mut String, out: &mut TokenStream) {
         let Self {
             cond,
@@ -683,12 +663,12 @@ impl NodeToTokens for If<Tree> {
         });
         buf.clear();
 
+        let then_tree = ToTokensViaNodeToTokens(then_tree);
+
         if let Some(else_tree) = else_tree {
             match else_tree {
                 ElseBranch::If(else_if) => {
-                    let else_if = Tree {
-                        nodes: vec![HtmlNode::If(*else_if.clone())],
-                    };
+                    let else_if = ToTokensViaNodeToTokens(else_if);
                     out.extend(quote! {
                         if #cond {
                             axum_liveview::html::__private::dynamic(&mut html, #then_tree);
@@ -698,6 +678,7 @@ impl NodeToTokens for If<Tree> {
                     });
                 }
                 ElseBranch::Else(else_) => {
+                    let else_ = ToTokensViaNodeToTokens(else_);
                     out.extend(quote! {
                         if #cond {
                             axum_liveview::html::__private::dynamic(&mut html, #then_tree);
@@ -771,7 +752,7 @@ impl NodeToTokens for Match {
 }
 
 impl NodeToTokens for Close {
-    fn node_to_tokens(&self, buf: &mut String, out: &mut TokenStream) {
+    fn node_to_tokens(&self, buf: &mut String, _out: &mut TokenStream) {
         write!(buf, "</{}>", self.0);
     }
 }

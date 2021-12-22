@@ -96,7 +96,7 @@ impl LiveView for FormView {
                 // broken
                 <label>
                     <div>"Multi select"</div>
-                    <select name="numbers" multiple="false" axm-change="changed" axm-data-input="multi-select">
+                    <select name="numbers" size="6" multiple axm-change="changed" axm-data-input="multi-select">
                         for n in 0..5 {
                             <option value={ n }>{ n }</option>
                         }
