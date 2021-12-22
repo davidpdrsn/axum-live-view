@@ -138,9 +138,7 @@
                 return;
             }
 
-            element.addEventListener(bindTo, (event) => {
-                event.preventDefault()
-
+            var f = (event) => {
                 let liveviewId = element.closest('[data-liveview-id]').getAttribute("data-liveview-id")
                 let eventName = element.getAttribute(attr)
 
@@ -153,6 +151,21 @@
 
                 addAdditionalData(element, data)
                 this.send(liveviewId, `axum/${attr}`, data)
+            }
+
+            var delayMs = numberAttr(element, "live-debounce")
+            if (delayMs) {
+                f = debounce(f, delayMs)
+            }
+
+            var delayMs = numberAttr(element, "live-throttle")
+            if (delayMs) {
+                f = throttle(f, delayMs)
+            }
+
+            element.addEventListener(bindTo, (event) => {
+                event.preventDefault()
+                f(event)
             })
         }
     }
@@ -299,6 +312,43 @@
 
         } else {
             console.error("what input element is this?", element)
+        }
+    }
+
+    const debounce = (f, delayMs) => {
+        var timeout
+        return (...args) => {
+            if (timeout) {
+                clearTimeout(timeout)
+            }
+
+            timeout = setTimeout(() => {
+                f(...args)
+            }, delayMs)
+        }
+    }
+
+    const throttle = (f, delayMs) => {
+        var timeout
+        return (...args) => {
+            if (timeout) {
+                return
+            } else {
+                f(...args)
+                timeout = setTimeout(() => {
+                    timeout = null
+                }, delayMs)
+            }
+        }
+    }
+
+    const numberAttr = (element, attr) => {
+        const value = element.getAttribute(attr)
+        if (value) {
+            const number = parseInt(value, 10)
+            if (!!number) {
+                return number
+            }
         }
     }
 

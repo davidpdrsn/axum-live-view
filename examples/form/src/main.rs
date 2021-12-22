@@ -65,10 +65,10 @@ impl LiveView for FormView {
 
     fn render(&self) -> Html {
         html! {
-            <form live-change="validate" live-submit="submit">
+            <form live-change="validate" live-submit="submit" live-throttle="1000">
                 <label>
                     <div>"Text input"</div>
-                    <input type="text" name="input" live-input="text_input_changed" />
+                    <input type="text" name="input" live-input="text_input_changed" live-debounce="1000" />
                     if !self.text_input_value.is_empty() {
                         <div>
                             "Value: " { &self.text_input_value }
