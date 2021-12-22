@@ -450,6 +450,56 @@ macro_rules! write {
     };
 }
 
+trait NodeToTokens {
+    fn node_to_tokens(&self, buf: &mut String, out: &mut TokenStream);
+}
+
+impl<T> NodeToTokens for &T
+where
+    T: NodeToTokens,
+{
+    fn node_to_tokens(&self, buf: &mut String, out: &mut TokenStream) {
+        NodeToTokens::node_to_tokens(*self, buf, out)
+    }
+}
+
+impl<T> NodeToTokens for Box<T>
+where
+    T: NodeToTokens,
+{
+    fn node_to_tokens(&self, buf: &mut String, out: &mut TokenStream) {
+        NodeToTokens::node_to_tokens(&**self, buf, out)
+    }
+}
+
+struct ToTokensViaNodeToTokens<T>(T);
+
+impl<T> ToTokens for ToTokensViaNodeToTokens<T>
+where
+    T: NodeToTokens,
+{
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        let mut inside_braces = TokenStream::new();
+
+        inside_braces.extend(quote! {
+            let mut html = axum_liveview::html::__private::html();
+        });
+
+        let mut buf = String::new();
+        self.0.node_to_tokens(&mut buf, &mut inside_braces);
+        inside_braces.extend(quote! {
+            axum_liveview::html::__private::fixed(&mut html, #buf);
+        });
+
+        tokens.extend(quote! {
+            {
+                #inside_braces
+                html
+            }
+        });
+    }
+}
+
 impl ToTokens for Tree {
     fn to_tokens(&self, out: &mut proc_macro2::TokenStream) {
         let mut inside_braces = TokenStream::new();
@@ -473,10 +523,6 @@ impl ToTokens for Tree {
             }
         });
     }
-}
-
-trait NodeToTokens {
-    fn node_to_tokens(&self, buf: &mut String, out: &mut TokenStream);
 }
 
 impl NodeToTokens for Tree {
