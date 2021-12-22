@@ -1,5 +1,6 @@
 use axum::{response::IntoResponse, routing::get, Router};
 use axum_liveview::{html, messages::KeyEvent, Html, LiveView, LiveViewManager, Setup};
+use serde::Deserialize;
 use std::net::SocketAddr;
 
 #[tokio::main]
@@ -45,58 +46,63 @@ async fn root(live: LiveViewManager) -> impl IntoResponse {
 #[derive(Default)]
 struct View {
     count: u64,
-    prev: Option<KeyEvent>,
+    prev: Option<KeyEvent<Data>>,
 }
 
 impl LiveView for View {
     fn setup(&self, setup: &mut Setup<Self>) {
-        setup.on("keydown", Self::key);
-        setup.on("keyup", Self::key);
+        setup.on("key", Self::key);
     }
 
     fn render(&self) -> Html {
         html! {
-            <div>
-                "Keydown"
-                <br />
-                <input type="text" axm-keydown="keydown" />
-            </div>
+            <div axm-window-keyup="key" axm-key="escape" axm-data-id="window-keyup">
+                <div>
+                    "Keydown"
+                    <br />
+                    <input type="text" axm-keydown="key" axm-data-id="keydown" />
+                </div>
 
-            <div>
-                "Keydown (w debounce)"
-                <br />
-                <input type="text" axm-keydown="keydown" axm-debounce="500" />
-            </div>
+                <div>
+                    "Keydown (w debounce)"
+                    <br />
+                    <input type="text" axm-keydown="key" axm-debounce="500" axm-data-id="keydown-w-debounce" />
+                </div>
 
-            <div>
-                "Keyup"
-                <br />
-                <input type="text" axm-keyup="keyup" />
-            </div>
+                <div>
+                    "Keyup"
+                    <br />
+                    <input type="text" axm-keyup="key" axm-data-id="keyup" />
+                </div>
 
-            <div>
-                "Keyup (only escape)"
-                <br />
-                <input type="text" axm-keyup="keyup" axm-key="escape" />
-            </div>
-
-            if let Some(event) = &self.prev {
                 <hr />
-                <div>"Event count: " { self.count }</div>
-                <pre>
-                    <code>
-                        { format!("{:#?}", event) }
-                    </code>
-                </pre>
-            }
+
+                if let Some(event) = &self.prev {
+                    <div>"Event count: " { self.count }</div>
+                    <pre>
+                        <code>
+                            { format!("{:#?}", event) }
+                        </code>
+                    </pre>
+                } else {
+                    <div>
+                        "No keys pressed yet"
+                    </div>
+                }
+            </div>
         }
     }
 }
 
 impl View {
-    async fn key(mut self, event: KeyEvent) -> Self {
+    async fn key(mut self, event: KeyEvent<Data>) -> Self {
         self.prev = Some(event);
         self.count += 1;
         self
     }
+}
+
+#[derive(Deserialize, Debug)]
+struct Data {
+    id: String,
 }

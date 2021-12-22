@@ -251,9 +251,10 @@ impl TryFrom<RawMessage> for EventBindingMessage {
             "axum/axm-input" | "axum/axm-change" | "axum/axm-focus" | "axum/axm-blur"
             | "axum/axm-submit" => Ok(EventBindingMessage::FormEvent(from_value(data)?)),
 
-            "axum/axm-keydown" | "axum/axm-keyup" => {
-                Ok(EventBindingMessage::KeyEvent(from_value(data)?))
-            }
+            "axum/axm-keydown"
+            | "axum/axm-keyup"
+            | "axum/axm-window-keyup"
+            | "axum/axm-window-keydown" => Ok(EventBindingMessage::KeyEvent(from_value(data)?)),
 
             other => {
                 anyhow::bail!("unknown message topic: {:?}", other)
@@ -380,7 +381,7 @@ where
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct KeyEvent<D = Value> {
+pub struct KeyEvent<D = ()> {
     key: String,
     code: String,
     alt: bool,

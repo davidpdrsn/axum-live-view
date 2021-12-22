@@ -46,7 +46,7 @@
                 onNodeAdded: (node) => {
                     this.addEventListeners(node)
                 },
-                onBeforeElUpdated: function(fromEl, toEl) {
+                onBeforeElUpdated: (fromEl, toEl) => {
                     const tag = toEl.tagName
 
                     if (tag === 'INPUT') {
@@ -109,18 +109,32 @@
                     elements.add(el)
                 })
             }
+
+            document.querySelectorAll("[axm-window-keydown]").forEach((el) => {
+                this.bindLiveEvent(
+                    el,
+                    { attr: "axm-window-keydown", eventName: "keydown", bindEventTo: window }
+                )
+            })
+
+            document.querySelectorAll("[axm-window-keyup]").forEach((el) => {
+                this.bindLiveEvent(
+                    el,
+                    { attr: "axm-window-keyup", eventName: "keyup", bindEventTo: window }
+                )
+            })
         }
 
         liveBindingDefs() {
             return [
-                { attr: "axm-click", bindTo: "click" },
-                { attr: "axm-input", bindTo: "input" },
-                { attr: "axm-blur", bindTo: "blur" },
-                { attr: "axm-focus", bindTo: "focus" },
-                { attr: "axm-change", bindTo: "change" },
-                { attr: "axm-submit", bindTo: "submit" },
-                { attr: "axm-keydown", bindTo: "keydown" },
-                { attr: "axm-keyup", bindTo: "keyup" },
+                { attr: "axm-click", eventName: "click" },
+                { attr: "axm-input", eventName: "input" },
+                { attr: "axm-blur", eventName: "blur" },
+                { attr: "axm-focus", eventName: "focus" },
+                { attr: "axm-change", eventName: "change" },
+                { attr: "axm-submit", eventName: "submit" },
+                { attr: "axm-keydown", eventName: "keydown" },
+                { attr: "axm-keyup", eventName: "keyup" },
             ]
         }
 
@@ -135,7 +149,9 @@
             }
         }
 
-        bindLiveEvent(element, { attr, bindTo }) {
+        bindLiveEvent(element, { attr, eventName, bindEventTo }) {
+            var bindEventTo = bindEventTo || element
+
             if (!element.getAttribute?.(attr)) {
                 return;
             }
@@ -185,7 +201,7 @@
                 f = throttle(f, delayMs)
             }
 
-            element.addEventListener(bindTo, (event) => {
+            bindEventTo.addEventListener(eventName, (event) => {
                 if (!event.keyIdentifier) {
                     event.preventDefault()
                 }
@@ -335,7 +351,7 @@
             }
 
         } else {
-            console.error("what input element is this?", element)
+            return null
         }
     }
 
