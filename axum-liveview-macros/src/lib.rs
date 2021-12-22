@@ -458,7 +458,13 @@ impl ToTokens for Tree {
             let mut html = axum_liveview::html::__private::html();
         });
 
-        nodes_to_tokens(self.nodes.clone(), &mut inside_braces);
+        let mut buf = String::new();
+        for node in &self.nodes {
+            node.node_to_tokens(&mut buf, &mut inside_braces)
+        }
+        inside_braces.extend(quote! {
+            axum_liveview::html::__private::fixed(&mut html, #buf);
+        });
 
         out.extend(quote! {
             {
@@ -467,16 +473,6 @@ impl ToTokens for Tree {
             }
         });
     }
-}
-
-fn nodes_to_tokens(nodes: Vec<HtmlNode>, out: &mut TokenStream) {
-    let mut buf = String::new();
-    for node in nodes {
-        node.node_to_tokens(&mut buf, out)
-    }
-    out.extend(quote! {
-        axum_liveview::html::__private::fixed(&mut html, #buf);
-    });
 }
 
 trait NodeToTokens {
@@ -542,7 +538,7 @@ impl NodeToTokens for TagNode {
 impl NodeToTokens for Vec<Attr> {
     fn node_to_tokens(&self, buf: &mut String, out: &mut TokenStream) {
         let mut first = true;
-        let mut attrs = self.into_iter().peekable();
+        let mut attrs = self.iter().peekable();
         while let Some(attr) = attrs.next() {
             if let AttrValue::None = &attr.value {
                 continue;
@@ -642,19 +638,29 @@ impl NodeToTokens for If<Tree> {
         buf.clear();
 
         if let Some(else_tree) = else_tree {
-            let else_tree = match else_tree {
-                ElseBranch::If(else_if) => Tree {
-                    nodes: vec![HtmlNode::If(*else_if.clone())],
-                },
-                ElseBranch::Else(else_) => else_.clone(),
-            };
-            out.extend(quote! {
-                if #cond {
-                    axum_liveview::html::__private::dynamic(&mut html, #then_tree);
-                } else {
-                    axum_liveview::html::__private::dynamic(&mut html, #else_tree);
+            match else_tree {
+                ElseBranch::If(else_if) => {
+                    let else_if = Tree {
+                        nodes: vec![HtmlNode::If(*else_if.clone())],
+                    };
+                    out.extend(quote! {
+                        if #cond {
+                            axum_liveview::html::__private::dynamic(&mut html, #then_tree);
+                        } else {
+                            axum_liveview::html::__private::dynamic(&mut html, #else_if);
+                        }
+                    });
                 }
-            });
+                ElseBranch::Else(else_) => {
+                    out.extend(quote! {
+                        if #cond {
+                            axum_liveview::html::__private::dynamic(&mut html, #then_tree);
+                        } else {
+                            axum_liveview::html::__private::dynamic(&mut html, #else_);
+                        }
+                    });
+                }
+            };
         } else {
             out.extend(quote! {
                 if #cond {
