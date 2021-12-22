@@ -66,6 +66,7 @@ pub use self::{
 
 pub mod messages {
     pub use crate::ws::FormEvent;
+    pub use crate::ws::KeyEvent;
 }
 
 const APP_JS_PATH: &str = "/live/app.js";
