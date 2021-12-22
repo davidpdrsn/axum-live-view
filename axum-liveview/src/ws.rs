@@ -189,7 +189,11 @@ where
                 match serde_json::from_value::<Value>(data.clone()) {
                     Ok(data) => data,
                     Err(err) => {
-                        tracing::warn!("invalid data from `InputEventMessage`: {:?}. Error: {}", data, err);
+                        tracing::warn!(
+                            "invalid data from `InputEventMessage`: {:?}. Error: {}",
+                            data,
+                            err
+                        );
                         return None;
                     }
                 }
@@ -274,9 +278,8 @@ impl TryFrom<RawMessage> for EventBindingMessage {
         match &*topic {
             "axum/mount-liveview" => Ok(EventBindingMessage::Mount),
             "axum/live-click" => Ok(EventBindingMessage::Click(from_value(data)?)),
-            "axum/live-input" | "axum/live-change" | "axum/live-focus" | "axum/live-blur" | "axum/live-submit" => {
-                Ok(EventBindingMessage::FormEvent(from_value(data)?))
-            }
+            "axum/live-input" | "axum/live-change" | "axum/live-focus" | "axum/live-blur"
+            | "axum/live-submit" => Ok(EventBindingMessage::FormEvent(from_value(data)?)),
             other => {
                 anyhow::bail!("unknown message topic: {:?}", other)
             }
