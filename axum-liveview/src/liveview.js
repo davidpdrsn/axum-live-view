@@ -1,6 +1,7 @@
 (() => {
     class LiveView {
-        constructor(host, port) {
+        constructor(options) {
+            const { host, port } = options
             this.socket = new WebSocket(`ws://${host}:${port}/live`)
             this.viewStates = {}
         }

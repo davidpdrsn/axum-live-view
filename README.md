@@ -80,7 +80,7 @@ async fn root(
                 // the liveview connection and handle updates.
                 <script>
                     r#"
-                        const liveView = new LiveView('localhost', 3000)
+                        const liveView = new LiveView({ host: 'localhost', port: 3000 })
                         liveView.connect()
                     "#
                 </script>

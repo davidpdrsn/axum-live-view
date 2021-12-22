@@ -59,7 +59,7 @@ async fn root(live: LiveViewManager) -> impl IntoResponse {
                 { live.embed(form) }
                 <script>
                     r#"
-                        const liveView = new LiveView('localhost', 4000)
+                        const liveView = new LiveView({ host: 'localhost', port: 4000 })
                         liveView.connect()
                     "#
                 </script>
