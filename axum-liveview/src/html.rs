@@ -474,7 +474,19 @@ mod tests {
         let view = html! { <input required=Some("true") /> };
         assert_eq!(view.render(), "<input required=\"true\">");
 
+        let view = html! { <input required=Some(Some("true")) /> };
+        assert_eq!(view.render(), "<input required=\"true\">");
+
+        let view = html! { <input required=Some(Some(None)) /> };
+        assert_eq!(view.render(), "<input>");
+
+        let view = html! { <input required=Some(Some({ (1 + 2).to_string() })) /> };
+        assert_eq!(view.render(), "<input required=\"3\">");
+
         let view = html! { <input required=None /> };
         assert_eq!(view.render(), "<input>");
+
+        let view = html! { <input required=if true { Some(()) } else { None } /> };
+        assert_eq!(view.render(), "<input required>");
     }
 }

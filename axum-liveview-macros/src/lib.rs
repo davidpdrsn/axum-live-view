@@ -92,7 +92,7 @@ enum HtmlNode {
     TagNode(TagNode),
     LitStr(LitStr),
     Block(Block),
-    If(If),
+    If(If<Tree>),
     For(For),
     Match(Match),
     Close(Ident),
@@ -213,37 +213,7 @@ impl Parse for Attr {
         let ident = input.parse::<AttrIdent>()?;
 
         let value = if input.parse::<Token![=]>().is_ok() {
-            let lh = input.lookahead1();
-            if lh.peek(syn::token::Brace) {
-                input.parse().map(AttrValue::Block)?
-            } else if lh.peek(syn::token::Paren) {
-                input.parse().map(AttrValue::Unit)?
-            } else if lh.peek(syn::LitStr) {
-                input.parse().map(AttrValue::LitStr)?
-            } else if lh.peek(syn::Ident) {
-                let ident = input.parse::<Ident>()?;
-
-                if ident == "Some" {
-                    let content;
-                    syn::parenthesized!(content in input);
-                    let lh = content.lookahead1();
-
-                    if lh.peek(syn::LitStr) {
-                        content.parse().map(AttrValue::LitStr)?
-                    } else if lh.peek(syn::token::Paren) {
-                        content.parse::<Unit>()?;
-                        AttrValue::Unit(Unit)
-                    } else {
-                        return Err(lh.error());
-                    }
-                } else if ident == "None" {
-                    AttrValue::None
-                } else {
-                    return Err(syn::Error::new_spanned(ident, "expected `Some` or `None`"));
-                }
-            } else {
-                return Err(lh.error());
-            }
+            input.parse()?
         } else {
             AttrValue::Unit(Unit)
         };
@@ -282,11 +252,43 @@ impl Parse for AttrIdent {
 }
 
 #[derive(Debug, Clone)]
+#[allow(clippy::large_enum_variant)]
 enum AttrValue {
     LitStr(LitStr),
     Block(Block),
     Unit(Unit),
+    If(If<Box<AttrValue>>),
     None,
+}
+
+impl Parse for AttrValue {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let lh = input.lookahead1();
+
+        if lh.peek(syn::token::Brace) {
+            input.parse().map(AttrValue::Block)
+        } else if lh.peek(syn::token::Paren) {
+            input.parse().map(AttrValue::Unit)
+        } else if lh.peek(syn::LitStr) {
+            input.parse().map(AttrValue::LitStr)
+        } else if lh.peek(Token![if]) {
+            input.parse().map(AttrValue::If)
+        } else if lh.peek(syn::Ident) {
+            let ident = input.parse::<Ident>()?;
+
+            if ident == "Some" {
+                let content;
+                syn::parenthesized!(content in input);
+                content.parse()
+            } else if ident == "None" {
+                Ok(AttrValue::None)
+            } else {
+                Err(syn::Error::new_spanned(ident, "expected `Some` or `None`"))
+            }
+        } else {
+            Err(lh.error())
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -306,13 +308,22 @@ impl Parse for Unit {
 }
 
 #[derive(Debug, Clone)]
-struct If {
+struct If<T> {
     cond: syn::Expr,
-    then_tree: Tree,
-    else_tree: Option<Tree>,
+    then_tree: T,
+    else_tree: Option<ElseBranch<T>>,
 }
 
-impl Parse for If {
+#[derive(Debug, Clone)]
+enum ElseBranch<T> {
+    If(Box<If<T>>),
+    Else(T),
+}
+
+impl<T> Parse for If<T>
+where
+    T: Parse,
+{
     fn parse(input: ParseStream) -> syn::Result<Self> {
         input.parse::<Token![if]>()?;
 
@@ -320,18 +331,15 @@ impl Parse for If {
 
         let content;
         syn::braced!(content in input);
-        let then_tree = content.parse::<Tree>()?;
+        let then_tree = content.parse::<T>()?;
 
         let else_tree = if input.parse::<Token![else]>().is_ok() {
-            if let Ok(nested) = input.parse::<Self>() {
-                let tree = Tree {
-                    nodes: vec![HtmlNode::If(nested)],
-                };
-                Some(tree)
+            if let Ok(else_if) = input.parse::<Self>() {
+                Some(ElseBranch::If(Box::new(else_if)))
             } else {
                 let content;
                 syn::braced!(content in input);
-                Some(content.parse::<Tree>()?)
+                Some(content.parse::<T>().map(ElseBranch::Else)?)
             }
         } else {
             None
@@ -453,7 +461,7 @@ impl ToTokens for Tree {
     }
 }
 
-fn nodes_to_tokens(mut nodes_queue: VecDeque<HtmlNode>, out: &mut proc_macro2::TokenStream) {
+fn nodes_to_tokens(mut nodes_queue: VecDeque<HtmlNode>, out: &mut TokenStream) {
     let mut buf = String::new();
     while let Some(node) = nodes_queue.pop_front() {
         match node {
@@ -496,6 +504,20 @@ fn nodes_to_tokens(mut nodes_queue: VecDeque<HtmlNode>, out: &mut proc_macro2::T
                                         format!("{:?}", #block),
                                     );
                                 });
+                            }
+                            AttrValue::If(If {
+                                cond,
+                                then_tree,
+                                else_tree,
+                            }) => {
+                                write!(buf, "=");
+                                out.extend(quote! {
+                                    axum_liveview::html::__private::fixed(&mut html, #buf);
+                                });
+                                buf.clear();
+
+                                println!("{}", out.to_string());
+                                todo!("if_tree")
                             }
                             AttrValue::Unit(_) => {}
                             AttrValue::None => unreachable!(),
@@ -548,6 +570,12 @@ fn nodes_to_tokens(mut nodes_queue: VecDeque<HtmlNode>, out: &mut proc_macro2::T
                 buf.clear();
 
                 if let Some(else_tree) = else_tree {
+                    let else_tree = match else_tree {
+                        ElseBranch::If(else_if) => Tree {
+                            nodes: vec![HtmlNode::If(*else_if)],
+                        },
+                        ElseBranch::Else(else_) => else_,
+                    };
                     out.extend(quote! {
                         if #cond {
                             axum_liveview::html::__private::dynamic(&mut html, #then_tree);
