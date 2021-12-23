@@ -69,6 +69,8 @@ where
         .subscribe::<()>(&topics::socket_disconnected(liveview_id))
         .await;
 
+    let mut mounted_streams_count = 0;
+
     loop {
         tokio::select! {
             Some(item) = markup_stream.next() => {
@@ -90,6 +92,7 @@ where
             }
 
             Some(_) = mounted_stream.next() => {
+                mounted_streams_count += 1;
                 if let Err(err) = pubsub
                     .broadcast(
                         &topics::initial_render(liveview_id),
@@ -102,8 +105,12 @@ where
             }
 
             Some(_) = disconnected_stream.next() => {
-                tracing::trace!(%liveview_id, "shutting down liveview task");
-                break;
+                mounted_streams_count -= 1;
+
+                if mounted_streams_count == 0 {
+                    tracing::debug!(%liveview_id, "shutting down liveview task");
+                    break;
+                }
             }
         }
     }

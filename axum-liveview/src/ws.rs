@@ -13,6 +13,8 @@ use axum::{
 use futures_util::{stream::BoxStream, StreamExt};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::{from_value, json, Value};
+use std::time::Duration;
+use tokio::time::Instant;
 use tokio_stream::StreamMap;
 use uuid::Uuid;
 
@@ -39,28 +41,66 @@ where
 {
     let mut state = SocketState::default();
 
+    const ONE_YEAR: Duration = Duration::from_secs(31_556_926);
+    const HEARTBEAT_BOUNCE: Duration = Duration::from_secs(5);
+    const HEARTBEAT_FREQUENCY: Duration = Duration::from_secs(5);
+    const HEARTBEAT_MAX_FAILED_ATTEMPTS: usize = 5;
+
+    let mut heartbeat_interval = tokio::time::interval(HEARTBEAT_FREQUENCY);
+    let mut failed_heartbeats = 0;
+    let mut heartbeat_sent_at = Instant::now();
+
+    let heartbeat_bounce = tokio::time::sleep(ONE_YEAR);
+    tokio::pin!(heartbeat_bounce);
+
     loop {
         tokio::select! {
-            Some(msg) = socket.recv() => {
-                match msg {
-                    Ok(msg) => {
-                        if let Some((liveview_id, html)) = handle_message_from_socket(msg, &pubsub, &mut state).await {
-                            if send_message_to_socket(&mut socket, liveview_id, INITIAL_RENDER_TOPIC, html).await.is_err() {
-                                break;
-                            }
-                        }
+            _ = heartbeat_interval.tick() => {
+                if failed_heartbeats >= HEARTBEAT_MAX_FAILED_ATTEMPTS {
+                    tracing::debug!("failed too many heartbeats");
+                    break;
+                }
+
+                if send_heartbeat(&mut socket).await.is_ok() {
+                    heartbeat_sent_at = Instant::now();
+                    heartbeat_bounce.as_mut().reset(Instant::now() + HEARTBEAT_BOUNCE);
+                } else {
+                    tracing::debug!("failed to send heartbeat");
+                    failed_heartbeats += 1;
+                }
+            }
+
+            _ = &mut heartbeat_bounce => {
+                tracing::debug!("heartbeat didn't respond in the allocated time");
+                heartbeat_bounce.as_mut().reset(Instant::now() + ONE_YEAR);
+                failed_heartbeats += 1;
+            }
+
+            Some(Ok(msg)) = socket.recv() => {
+                match handle_message_from_socket(msg, &pubsub, &mut state).await {
+                    Some(HandledMessagedResult::Mounted(liveview_id, html)) => {
+                        let _ = send_message_to_socket(
+                            &mut socket,
+                            liveview_id,
+                            INITIAL_RENDER_TOPIC,
+                            html,
+                        )
+                        .await;
+                    },
+                    Some(HandledMessagedResult::HeartbeatResponse) => {
+                        tracing::trace!(
+                            elapsed = ?heartbeat_sent_at.elapsed(),
+                            "heartbeat came back",
+                        );
+                        heartbeat_bounce.as_mut().reset(Instant::now() + ONE_YEAR);
+                        failed_heartbeats = 0;
                     }
-                    Err(err) => {
-                        tracing::trace!(%err, "error from socket");
-                        break;
-                    }
+                    None => {},
                 }
             }
 
             Some((liveview_id, diff)) = state.diff_streams.next() => {
-                if send_message_to_socket(&mut socket, liveview_id, RENDERED_TOPIC, diff).await.is_err() {
-                    break;
-                }
+                let _ = send_message_to_socket(&mut socket, liveview_id, RENDERED_TOPIC, diff).await;
             }
 
             Some((liveview_id, js_command)) = state.js_command_streams.next() => {
@@ -73,9 +113,7 @@ where
                     }),
                 };
 
-                if send_message_to_socket(&mut socket, liveview_id, JS_COMMAND_TOPIC, msg).await.is_err() {
-                    break;
-                }
+                let _ = send_message_to_socket(&mut socket, liveview_id, JS_COMMAND_TOPIC, msg).await;
             }
         }
     }
@@ -91,6 +129,15 @@ where
             .broadcast(&topics::socket_disconnected(liveview_id), ())
             .await;
     }
+}
+
+async fn send_heartbeat(socket: &mut WebSocket) -> Result<(), axum::Error> {
+    let msg = json!(["h"]);
+    let msg = serde_json::to_string(&msg).unwrap();
+    tracing::trace!("sending heartbeat");
+    socket.send(ws::Message::Text(msg)).await?;
+
+    Ok(())
 }
 
 const INITIAL_RENDER_TOPIC: &str = "i";
@@ -113,11 +160,16 @@ where
     socket.send(ws::Message::Text(msg)).await
 }
 
+enum HandledMessagedResult {
+    Mounted(Uuid, html::Serialized),
+    HeartbeatResponse,
+}
+
 async fn handle_message_from_socket<P>(
     msg: ws::Message,
     pubsub: &P,
     state: &mut SocketState,
-) -> Option<(Uuid, html::Serialized)>
+) -> Option<HandledMessagedResult>
 where
     P: PubSub,
 {
@@ -134,7 +186,18 @@ where
     }
 
     let text = tri!(msg, ws::Message::Text);
-    let msg: RawMessage = tri!(serde_json::from_str(&text), Ok);
+    let msg: RawMessageOrHeartbeat = tri!(serde_json::from_str(&text), Ok);
+
+    let msg = match msg {
+        RawMessageOrHeartbeat::HeartbeatResponse(heartbeat_response) => {
+            if heartbeat_response.h != "ok" {
+                tracing::debug!(?heartbeat_response, "invalid status in heartbeat response");
+            }
+            return Some(HandledMessagedResult::HeartbeatResponse);
+        }
+        RawMessageOrHeartbeat::RawMessage(msg) => msg,
+    };
+
     let liveview_id = msg.liveview_id;
     let msg = tri!(EventBindingMessage::try_from(msg), Ok);
 
@@ -169,7 +232,7 @@ where
                 .js_command_streams
                 .insert(liveview_id, Box::pin(js_command_stream));
 
-            return Some((liveview_id, msg));
+            return Some(HandledMessagedResult::Mounted(liveview_id, msg));
         }
         EventBindingMessage::Click(Click { event_name, data }) => {
             let topic = topics::liveview_local(liveview_id, &event_name);
@@ -224,6 +287,18 @@ where
     }
 
     None
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum RawMessageOrHeartbeat {
+    HeartbeatResponse(HeartbeatResponse),
+    RawMessage(RawMessage),
+}
+
+#[derive(Debug, Deserialize)]
+struct HeartbeatResponse {
+    h: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -319,7 +394,7 @@ fn deserialize_data(data: Option<Value>) -> Option<Value> {
         match serde_json::from_value::<Value>(data.clone()) {
             Ok(data) => Some(data),
             Err(err) => {
-                tracing::warn!(
+                tracing::debug!(
                     "invalid data from `InputEventMessage`: {:?}. Error: {}",
                     data,
                     err
