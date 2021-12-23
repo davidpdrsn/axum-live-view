@@ -548,4 +548,10 @@ mod tests {
         };
         assert_eq!(view.render(), "<input>");
     }
+
+    #[test]
+    fn dynamic_attribute_name() {
+        let view = html! { <input { "class" }="foo" /> };
+        assert_eq!(view.render(), "<input class=\"foo\">");
+    }
 }
