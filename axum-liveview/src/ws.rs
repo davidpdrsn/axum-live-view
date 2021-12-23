@@ -1,7 +1,8 @@
 use crate::{
+    bindings::{FormEvent, KeyEvent},
     html::{self, Diff},
     liveview::topics,
-    pubsub::{Decode, Encode, PubSub},
+    pubsub::PubSub,
     LiveViewManager,
 };
 use axum::{
@@ -11,7 +12,7 @@ use axum::{
     Json, Router,
 };
 use futures_util::{stream::BoxStream, StreamExt};
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 use serde_json::{from_value, json, Value};
 use std::time::Duration;
 use tokio::time::Instant;
@@ -404,116 +405,5 @@ fn deserialize_data(data: Option<Value>) -> Option<Value> {
         }
     } else {
         Some(Default::default())
-    }
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-pub struct FormEvent<V = String, D = ()> {
-    value: V,
-    data: D,
-}
-
-impl<V, D> FormEvent<V, D> {
-    pub fn value(&self) -> &V {
-        &self.value
-    }
-
-    pub fn into_value(self) -> V {
-        self.value
-    }
-
-    pub fn data(&self) -> &D {
-        &self.data
-    }
-
-    pub fn into_data(self) -> D {
-        self.data
-    }
-
-    pub fn into_parts(self) -> (V, D) {
-        (self.value, self.data)
-    }
-}
-
-impl<V, D> Encode for FormEvent<V, D>
-where
-    V: Serialize,
-    D: Serialize,
-{
-    fn encode(&self) -> anyhow::Result<bytes::Bytes> {
-        axum::Json(self).encode()
-    }
-}
-
-impl<V, D> Decode for FormEvent<V, D>
-where
-    V: DeserializeOwned,
-    D: DeserializeOwned,
-{
-    fn decode(msg: bytes::Bytes) -> anyhow::Result<Self> {
-        Ok(axum::Json::<Self>::decode(msg)?.0)
-    }
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-pub struct KeyEvent<D = ()> {
-    key: String,
-    code: String,
-    alt: bool,
-    ctrl: bool,
-    shift: bool,
-    meta: bool,
-    data: D,
-}
-
-impl<D> KeyEvent<D> {
-    pub fn key(&self) -> &str {
-        &self.key
-    }
-
-    pub fn code(&self) -> &str {
-        &self.key
-    }
-
-    pub fn alt(&self) -> bool {
-        self.alt
-    }
-
-    pub fn ctrl(&self) -> bool {
-        self.ctrl
-    }
-
-    pub fn shift(&self) -> bool {
-        self.shift
-    }
-
-    pub fn meta(&self) -> bool {
-        self.meta
-    }
-
-    pub fn data(&self) -> &D {
-        &self.data
-    }
-
-    pub fn into_data(self) -> D {
-        self.data
-    }
-}
-
-impl<D> Encode for KeyEvent<D>
-where
-    D: Serialize,
-{
-    fn encode(&self) -> anyhow::Result<bytes::Bytes> {
-        axum::Json(self).encode()
-    }
-}
-
-impl<D> Decode for KeyEvent<D>
-where
-    D: DeserializeOwned,
-{
-    fn decode(msg: bytes::Bytes) -> anyhow::Result<Self> {
-        Ok(axum::Json::<Self>::decode(msg)?.0)
     }
 }

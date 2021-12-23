@@ -1,5 +1,5 @@
 use axum::{response::IntoResponse, routing::get, Router};
-use axum_liveview::{html, messages::FormEvent, Html, LiveView, LiveViewManager, Setup};
+use axum_liveview::{bindings::FormEvent, html, Html, LiveView, LiveViewManager, Setup};
 use serde::Deserialize;
 use std::{collections::HashMap, net::SocketAddr};
 use tracing_subscriber::fmt::format::FmtSpan;

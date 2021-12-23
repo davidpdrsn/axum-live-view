@@ -1,5 +1,5 @@
 use axum::{response::IntoResponse, routing::get, Router};
-use axum_liveview::{html, messages::KeyEvent, Html, LiveView, LiveViewManager, Setup};
+use axum_liveview::{bindings::KeyEvent, html, Html, LiveView, LiveViewManager, Setup};
 use serde::Deserialize;
 use std::net::SocketAddr;
 

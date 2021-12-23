@@ -45,6 +45,7 @@ use axum::{
     Router,
 };
 
+pub mod bindings;
 pub mod html;
 pub mod liveview;
 pub mod middleware;
@@ -63,11 +64,6 @@ pub use self::{
     middleware::layer,
     pubsub::PubSub,
 };
-
-pub mod messages {
-    pub use crate::ws::FormEvent;
-    pub use crate::ws::KeyEvent;
-}
 
 const APP_JS_PATH: &str = "/live/app.js";
 
