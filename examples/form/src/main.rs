@@ -1,6 +1,6 @@
 use axum::{response::IntoResponse, routing::get, Router};
 use axum_liveview::{
-    bindings::{axm, FormEvent},
+    bindings::{axm_data, Axm::*, FormEvent},
     html, Html, LiveView, LiveViewManager, Setup,
 };
 use serde::Deserialize;
@@ -68,10 +68,10 @@ impl LiveView for FormView {
 
     fn render(&self) -> Html {
         html! {
-            <form { axm::change() }="validate" { axm::submit() }="submit" { axm::throttle() }="1000">
+            <form { Change }="validate" { Submit }="submit" { Throttle }="1000">
                 <label>
                     <div>"Text input"</div>
-                    <input type="text" name="input" { axm::input() }="text_input_changed" { axm::debounce() }="1000" />
+                    <input type="text" name="input" { Input }="text_input_changed" { Debounce }="1000" />
                     if !self.text_input_value.is_empty() {
                         <div>
                             "Value: " { &self.text_input_value }
@@ -81,7 +81,7 @@ impl LiveView for FormView {
 
                 <label>
                     <div>"Textarea"</div>
-                    <textarea name="textarea" { axm::input() }="textarea_changed"></textarea>
+                    <textarea name="textarea" { Input }="textarea_changed"></textarea>
                     <div>
                         "Chars remaining: " { TEXTAREA_MAX_LEN - self.textarea_value.len() as i32 }
                     </div>
@@ -89,7 +89,7 @@ impl LiveView for FormView {
 
                 <label>
                     <div>"Select"</div>
-                    <select name="number" { axm::change() }="changed" { axm::data("input") }="select">
+                    <select name="number" { Change }="changed" { axm_data("input") }="select">
                         for n in 0..5 {
                             <option value={ n }>{ n }</option>
                         }
@@ -98,7 +98,7 @@ impl LiveView for FormView {
 
                 <label>
                     <div>"Multi select"</div>
-                    <select name="numbers" size="6" multiple { axm::change() }="changed" { axm::data("input") }="multi-select">
+                    <select name="numbers" size="6" multiple { Change }="changed" { axm_data("input") }="multi-select">
                         for n in 0..5 {
                             <option value={ n }>{ n }</option>
                         }
@@ -114,8 +114,8 @@ impl LiveView for FormView {
                                     type="radio"
                                     name="radio"
                                     value={ n }
-                                    { axm::change() }="changed"
-                                    { axm::data("input") }={ format!("radio-{}", n) }
+                                    { Change }="changed"
+                                    { axm_data("input") }={ format!("radio-{}", n) }
                                 />
                                 { n }
                             </label>
@@ -132,8 +132,8 @@ impl LiveView for FormView {
                                     type="checkbox"
                                     name="checkboxes"
                                     value={ n }
-                                    { axm::change() }="changed"
-                                    { axm::data("input") }={ format!("checkbox-{}", n) }
+                                    { Change }="changed"
+                                    { axm_data("input") }={ format!("checkbox-{}", n) }
                                 />
                                 { n }
                             </label>

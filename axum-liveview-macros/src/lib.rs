@@ -45,7 +45,7 @@ use std::fmt::Write;
 use syn::{
     parse::{Parse, ParseStream},
     punctuated::Punctuated,
-    Block, Expr, Ident, LitStr, Token,
+    Block, Ident, LitStr, Token,
 };
 
 #[proc_macro]

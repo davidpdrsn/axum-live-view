@@ -1,6 +1,6 @@
 use axum::{response::IntoResponse, routing::get, Router};
 use axum_liveview::{
-    bindings::{axm, KeyEvent},
+    bindings::{axm_data, Axm::*, KeyEvent},
     html, Html, LiveView, LiveViewManager, Setup,
 };
 use serde::Deserialize;
@@ -59,11 +59,11 @@ impl LiveView for View {
 
     fn render(&self) -> Html {
         html! {
-            <div { axm::window_keyup() }="key" { axm::key() }="escape" { axm::data("id") }="window-keyup">
+            <div { WindowKeyup }="key" { Key }="escape" { axm_data("id") }="window-keyup">
                 <div>
                     "Keydown"
                     <br />
-                    <input type="text" { axm::keydown() }="key" { axm::data("id") }="keydown" />
+                    <input type="text" { Keydown }="key" { axm_data("id") }="keydown" />
                 </div>
 
                 <div>
@@ -71,16 +71,16 @@ impl LiveView for View {
                     <br />
                     <input
                         type="text"
-                        { axm::keydown() }="key"
-                        { axm::debounce() }="500"
-                        { axm::data("id") }="keydown-w-debounce"
+                        { Keydown }="key"
+                        { Debounce }="500"
+                        { axm_data("id") }="keydown-w-debounce"
                     />
                 </div>
 
                 <div>
                     "Keyup"
                     <br />
-                    <input type="text" { axm::keyup() }="key" { axm::data("id") }="keyup" />
+                    <input type="text" { Keyup }="key" { axm_data("id") }="keyup" />
                 </div>
 
                 <hr />

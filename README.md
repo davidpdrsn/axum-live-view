@@ -21,7 +21,7 @@ This is what using axum-liveview looks like.
 
 ```rust
 use axum::{routing::get, Router};
-use axum_liveview::{html, Html, LiveView, LiveViewManager, bindings::axm, Setup};
+use axum_liveview::{html, Html, LiveView, LiveViewManager, bindings::Axm, Setup};
 
 #[tokio::main]
 async fn main() {
@@ -130,8 +130,8 @@ impl LiveView for Counter {
                 // Elements with the `axm-click` attribute will send a message
                 // on the corresponding pubsub topic which will call a callback,
                 // update the liveview state, and call `render` again.
-                <button { axm::click() }="increment">"+"</button>
-                <button { axm::click() }="decrement">"-"</button>
+                <button { Amx::Click }="increment">"+"</button>
+                <button { Amx::Click }="decrement">"-"</button>
             </div>
         }
     }

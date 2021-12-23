@@ -314,7 +314,7 @@ impl TryFrom<RawMessage> for EventBindingMessage {
     type Error = anyhow::Error;
 
     fn try_from(value: RawMessage) -> Result<Self, Self::Error> {
-        use crate::bindings::axm;
+        use crate::bindings::Axm;
 
         let RawMessage {
             topic,
@@ -329,19 +329,21 @@ impl TryFrom<RawMessage> for EventBindingMessage {
         match &*topic {
             "mount-liveview" => Ok(EventBindingMessage::Mount),
 
-            axm::CLICK => Ok(EventBindingMessage::Click(from_value(data)?)),
+            other => match Axm::from_str(other)? {
+                Axm::Click => Ok(EventBindingMessage::Click(from_value(data)?)),
 
-            axm::INPUT | axm::CHANGE | axm::FOCUS | axm::BLUR | axm::SUBMIT => {
-                Ok(EventBindingMessage::FormEvent(from_value(data)?))
-            }
+                Axm::Input | Axm::Change | Axm::Focus | Axm::Blur | Axm::Submit => {
+                    Ok(EventBindingMessage::FormEvent(from_value(data)?))
+                }
 
-            axm::KEYDOWN | axm::KEYUP | axm::WINDOW_KEYDOWN | axm::WINDOW_KEYUP => {
-                Ok(EventBindingMessage::KeyEvent(from_value(data)?))
-            }
+                Axm::Keydown | Axm::Keyup | Axm::Key | Axm::WindowKeydown | Axm::WindowKeyup => {
+                    Ok(EventBindingMessage::KeyEvent(from_value(data)?))
+                }
 
-            other => {
-                anyhow::bail!("unknown message topic: {:?}", other)
-            }
+                Axm::Throttle | Axm::Debounce => {
+                    anyhow::bail!("{:?} is not a valid event type", topic)
+                }
+            },
         }
     }
 }

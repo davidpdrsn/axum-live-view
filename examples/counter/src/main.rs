@@ -1,5 +1,5 @@
 use axum::{response::IntoResponse, routing::get, Router};
-use axum_liveview::{bindings::axm, html, Html, LiveView, LiveViewManager, Setup};
+use axum_liveview::{bindings::Axm::*, html, Html, LiveView, LiveViewManager, Setup};
 use std::net::SocketAddr;
 
 #[tokio::main]
@@ -56,8 +56,8 @@ impl LiveView for Counter {
     fn render(&self) -> Html {
         html! {
             <div>
-                <button { axm::click() }={ "incr" }>"+"</button>
-                <button { axm::click() }={ "decr" }>"-"</button>
+                <button { Click }={ "incr" }>"+"</button>
+                <button { Click }={ "decr" }>"-"</button>
             </div>
 
             <div>

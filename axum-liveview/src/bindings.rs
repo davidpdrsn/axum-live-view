@@ -1,34 +1,85 @@
 use crate::pubsub::{Decode, Encode};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use std::fmt;
 
-pub mod axm {
-    macro_rules! binding {
-        ($fn_name:ident, $const_name:ident, $attr:literal) => {
-            pub const fn $fn_name() -> &'static str {
-                $const_name
+macro_rules! axm {
+    (
+        $(#[$meta:meta])*
+        pub enum $name:ident {
+            $(
+                #[attr = $attr:literal]
+                $(#[$variant_meta:meta])*
+                $variant:ident,
+            )*
+        }
+    ) => {
+        $(#[$meta])*
+        pub enum $name {
+            $(
+                $(#[$variant_meta])*
+                $variant,
+            )*
+        }
+
+        impl $name {
+            #[allow(warnings)]
+            pub(crate) fn from_str(s: &str) -> anyhow::Result<Self> {
+                match s {
+                    $(
+                        concat!("axm-", $attr) => Ok(Self::$variant),
+                    )*
+                    other => anyhow::bail!("unknown message topic: {:?}", other),
+                }
             }
+        }
 
-            pub(crate) const $const_name: &str = concat!("axm-", $attr);
-        };
+        impl fmt::Display for $name {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                match self {
+                    $(
+                        Self::$variant => write!(f, concat!("axm-", $attr)),
+                    )*
+                }
+            }
+        }
+    };
+}
+
+axm! {
+    #[non_exhaustive]
+    #[derive(Debug)]
+    pub enum Axm {
+        #[attr = "blur"]
+        Blur,
+        #[attr = "change"]
+        Change,
+        #[attr = "click"]
+        Click,
+        #[attr = "focus"]
+        Focus,
+        #[attr = "input"]
+        Input,
+        #[attr = "keydown"]
+        Keydown,
+        #[attr = "keyup"]
+        Keyup,
+        #[attr = "submit"]
+        Submit,
+        #[attr = "throttle"]
+        Throttle,
+        #[attr = "debounce"]
+        Debounce,
+        #[attr = "key"]
+        Key,
+        #[attr = "window-keydown"]
+        WindowKeydown,
+        #[attr = "window-keyup"]
+        WindowKeyup,
     }
+}
 
-    binding!(blur, BLUR, "blur");
-    binding!(change, CHANGE, "change");
-    binding!(click, CLICK, "click");
-    binding!(focus, FOCUS, "focus");
-    binding!(input, INPUT, "input");
-    binding!(keydown, KEYDOWN, "keydown");
-    binding!(keyup, KEYUP, "keyup");
-    binding!(submit, SUBMIT, "submit");
-    binding!(throttle, THROTTLE, "throttle");
-    binding!(debounce, DEBOUNCE, "debounce");
-    binding!(key, KEY, "key");
-    binding!(window_keydown, WINDOW_KEYDOWN, "window-keydown");
-    binding!(window_keyup, WINDOW_KEYUP, "window-keyup");
-
-    pub fn data(name: impl AsRef<str>) -> String {
-        format!("axm-data-{}", name.as_ref())
-    }
+pub fn axm_data(name: impl AsRef<str>) -> String {
+    format!("axm-data-{}", name.as_ref())
 }
 
 #[derive(Serialize, Deserialize, Debug)]
