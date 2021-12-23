@@ -2,41 +2,76 @@
     class LiveView {
         constructor(options) {
             const { host, port } = options
-            this.socket = new WebSocket(`ws://${host}:${port}/live`)
+            this.host = host
+            this.port = port
             this.viewStates = {}
+            this.firstConnect = true
+        }
+
+        reconnect() {
+            this.firstConnect = false
+            setTimeout(() => {
+                this.connect()
+            }, 1000)
         }
 
         connect() {
+            this.socket = new WebSocket(`ws://${this.host}:${this.port}/live`)
+
             this.socket.addEventListener("open", () => {
                 this.mountComponents()
+
+                if (this.firstConnect) {
+                    this.bindInitialEvents()
+                }
+            })
+
+            this.socket.addEventListener("close", () => {
+                this.reconnect()
             })
 
             this.socket.addEventListener("message", (event) => {
-                const [liveviewId, topic, data] = JSON.parse(event.data)
+                const payload = JSON.parse(event.data)
 
-                if (topic === "r") {
-                    // rendered
-                    const diff = data
-                    const element = document.querySelector(`[data-liveview-id="${liveviewId}"]`)
+                if (payload.length === 3) {
+                    const [liveviewId, topic, data] = payload
 
-                    patchViewState(this.viewStates[liveviewId], diff)
+                    if (topic === "r") {
+                        // rendered
+                        const diff = data
+                        const element = document.querySelector(`[data-liveview-id="${liveviewId}"]`)
 
-                    const html = buildHtmlFromState(this.viewStates[liveviewId])
-                    this.updateDom(element, html)
+                        patchViewState(this.viewStates[liveviewId], diff)
 
-                } else if (topic === "i") {
-                    // initial-render
-                    const element = document.querySelector(`[data-liveview-id="${liveviewId}"]`)
-                    const html = buildHtmlFromState(data)
-                    this.updateDom(element, html)
-                    this.viewStates[liveviewId] = data
+                        const html = buildHtmlFromState(this.viewStates[liveviewId])
+                        this.updateDom(element, html)
 
-                } else if (topic === "j") {
-                    // js-command
-                    this.handleJsCommand(data)
+                    } else if (topic === "i") {
+                        // initial-render
+                        const element = document.querySelector(`[data-liveview-id="${liveviewId}"]`)
+                        const html = buildHtmlFromState(data)
+                        this.updateDom(element, html)
+                        this.viewStates[liveviewId] = data
+
+                    } else if (topic === "j") {
+                        // js-command
+                        this.handleJsCommand(data)
+
+                    } else {
+                        console.error("unknown topic", topic, data)
+                    }
+
+                } else if (payload.length === 1) {
+                    const [topic] = payload
+                    if (topic === "h") {
+                        // heartbeat
+                        this.socket.send(JSON.stringify({ "h": "ok" }))
+                    } else {
+                        console.error("unknown topic", topic)
+                    }
 
                 } else {
-                    console.error("unknown topic", topic, data)
+                    console.error("unknown socket message", data)
                 }
             })
         }
@@ -98,7 +133,9 @@
                 let liveviewId = component.getAttribute("data-liveview-id")
                 this.send(liveviewId, "axum/mount-liveview", {})
             })
+        }
 
+        bindInitialEvents() {
             const defs = this.liveBindingDefs()
             var elements = new Set()
             for (var i = 0; i < defs.length; i++) {
