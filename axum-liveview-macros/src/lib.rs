@@ -45,7 +45,7 @@ use std::fmt::Write;
 use syn::{
     parse::{Parse, ParseStream},
     punctuated::Punctuated,
-    Block, Ident, LitStr, Token,
+    Block, Expr, Ident, LitStr, Token,
 };
 
 #[proc_macro]
@@ -222,8 +222,9 @@ impl Parse for Attr {
 }
 
 #[derive(Debug, Clone)]
-struct AttrIdent {
-    ident: String,
+enum AttrIdent {
+    Lit(String),
+    Block(Block),
 }
 
 impl Parse for AttrIdent {
@@ -232,6 +233,8 @@ impl Parse for AttrIdent {
             "type".to_owned()
         } else if input.parse::<Token![for]>().is_ok() {
             "for".to_owned()
+        } else if input.peek(syn::token::Brace) {
+            return Ok(Self::Block(input.parse()?));
         } else {
             let idents = Punctuated::<Ident, Token![-]>::parse_separated_nonempty(input)?;
             let mut out = String::new();
@@ -246,7 +249,7 @@ impl Parse for AttrIdent {
             out
         };
 
-        Ok(Self { ident })
+        Ok(Self::Lit(ident))
     }
 }
 
@@ -593,10 +596,14 @@ impl NodeToTokens for Attr {
     fn node_to_tokens(&self, buf: &mut String, out: &mut TokenStream) {
         match &self.value {
             AttrValue::LitStr(lit_str) => {
-                write!(buf, " {}={:?}", self.ident.ident, lit_str.value());
+                write!(buf, " ");
+                self.ident.node_to_tokens(buf, out);
+                write!(buf, "={:?}", lit_str.value());
             }
             AttrValue::Block(block) => {
-                write!(buf, " {}=", self.ident.ident);
+                write!(buf, " ");
+                self.ident.node_to_tokens(buf, out);
+                write!(buf, "=");
                 out.extend(quote! {
                     axum_liveview::html::__private::fixed(&mut html, #buf);
                 });
@@ -620,9 +627,31 @@ impl NodeToTokens for Attr {
                 if_.node_to_tokens(buf, out);
             }
             AttrValue::Unit(_) => {
-                write!(buf, " {}", self.ident.ident);
+                write!(buf, " ");
+                self.ident.node_to_tokens(buf, out);
             }
             AttrValue::None => {}
+        }
+    }
+}
+
+impl NodeToTokens for AttrIdent {
+    fn node_to_tokens(&self, buf: &mut String, out: &mut TokenStream) {
+        match self {
+            AttrIdent::Lit(ident) => write!(buf, "{}", ident),
+            AttrIdent::Block(block) => {
+                out.extend(quote! {
+                    axum_liveview::html::__private::fixed(&mut html, #buf);
+                });
+                buf.clear();
+                out.extend(quote! {
+                    #[allow(unused_braces)]
+                    axum_liveview::html::__private::dynamic(
+                        &mut html,
+                        #block,
+                    );
+                });
+            }
         }
     }
 }
