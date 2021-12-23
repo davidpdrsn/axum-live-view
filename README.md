@@ -11,10 +11,6 @@ Basically [Phoenix LiveView][phx] but for [axum].
 This project is still very much work in progress. Everything is subject to
 change and you shouldn't use this for anything serious.
 
-Contributions are welcome, but little work has currently been done to make the
-repo approachable to contributors. That will improve as we do more work and get
-closer to an eventual 0.1 release.
-
 # Example usage
 
 This is what using axum-liveview looks like.
