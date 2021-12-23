@@ -6,9 +6,14 @@
             this.port = port
             this.viewStates = {}
             this.firstConnect = true
+            this.closedForGood = false
         }
 
         reconnect() {
+            if (this.closedForGood) {
+                return;
+            }
+
             this.firstConnect = false
             setTimeout(() => {
                 this.connect()
@@ -56,6 +61,13 @@
                     } else if (topic === "j") {
                         // js-command
                         this.handleJsCommand(data)
+
+                    } else if (topic === "liveview-gone") {
+                        console.error(
+                            `Something went wrong on the server and liveview ${liveviewId} is gone`
+                        )
+                        this.socket.close()
+                        this.closedForGood = true
 
                     } else {
                         console.error("unknown topic", topic, data)

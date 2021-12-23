@@ -16,7 +16,7 @@ use futures_util::{stream::BoxStream, StreamExt};
 use serde::{Deserialize, Serialize};
 use serde_json::{from_value, json, Value};
 use std::time::Duration;
-use tokio::time::Instant;
+use tokio::time::{timeout, Instant};
 use tokio_stream::StreamMap;
 use uuid::Uuid;
 
@@ -43,7 +43,7 @@ where
 {
     let mut state = SocketState::default();
 
-    const ONE_YEAR: Duration = Duration::from_secs(31_556_926);
+    const A_VERY_LONG_TIME: Duration = Duration::from_secs(60 * 60 * 24 * 365 * 10);
     const HEARTBEAT_BOUNCE: Duration = Duration::from_secs(5);
     const HEARTBEAT_FREQUENCY: Duration = Duration::from_secs(5);
     const HEARTBEAT_MAX_FAILED_ATTEMPTS: usize = 5;
@@ -52,7 +52,7 @@ where
     let mut failed_heartbeats = 0;
     let mut heartbeat_sent_at = Instant::now();
 
-    let heartbeat_bounce = tokio::time::sleep(ONE_YEAR);
+    let heartbeat_bounce = tokio::time::sleep(A_VERY_LONG_TIME);
     tokio::pin!(heartbeat_bounce);
 
     loop {
@@ -74,18 +74,18 @@ where
 
             _ = &mut heartbeat_bounce => {
                 tracing::debug!("heartbeat didn't respond in the allocated time");
-                heartbeat_bounce.as_mut().reset(Instant::now() + ONE_YEAR);
+                heartbeat_bounce.as_mut().reset(Instant::now() + A_VERY_LONG_TIME);
                 failed_heartbeats += 1;
             }
 
             Some(Ok(msg)) = socket.recv() => {
                 match handle_message_from_socket(msg, &pubsub, &mut state).await {
-                    Some(HandledMessagedResult::Mounted(liveview_id, html)) => {
+                    Some(HandledMessagedResult::Mounted(liveview_id, initial_render_html)) => {
                         let _ = send_message_to_socket(
                             &mut socket,
                             liveview_id,
                             INITIAL_RENDER_TOPIC,
-                            html,
+                            initial_render_html,
                         )
                         .await;
                     },
@@ -94,8 +94,19 @@ where
                             elapsed = ?heartbeat_sent_at.elapsed(),
                             "heartbeat came back",
                         );
-                        heartbeat_bounce.as_mut().reset(Instant::now() + ONE_YEAR);
+                        heartbeat_bounce.as_mut().reset(Instant::now() + A_VERY_LONG_TIME);
                         failed_heartbeats = 0;
+                    }
+                    Some(HandledMessagedResult::InitialRenderError(liveview_id)) => {
+                        tracing::warn!("no response from `initial-render` message sent to liveview");
+                        let _ = send_message_to_socket(
+                            &mut socket,
+                            liveview_id,
+                            LIVEVIEW_GONE_TOPIC,
+                            json!(null),
+                        )
+                        .await;
+                        state.diff_streams.remove(&liveview_id);
                     }
                     None => {},
                 }
@@ -131,6 +142,8 @@ where
             .broadcast(&topics::socket_disconnected(liveview_id), ())
             .await;
     }
+
+    tracing::trace!("WebSocket task ending");
 }
 
 async fn send_heartbeat(socket: &mut WebSocket) -> Result<(), axum::Error> {
@@ -138,11 +151,11 @@ async fn send_heartbeat(socket: &mut WebSocket) -> Result<(), axum::Error> {
     let msg = serde_json::to_string(&msg).unwrap();
     tracing::trace!("sending heartbeat");
     socket.send(ws::Message::Text(msg)).await?;
-
     Ok(())
 }
 
 const INITIAL_RENDER_TOPIC: &str = "i";
+const LIVEVIEW_GONE_TOPIC: &str = "liveview-gone";
 const RENDERED_TOPIC: &str = "r";
 const JS_COMMAND_TOPIC: &str = "j";
 
@@ -165,6 +178,7 @@ where
 enum HandledMessagedResult {
     Mounted(Uuid, html::Serialized),
     HeartbeatResponse,
+    InitialRenderError(Uuid),
 }
 
 async fn handle_message_from_socket<P>(
@@ -180,7 +194,12 @@ where
             match $expr {
                 $pattern(inner) => inner,
                 other => {
-                    tracing::error!(line = line!(), ?other);
+                    tracing::error!(
+                        file = file!(),
+                        line = line!(),
+                        ?other,
+                        "`tri!` didn't match"
+                    );
                     return None;
                 }
             }
@@ -201,12 +220,12 @@ where
     };
 
     let liveview_id = msg.liveview_id;
-    let msg = tri!(EventBindingMessage::try_from(msg), Ok);
+    let msg = tri!(EventFromBrowser::try_from(msg), Ok);
 
     tracing::trace!(?msg, "received message from websocket");
 
     match msg {
-        EventBindingMessage::Mount => {
+        EventFromBrowser::Mount => {
             let mut initial_render_stream = pubsub
                 .subscribe::<Json<html::Serialized>>(&topics::initial_render(liveview_id))
                 .await;
@@ -216,10 +235,16 @@ where
                 Ok,
             );
 
-            let Json(msg) = tri!(initial_render_stream.next().await, Some);
+            let Json(initial_render_html) =
+                match timeout(Duration::from_secs(5), initial_render_stream.next()).await {
+                    Ok(Some(initial_render_html)) => initial_render_html,
+                    Ok(None) | Err(_) => {
+                        return Some(HandledMessagedResult::InitialRenderError(liveview_id));
+                    }
+                };
 
             let diff_stream = pubsub
-                .subscribe::<Json<Diff>>(&topics::rendered(liveview_id))
+                .subscribe::<Json<html::Diff>>(&topics::rendered(liveview_id))
                 .await
                 .map(|Json(diff)| diff);
             state
@@ -234,9 +259,12 @@ where
                 .js_command_streams
                 .insert(liveview_id, Box::pin(js_command_stream));
 
-            return Some(HandledMessagedResult::Mounted(liveview_id, msg));
+            return Some(HandledMessagedResult::Mounted(
+                liveview_id,
+                initial_render_html,
+            ));
         }
-        EventBindingMessage::Click(Click { event_name, data }) => {
+        EventFromBrowser::Click(Click { event_name, data }) => {
             let topic = topics::liveview_local(liveview_id, &event_name);
             if let Some(data) = data {
                 tri!(pubsub.broadcast(&topic, axum::Json(data)).await, Ok);
@@ -244,7 +272,7 @@ where
                 tri!(pubsub.broadcast(&topic, ()).await, Ok);
             }
         }
-        EventBindingMessage::FormEvent(FormEventMessage {
+        EventFromBrowser::FormEvent(FormEventMessage {
             event_name,
             data,
             value,
@@ -256,7 +284,7 @@ where
                 Ok
             );
         }
-        EventBindingMessage::KeyEvent(KeyEventMessage {
+        EventFromBrowser::KeyEvent(KeyEventMessage {
             event_name,
             key,
             code,
@@ -310,7 +338,7 @@ struct RawMessage {
     data: Value,
 }
 
-impl TryFrom<RawMessage> for EventBindingMessage {
+impl TryFrom<RawMessage> for EventFromBrowser {
     type Error = anyhow::Error;
 
     fn try_from(value: RawMessage) -> Result<Self, Self::Error> {
@@ -327,17 +355,17 @@ impl TryFrom<RawMessage> for EventBindingMessage {
             .with_context(|| format!("unknown message topic: {:?}", topic))?;
 
         match &*topic {
-            "mount-liveview" => Ok(EventBindingMessage::Mount),
+            "mount-liveview" => Ok(EventFromBrowser::Mount),
 
             other => match Axm::from_str(other)? {
-                Axm::Click => Ok(EventBindingMessage::Click(from_value(data)?)),
+                Axm::Click => Ok(EventFromBrowser::Click(from_value(data)?)),
 
                 Axm::Input | Axm::Change | Axm::Focus | Axm::Blur | Axm::Submit => {
-                    Ok(EventBindingMessage::FormEvent(from_value(data)?))
+                    Ok(EventFromBrowser::FormEvent(from_value(data)?))
                 }
 
                 Axm::Keydown | Axm::Keyup | Axm::Key | Axm::WindowKeydown | Axm::WindowKeyup => {
-                    Ok(EventBindingMessage::KeyEvent(from_value(data)?))
+                    Ok(EventFromBrowser::KeyEvent(from_value(data)?))
                 }
 
                 Axm::Throttle | Axm::Debounce => {
@@ -349,7 +377,7 @@ impl TryFrom<RawMessage> for EventBindingMessage {
 }
 
 #[derive(Debug)]
-enum EventBindingMessage {
+enum EventFromBrowser {
     Mount,
     Click(Click),
     FormEvent(FormEventMessage),
@@ -404,11 +432,7 @@ fn deserialize_data(data: Option<Value>) -> Option<Value> {
         match serde_json::from_value::<Value>(data.clone()) {
             Ok(data) => Some(data),
             Err(err) => {
-                tracing::debug!(
-                    "invalid data from `InputEventMessage`: {:?}. Error: {}",
-                    data,
-                    err
-                );
+                tracing::debug!("invalid data: {:?}. Error: {}", data, err);
                 None
             }
         }
