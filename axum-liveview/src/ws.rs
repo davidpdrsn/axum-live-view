@@ -5,6 +5,7 @@ use crate::{
     pubsub::PubSub,
     LiveViewManager,
 };
+use anyhow::Context;
 use axum::{
     extract::ws::{self, WebSocket, WebSocketUpgrade},
     response::IntoResponse,
@@ -313,24 +314,30 @@ impl TryFrom<RawMessage> for EventBindingMessage {
     type Error = anyhow::Error;
 
     fn try_from(value: RawMessage) -> Result<Self, Self::Error> {
+        use crate::bindings::axm;
+
         let RawMessage {
             topic,
             data,
             liveview_id: _,
         } = value;
 
+        let topic = topic
+            .strip_prefix("axum/")
+            .with_context(|| format!("unknown message topic: {:?}", topic))?;
+
         match &*topic {
-            "axum/mount-liveview" => Ok(EventBindingMessage::Mount),
+            "mount-liveview" => Ok(EventBindingMessage::Mount),
 
-            "axum/axm-click" => Ok(EventBindingMessage::Click(from_value(data)?)),
+            axm::CLICK => Ok(EventBindingMessage::Click(from_value(data)?)),
 
-            "axum/axm-input" | "axum/axm-change" | "axum/axm-focus" | "axum/axm-blur"
-            | "axum/axm-submit" => Ok(EventBindingMessage::FormEvent(from_value(data)?)),
+            axm::INPUT | axm::CHANGE | axm::FOCUS | axm::BLUR | axm::SUBMIT => {
+                Ok(EventBindingMessage::FormEvent(from_value(data)?))
+            }
 
-            "axum/axm-keydown"
-            | "axum/axm-keyup"
-            | "axum/axm-window-keyup"
-            | "axum/axm-window-keydown" => Ok(EventBindingMessage::KeyEvent(from_value(data)?)),
+            axm::KEYDOWN | axm::KEYUP | axm::WINDOW_KEYDOWN | axm::WINDOW_KEYUP => {
+                Ok(EventBindingMessage::KeyEvent(from_value(data)?))
+            }
 
             other => {
                 anyhow::bail!("unknown message topic: {:?}", other)

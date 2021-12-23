@@ -1,6 +1,35 @@
+use crate::pubsub::{Decode, Encode};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
-use crate::pubsub::{Decode, Encode};
+pub mod axm {
+    macro_rules! binding {
+        ($fn_name:ident, $const_name:ident, $attr:literal) => {
+            pub const fn $fn_name() -> &'static str {
+                $const_name
+            }
+
+            pub(crate) const $const_name: &str = concat!("axm-", $attr);
+        };
+    }
+
+    binding!(blur, BLUR, "blur");
+    binding!(change, CHANGE, "change");
+    binding!(click, CLICK, "click");
+    binding!(focus, FOCUS, "focus");
+    binding!(input, INPUT, "input");
+    binding!(keydown, KEYDOWN, "keydown");
+    binding!(keyup, KEYUP, "keyup");
+    binding!(submit, SUBMIT, "submit");
+    binding!(throttle, THROTTLE, "throttle");
+    binding!(debounce, DEBOUNCE, "debounce");
+    binding!(key, KEY, "key");
+    binding!(window_keydown, WINDOW_KEYDOWN, "window-keydown");
+    binding!(window_keyup, WINDOW_KEYUP, "window-keyup");
+
+    pub fn data(name: impl AsRef<str>) -> String {
+        format!("axm-data-{}", name.as_ref())
+    }
+}
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct FormEvent<V = String, D = ()> {
