@@ -5,12 +5,12 @@ use std::{future::ready, sync::Arc};
 use tokio::sync::broadcast;
 use tokio_stream::wrappers::BroadcastStream;
 
+mod encode_decode;
 mod in_process;
-mod message;
 
 pub use self::{
+    encode_decode::{Bincode, Decode, Encode},
     in_process::InProcess,
-    message::{Bincode, Decode, Encode},
 };
 
 #[async_trait]
