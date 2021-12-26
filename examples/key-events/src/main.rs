@@ -1,9 +1,6 @@
-use axum::{response::IntoResponse, routing::get, Router};
-use axum_liveview::{
-    bindings::{axm_data, Axm::*, KeyEvent},
-    html, Html, LiveView, LiveViewManager, Setup,
-};
-use serde::Deserialize;
+use axum::{async_trait, response::IntoResponse, routing::get, Router};
+use axum_liveview::{html, liveview::EventContext, Html, LiveView, LiveViewManager, Setup};
+use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 
 #[tokio::main]
@@ -49,21 +46,28 @@ async fn root(live: LiveViewManager) -> impl IntoResponse {
 #[derive(Default)]
 struct View {
     count: u64,
-    prev: Option<KeyEvent<Data>>,
+    prev: Option<Msg>,
 }
 
+#[async_trait]
 impl LiveView for View {
-    fn setup(&self, setup: &mut Setup<Self>) {
-        setup.on("key", Self::key);
+    type Message = Msg;
+
+    fn setup(&self, setup: &mut Setup<Self>) {}
+
+    async fn update(mut self, msg: Msg, ctx: EventContext) -> Self {
+        self.count += 1;
+        self.prev = Some(msg);
+        self
     }
 
-    fn render(&self) -> Html {
+    fn render(&self) -> Html<Self::Message> {
         html! {
-            <div { WindowKeyup }="key" { Key }="escape" { axm_data("id") }="window-keyup">
+            <div axm-window-keyup={ Msg::Key("window-keyup".to_owned()) } axm-key="escape">
                 <div>
                     "Keydown"
                     <br />
-                    <input type="text" { Keydown }="key" { axm_data("id") }="keydown" />
+                    <input type="text" axm-window-keydown={ Msg::Key("keydown".to_owned()) } />
                 </div>
 
                 <div>
@@ -71,16 +75,15 @@ impl LiveView for View {
                     <br />
                     <input
                         type="text"
-                        { Keydown }="key"
-                        { Debounce }="500"
-                        { axm_data("id") }="keydown-w-debounce"
+                        axm-keydown={ Msg::Key("keydown-w-debounce".to_owned()) }
+                        axm-debounce="500"
                     />
                 </div>
 
                 <div>
                     "Keyup"
                     <br />
-                    <input type="text" { Keyup }="key" { axm_data("id") }="keyup" />
+                    <input type="text" axm-keyup={ Msg::Key("keyup".to_owned()) }/>
                 </div>
 
                 <hr />
@@ -102,15 +105,12 @@ impl LiveView for View {
     }
 }
 
-impl View {
-    async fn key(mut self, event: KeyEvent<Data>) -> Self {
-        self.prev = Some(event);
-        self.count += 1;
-        self
-    }
-}
-
 #[derive(Deserialize, Debug)]
 struct Data {
     id: String,
+}
+
+#[derive(Deserialize, Serialize, Debug, PartialEq)]
+enum Msg {
+    Key(String),
 }

@@ -202,39 +202,53 @@ impl Parse for TagNode {
 }
 
 #[derive(Debug, Clone)]
-struct Attr {
-    ident: AttrIdent,
-    value: AttrValue,
+enum Attr {
+    Normal {
+        ident: AttrIdent,
+        value: NormalAttrValue,
+    },
+    Axm {
+        ident: AttrIdent,
+        value: AxmAttrValue,
+    },
 }
 
 impl Parse for Attr {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         let ident = input.parse::<AttrIdent>()?;
 
-        let value = if input.parse::<Token![=]>().is_ok() {
-            input.parse()?
-        } else {
-            AttrValue::Unit(Unit)
-        };
-
-        Ok(Self { ident, value })
+        match ident {
+            AttrIdent::Lit(_) => {
+                let value = if input.parse::<Token![=]>().is_ok() {
+                    input.parse()?
+                } else {
+                    NormalAttrValue::Unit(Unit)
+                };
+                Ok(Self::Normal { ident, value })
+            }
+            AttrIdent::Axm(_) => {
+                input.parse::<Token![=]>()?;
+                Ok(Self::Axm {
+                    ident,
+                    value: input.parse()?,
+                })
+            }
+        }
     }
 }
 
 #[derive(Debug, Clone)]
 enum AttrIdent {
     Lit(String),
-    Block(Block),
+    Axm(String),
 }
 
 impl Parse for AttrIdent {
     fn parse(input: ParseStream) -> syn::Result<Self> {
-        let ident = if input.parse::<Token![type]>().is_ok() {
-            "type".to_owned()
+        if input.parse::<Token![type]>().is_ok() {
+            Ok(Self::Lit("type".to_owned()))
         } else if input.parse::<Token![for]>().is_ok() {
-            "for".to_owned()
-        } else if input.peek(syn::token::Brace) {
-            return Ok(Self::Block(input.parse()?));
+            Ok(Self::Lit("for".to_owned()))
         } else {
             let idents = Punctuated::<Ident, Token![-]>::parse_separated_nonempty(input)?;
             let mut out = String::new();
@@ -246,35 +260,40 @@ impl Parse for AttrIdent {
                     let _ = write!(out, "{}", ident);
                 }
             }
-            out
-        };
 
-        Ok(Self::Lit(ident))
+            match out.strip_prefix("axm-") {
+                Some(ident) if ident == "throttle" || ident == "debounce" || ident == "key" => {
+                    Ok(Self::Lit(out))
+                }
+                Some(_) => Ok(Self::Axm(out)),
+                None => Ok(Self::Lit(out)),
+            }
+        }
     }
 }
 
 #[derive(Debug, Clone)]
 #[allow(clippy::large_enum_variant)]
-enum AttrValue {
+enum NormalAttrValue {
     LitStr(LitStr),
     Block(Block),
     Unit(Unit),
-    If(If<Box<AttrValue>>),
+    If(If<Box<NormalAttrValue>>),
     None,
 }
 
-impl Parse for AttrValue {
+impl Parse for NormalAttrValue {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         let lh = input.lookahead1();
 
         if lh.peek(syn::token::Brace) {
-            input.parse().map(AttrValue::Block)
+            input.parse().map(NormalAttrValue::Block)
         } else if lh.peek(syn::token::Paren) {
-            input.parse().map(AttrValue::Unit)
+            input.parse().map(NormalAttrValue::Unit)
         } else if lh.peek(syn::LitStr) {
-            input.parse().map(AttrValue::LitStr)
+            input.parse().map(NormalAttrValue::LitStr)
         } else if lh.peek(Token![if]) {
-            input.parse().map(AttrValue::If)
+            input.parse().map(NormalAttrValue::If)
         } else if lh.peek(syn::Ident) {
             let ident = input.parse::<Ident>()?;
 
@@ -283,7 +302,7 @@ impl Parse for AttrValue {
                 syn::parenthesized!(content in input);
                 content.parse()
             } else if ident == "None" {
-                Ok(AttrValue::None)
+                Ok(NormalAttrValue::None)
             } else {
                 Err(syn::Error::new_spanned(ident, "expected `Some` or `None`"))
             }
@@ -305,6 +324,30 @@ impl Parse for Unit {
             Ok(Self)
         } else {
             Err(content.error("expected empty tuple"))
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+#[allow(clippy::large_enum_variant)]
+enum AxmAttrValue {
+    Block(Block),
+    If(If<Box<AxmAttrValue>>),
+}
+
+impl Parse for AxmAttrValue {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let lh = input.lookahead1();
+
+        if lh.peek(syn::token::Brace) {
+            input.parse().map(AxmAttrValue::Block)
+        } else if lh.peek(Token![if]) {
+            let inner = input
+                .parse::<If<syn::Expr>>()?
+                .map(|expr: syn::Expr| Box::new(AxmAttrValue::Block(syn::parse_quote!({ #expr }))));
+            Ok(AxmAttrValue::If(inner))
+        } else {
+            Err(lh.error())
         }
     }
 }
@@ -594,64 +637,76 @@ impl NodeToTokens for TagNode {
 
 impl NodeToTokens for Attr {
     fn node_to_tokens(&self, buf: &mut String, out: &mut TokenStream) {
-        match &self.value {
-            AttrValue::LitStr(lit_str) => {
-                write!(buf, " ");
-                self.ident.node_to_tokens(buf, out);
-                write!(buf, "={:?}", lit_str.value());
-            }
-            AttrValue::Block(block) => {
-                write!(buf, " ");
-                self.ident.node_to_tokens(buf, out);
-                write!(buf, "=");
-                out.extend(quote! {
-                    axum_liveview::html::__private::fixed(&mut html, #buf);
-                });
-                buf.clear();
-                out.extend(quote! {
-                    // TODO(david): using `Debug` to escape qoutes
-                    // not sure if thats ideal. Do we need to consider newlines
-                    // etc?
-                    #[allow(unused_braces)]
-                    axum_liveview::html::__private::dynamic(
-                        &mut html,
-                        format!("{:?}", #block),
-                    );
-                });
-            }
-            AttrValue::If(if_) => {
-                let if_ = if_.clone().map(|attr_value| Self {
-                    ident: self.ident.clone(),
-                    value: *attr_value,
-                });
-                if_.node_to_tokens(buf, out);
-            }
-            AttrValue::Unit(_) => {
-                write!(buf, " ");
-                self.ident.node_to_tokens(buf, out);
-            }
-            AttrValue::None => {}
+        match self {
+            Attr::Normal { ident, value } => match value {
+                NormalAttrValue::LitStr(lit_str) => {
+                    write!(buf, " ");
+                    ident.node_to_tokens(buf, out);
+                    write!(buf, "={:?}", lit_str.value());
+                }
+                NormalAttrValue::Block(block) => {
+                    write!(buf, " ");
+                    ident.node_to_tokens(buf, out);
+                    write!(buf, "=");
+                    out.extend(quote! {
+                        axum_liveview::html::__private::fixed(&mut html, #buf);
+                    });
+                    buf.clear();
+                    out.extend(quote! {
+                        #[allow(unused_braces)]
+                        axum_liveview::html::__private::string(
+                            &mut html,
+                            format!("{:?}", #block),
+                        );
+                    });
+                }
+                NormalAttrValue::If(if_) => {
+                    let if_ = if_.clone().map(|attr_value| Self::Normal {
+                        ident: ident.clone(),
+                        value: *attr_value,
+                    });
+                    if_.node_to_tokens(buf, out);
+                }
+                NormalAttrValue::Unit(_) => {
+                    write!(buf, " ");
+                    ident.node_to_tokens(buf, out);
+                }
+                NormalAttrValue::None => {}
+            },
+            Attr::Axm { ident, value } => match value {
+                AxmAttrValue::Block(block) => {
+                    write!(buf, " ");
+                    ident.node_to_tokens(buf, out);
+                    write!(buf, "=");
+                    out.extend(quote! {
+                        axum_liveview::html::__private::fixed(&mut html, #buf);
+                    });
+                    buf.clear();
+                    out.extend(quote! {
+                        #[allow(unused_braces)]
+                        axum_liveview::html::__private::message(
+                            &mut html,
+                            #block,
+                        );
+                    });
+                }
+                AxmAttrValue::If(if_) => {
+                    let if_ = if_.clone().map(|attr_value| Self::Axm {
+                        ident: ident.clone(),
+                        value: *attr_value,
+                    });
+                    if_.node_to_tokens(buf, out);
+                }
+            },
         }
     }
 }
 
 impl NodeToTokens for AttrIdent {
-    fn node_to_tokens(&self, buf: &mut String, out: &mut TokenStream) {
+    fn node_to_tokens(&self, buf: &mut String, _out: &mut TokenStream) {
         match self {
             AttrIdent::Lit(ident) => write!(buf, "{}", ident),
-            AttrIdent::Block(block) => {
-                out.extend(quote! {
-                    axum_liveview::html::__private::fixed(&mut html, #buf);
-                });
-                buf.clear();
-                out.extend(quote! {
-                    #[allow(unused_braces)]
-                    axum_liveview::html::__private::dynamic(
-                        &mut html,
-                        #block,
-                    );
-                });
-            }
+            AttrIdent::Axm(ident) => write!(buf, "{}", ident),
         }
     }
 }
@@ -671,7 +726,7 @@ impl NodeToTokens for Block {
 
         out.extend(quote! {
             #[allow(unused_braces)]
-            axum_liveview::html::__private::dynamic(&mut html, #self);
+            axum_liveview::html::__private::string(&mut html, #self);
         });
     }
 }
@@ -700,9 +755,9 @@ where
                     let else_if = ToTokensViaNodeToTokens(else_if);
                     out.extend(quote! {
                         if #cond {
-                            axum_liveview::html::__private::dynamic(&mut html, #then_tree);
+                            axum_liveview::html::__private::string(&mut html, #then_tree);
                         } else {
-                            axum_liveview::html::__private::dynamic(&mut html, #else_if);
+                            axum_liveview::html::__private::string(&mut html, #else_if);
                         }
                     });
                 }
@@ -710,9 +765,9 @@ where
                     let else_ = ToTokensViaNodeToTokens(else_);
                     out.extend(quote! {
                         if #cond {
-                            axum_liveview::html::__private::dynamic(&mut html, #then_tree);
+                            axum_liveview::html::__private::string(&mut html, #then_tree);
                         } else {
-                            axum_liveview::html::__private::dynamic(&mut html, #else_);
+                            axum_liveview::html::__private::string(&mut html, #else_);
                         }
                     });
                 }
@@ -720,9 +775,9 @@ where
         } else {
             out.extend(quote! {
                 if #cond {
-                    axum_liveview::html::__private::dynamic(&mut html, #then_tree);
+                    axum_liveview::html::__private::string(&mut html, #then_tree);
                 } else {
-                    axum_liveview::html::__private::dynamic(&mut html, "");
+                    axum_liveview::html::__private::string(&mut html, "");
                 }
             });
         }
@@ -741,7 +796,7 @@ impl NodeToTokens for For {
         out.extend(quote! {
             let mut __first = true;
             for #pat in #expr {
-                axum_liveview::html::__private::dynamic(&mut html, #tree);
+                axum_liveview::html::__private::string(&mut html, #tree);
 
                 // add some empty segments so the number of placeholders matches up
                 if !__first {
@@ -767,7 +822,7 @@ impl NodeToTokens for Match {
             .map(|Arm { pat, guard, tree }| {
                 let guard = guard.as_ref().map(|guard| quote! { if #guard });
                 quote! {
-                    #pat #guard => axum_liveview::html::__private::dynamic(&mut html, #tree),
+                    #pat #guard => axum_liveview::html::__private::string(&mut html, #tree),
                 }
             })
             .collect::<TokenStream>();

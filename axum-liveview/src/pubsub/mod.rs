@@ -1,7 +1,11 @@
 use axum::async_trait;
 use bytes::Bytes;
 use futures_util::stream::{BoxStream, StreamExt};
-use std::{future::ready, sync::Arc};
+use std::{
+    future::{ready, Future},
+    pin::Pin,
+    sync::Arc,
+};
 use tokio::sync::broadcast;
 use tokio_stream::wrappers::BroadcastStream;
 
@@ -13,47 +17,59 @@ pub use self::{
     in_process::InProcess,
 };
 
+pub trait Topic: Send + Sync + 'static {
+    type Message: Encode + Decode + Send;
+
+    fn topic(&self) -> &str;
+}
+
 #[async_trait]
 pub trait PubSub: Send + Sync + 'static {
     async fn send_raw(&self, topic: &str, msg: Bytes) -> anyhow::Result<()>;
 
     async fn subscribe_raw(&self, topic: &str) -> BoxStream<'static, Bytes>;
 
-    async fn broadcast<T>(&self, topic: &str, msg: T) -> anyhow::Result<()>
+    async fn broadcast<T>(&self, topic: &T, msg: T::Message) -> anyhow::Result<()>
     where
+        T: Topic,
         Self: Sized,
-        T: Encode + Send + Sync + 'static,
     {
-        match msg.encode() {
-            Ok(bytes) => self.send_raw(topic, bytes).await,
-            Err(err) => Err(err),
-        }
+        let bytes = msg.encode()?;
+        self.send_raw(topic.topic(), bytes).await?;
+        Ok(())
     }
 
-    async fn subscribe<T>(&self, topic: &str) -> BoxStream<'static, T>
+    fn subscribe<'a, T>(
+        &'a self,
+        topic: &T,
+    ) -> Pin<Box<dyn Future<Output = BoxStream<'static, T::Message>> + Send + 'a>>
     where
+        T: Topic,
         Self: Sized,
-        T: Decode + Send + Sync + 'static,
     {
-        let mut stream = self.subscribe_raw(topic).await;
-        let topic = topic.to_owned();
-        let decoded_stream = async_stream::stream! {
-            while let Some(bytes) = stream.next().await {
-                match T::decode(bytes) {
-                    Ok(msg) => yield msg,
-                    Err(err) => {
-                        tracing::warn!(
-                            ?topic,
-                            ?err,
-                            expected_type = tracing::field::display(std::any::type_name::<T>()),
-                            "failed to decode message for topic stream",
-                        );
+        let topic = topic.topic().to_owned();
+
+        Box::pin(async move {
+            let mut stream = self.subscribe_raw(&topic).await;
+
+            let decoded_stream = async_stream::stream! {
+                while let Some(bytes) = stream.next().await {
+                    match T::Message::decode(bytes) {
+                        Ok(msg) => yield msg,
+                        Err(err) => {
+                            tracing::warn!(
+                                ?topic,
+                                ?err,
+                                expected_type = tracing::field::display(std::any::type_name::<T>()),
+                                "failed to decode message for topic stream",
+                            );
+                        }
                     }
                 }
-            }
-        };
+            };
 
-        Box::pin(decoded_stream)
+            Box::pin(decoded_stream) as BoxStream<'static, T::Message>
+        })
     }
 }
 

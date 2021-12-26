@@ -45,13 +45,13 @@ use axum::{
     Router,
 };
 
-pub mod bindings;
 pub mod html;
 pub mod liveview;
 pub mod middleware;
 pub mod pubsub;
 
 mod manager;
+mod topics;
 mod ws;
 
 pub use axum_liveview_macros::html;
@@ -59,7 +59,7 @@ pub use axum_liveview_macros::html;
 #[doc(inline)]
 pub use self::{
     html::Html,
-    liveview::{LiveView, RenderResult, Setup},
+    liveview::{LiveView, Setup},
     manager::LiveViewManager,
     middleware::layer,
     pubsub::PubSub,
@@ -76,7 +76,7 @@ where
         .route(APP_JS_PATH, get(js))
 }
 
-pub fn assets() -> html::Html {
+pub fn assets<T>() -> html::Html<T> {
     use crate as axum_liveview;
     html! {
         <script src={ APP_JS_PATH }></script>
