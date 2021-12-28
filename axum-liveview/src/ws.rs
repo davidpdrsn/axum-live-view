@@ -1,9 +1,8 @@
 use crate::{
-    bindings::{FormEvent, KeyEvent},
     html::{self, Diff},
-    liveview::topics,
+    liveview::{EventContext, WithEventContext},
     pubsub::PubSub,
-    LiveViewManager,
+    topics, LiveViewManager,
 };
 use anyhow::Context;
 use axum::{
@@ -15,7 +14,7 @@ use axum::{
 use futures_util::{stream::BoxStream, StreamExt};
 use serde::{Deserialize, Serialize};
 use serde_json::{from_value, json, Value};
-use std::time::Duration;
+use std::{collections::HashMap, fmt, time::Duration};
 use tokio::time::{timeout, Instant};
 use tokio_stream::StreamMap;
 use uuid::Uuid;
@@ -48,7 +47,8 @@ where
     const HEARTBEAT_FREQUENCY: Duration = Duration::from_secs(5);
     const HEARTBEAT_MAX_FAILED_ATTEMPTS: usize = 5;
 
-    let mut heartbeat_interval = tokio::time::interval(HEARTBEAT_FREQUENCY);
+    // let mut heartbeat_interval = tokio::time::interval(HEARTBEAT_FREQUENCY);
+    let mut heartbeat_interval = tokio::time::interval(A_VERY_LONG_TIME);
     let mut failed_heartbeats = 0;
     let mut heartbeat_sent_at = Instant::now();
 
@@ -226,9 +226,8 @@ where
 
     match msg {
         EventFromBrowser::Mount => {
-            let mut initial_render_stream = pubsub
-                .subscribe::<Json<html::Serialized>>(&topics::initial_render(liveview_id))
-                .await;
+            let mut initial_render_stream =
+                pubsub.subscribe(&topics::initial_render(liveview_id)).await;
 
             tri!(
                 pubsub.broadcast(&topics::mounted(liveview_id), ()).await,
@@ -238,13 +237,17 @@ where
             let Json(initial_render_html) =
                 match timeout(Duration::from_secs(5), initial_render_stream.next()).await {
                     Ok(Some(initial_render_html)) => initial_render_html,
-                    Ok(None) | Err(_) => {
+                    Ok(None) => {
+                        return Some(HandledMessagedResult::InitialRenderError(liveview_id));
+                    }
+                    Err(err) => {
+                        tracing::warn!(?err, "error from initial render stream");
                         return Some(HandledMessagedResult::InitialRenderError(liveview_id));
                     }
                 };
 
             let diff_stream = pubsub
-                .subscribe::<Json<html::Diff>>(&topics::rendered(liveview_id))
+                .subscribe(&topics::rendered(liveview_id))
                 .await
                 .map(|Json(diff)| diff);
             state
@@ -252,7 +255,7 @@ where
                 .insert(liveview_id, Box::pin(diff_stream));
 
             let js_command_stream = pubsub
-                .subscribe::<Json<JsCommand>>(&topics::js_command(liveview_id))
+                .subscribe(&topics::js_command(liveview_id))
                 .await
                 .map(|Json(js_command)| js_command);
             state
@@ -264,55 +267,44 @@ where
                 initial_render_html,
             ));
         }
-        EventFromBrowser::Click(Click { event_name, data }) => {
-            let topic = topics::liveview_local(liveview_id, &event_name);
-            if let Some(data) = data {
-                tri!(pubsub.broadcast(&topic, axum::Json(data)).await, Ok);
-            } else {
-                tri!(pubsub.broadcast(&topic, ()).await, Ok);
-            }
+        EventFromBrowser::Click(Click { msg }) => {
+            let topic = topics::update(liveview_id);
+            let msg = WithEventContext {
+                msg,
+                ctx: EventContext::click(),
+            };
+            tri!(pubsub.broadcast(&topic, Json(msg)).await, Ok);
         }
-        EventFromBrowser::FormEvent(FormEventMessage {
-            event_name,
-            data,
-            value,
-        }) => {
-            let topic = topics::liveview_local(liveview_id, &event_name);
-            let data = deserialize_data(data)?;
-            tri!(
-                pubsub.broadcast(&topic, FormEvent { value, data }).await,
-                Ok
-            );
+        EventFromBrowser::FormEvent(FormEventMessage { msg, value }) => {
+            let topic = topics::update(liveview_id);
+            let msg = WithEventContext {
+                msg,
+                ctx: EventContext::form(value),
+            };
+            tri!(pubsub.broadcast(&topic, Json(msg)).await, Ok);
         }
         EventFromBrowser::KeyEvent(KeyEventMessage {
-            event_name,
+            msg,
             key,
             code,
             alt,
             ctrl,
             shift,
             meta,
-            data,
         }) => {
-            let topic = topics::liveview_local(liveview_id, &event_name);
-            let data = deserialize_data(data)?;
-            tri!(
-                pubsub
-                    .broadcast(
-                        &topic,
-                        KeyEvent {
-                            key,
-                            code,
-                            alt,
-                            ctrl,
-                            shift,
-                            meta,
-                            data,
-                        }
-                    )
-                    .await,
-                Ok
-            );
+            let topic = topics::update(liveview_id);
+            let msg = WithEventContext {
+                msg,
+                ctx: EventContext::key(KeyEventValue {
+                    key,
+                    code,
+                    alt,
+                    ctrl,
+                    shift,
+                    meta,
+                }),
+            };
+            tri!(pubsub.broadcast(&topic, Json(msg)).await, Ok);
         }
     }
 
@@ -341,14 +333,12 @@ struct RawMessage {
 impl TryFrom<RawMessage> for EventFromBrowser {
     type Error = anyhow::Error;
 
-    fn try_from(value: RawMessage) -> Result<Self, Self::Error> {
-        use crate::bindings::Axm;
-
+    fn try_from(raw_message: RawMessage) -> Result<Self, Self::Error> {
         let RawMessage {
             topic,
             data,
             liveview_id: _,
-        } = value;
+        } = raw_message;
 
         let topic = topic
             .strip_prefix("axum/")
@@ -386,20 +376,25 @@ enum EventFromBrowser {
 
 #[derive(Debug, Deserialize)]
 struct Click {
-    #[serde(rename = "e")]
-    event_name: String,
-    #[serde(rename = "d")]
-    data: Option<Value>,
+    #[serde(rename = "m")]
+    msg: Value,
 }
 
 #[derive(Debug, Deserialize)]
 struct FormEventMessage {
-    #[serde(rename = "e")]
-    event_name: String,
+    #[serde(rename = "m")]
+    msg: Value,
     #[serde(rename = "v")]
-    value: Value,
-    #[serde(rename = "d")]
-    data: Option<Value>,
+    value: FormEventValue,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(untagged)]
+pub(crate) enum FormEventValue {
+    String(String),
+    Strings(Vec<String>),
+    Bool(bool),
+    Map(HashMap<String, FormEventValue>),
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -407,10 +402,10 @@ pub(crate) enum JsCommand {
     NavigateTo { uri: String },
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 struct KeyEventMessage {
-    #[serde(rename = "e")]
-    event_name: String,
+    #[serde(rename = "m")]
+    msg: Value,
     #[serde(rename = "k")]
     key: String,
     #[serde(rename = "kc")]
@@ -421,22 +416,98 @@ struct KeyEventMessage {
     ctrl: bool,
     #[serde(rename = "s")]
     shift: bool,
-    #[serde(rename = "m")]
+    #[serde(rename = "me")]
     meta: bool,
-    #[serde(rename = "d")]
-    data: Option<Value>,
 }
 
-fn deserialize_data(data: Option<Value>) -> Option<Value> {
-    if let Some(data) = data {
-        match serde_json::from_value::<Value>(data.clone()) {
-            Ok(data) => Some(data),
-            Err(err) => {
-                tracing::debug!("invalid data: {:?}. Error: {}", data, err);
-                None
+#[derive(Debug, Deserialize, Serialize)]
+pub(crate) struct KeyEventValue {
+    #[serde(rename = "k")]
+    pub(crate) key: String,
+    #[serde(rename = "kc")]
+    pub(crate) code: String,
+    #[serde(rename = "a")]
+    pub(crate) alt: bool,
+    #[serde(rename = "c")]
+    pub(crate) ctrl: bool,
+    #[serde(rename = "s")]
+    pub(crate) shift: bool,
+    #[serde(rename = "m")]
+    pub(crate) meta: bool,
+}
+
+macro_rules! axm {
+    (
+        $(#[$meta:meta])*
+        pub(crate) enum $name:ident {
+            $(
+                #[attr = $attr:literal]
+                $(#[$variant_meta:meta])*
+                $variant:ident,
+            )*
+        }
+    ) => {
+        $(#[$meta])*
+        pub(crate) enum $name {
+            $(
+                $(#[$variant_meta])*
+                $variant,
+            )*
+        }
+
+        impl $name {
+            #[allow(warnings)]
+            pub(crate) fn from_str(s: &str) -> anyhow::Result<Self> {
+                match s {
+                    $(
+                        concat!("axm-", $attr) => Ok(Self::$variant),
+                    )*
+                    other => anyhow::bail!("unknown message topic: {:?}", other),
+                }
             }
         }
-    } else {
-        Some(Default::default())
+
+        impl fmt::Display for $name {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                match self {
+                    $(
+                        Self::$variant => write!(f, concat!("axm-", $attr)),
+                    )*
+                }
+            }
+        }
+    };
+}
+
+axm! {
+    #[non_exhaustive]
+    #[derive(Debug)]
+    pub(crate) enum Axm {
+        #[attr = "blur"]
+        Blur,
+        #[attr = "change"]
+        Change,
+        #[attr = "click"]
+        Click,
+        #[attr = "focus"]
+        Focus,
+        #[attr = "input"]
+        Input,
+        #[attr = "keydown"]
+        Keydown,
+        #[attr = "keyup"]
+        Keyup,
+        #[attr = "submit"]
+        Submit,
+        #[attr = "throttle"]
+        Throttle,
+        #[attr = "debounce"]
+        Debounce,
+        #[attr = "key"]
+        Key,
+        #[attr = "window-keydown"]
+        WindowKeydown,
+        #[attr = "window-keyup"]
+        WindowKeyup,
     }
 }

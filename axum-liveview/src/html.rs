@@ -5,64 +5,79 @@ use serde_json::{json, Value};
 use std::{collections::HashMap, fmt};
 
 #[derive(Debug)]
-pub struct Html {
+pub struct Html<T> {
     fixed: Vec<String>,
-    dynamic: Vec<Dynamic>,
+    dynamic: Vec<Dynamic<T>>,
 }
 
 #[doc(hidden)]
 pub mod __private {
-    /// Private API. Do _not_ use anything from this module!
-    use super::*;
+    //! Private API. Do _not_ use anything from this module!
 
-    pub fn html() -> Html {
+    use super::*;
+    use fmt;
+    use serde::Serialize;
+
+    pub fn html<T>() -> Html<T> {
         Html {
             fixed: Default::default(),
             dynamic: Default::default(),
         }
     }
 
-    pub fn fixed(html: &mut Html, part: &str) {
+    pub fn fixed<T>(html: &mut Html<T>, part: &str) {
         html.fixed.push(part.to_owned());
     }
 
-    pub fn dynamic(html: &mut Html, part: impl Into<Dynamic>) {
+    pub fn string<T>(html: &mut Html<T>, part: impl Into<Dynamic<T>>) {
         html.dynamic.push(part.into());
     }
 
-    #[derive(Debug)]
-    pub enum Dynamic {
-        String(String),
-        Html(Html),
+    pub fn message<T>(html: &mut Html<T>, msg: T) {
+        html.dynamic.push(Dynamic::Message(msg));
     }
 
-    impl Dynamic {
+    #[derive(Debug)]
+    pub enum Dynamic<T> {
+        String(String),
+        Message(T),
+        Html(Html<T>),
+    }
+
+    impl<S, T> From<S> for Dynamic<T>
+    where
+        S: fmt::Display,
+    {
+        fn from(x: S) -> Self {
+            Dynamic::String(x.to_string())
+        }
+    }
+
+    impl<T> From<Html<T>> for Dynamic<T> {
+        fn from(x: Html<T>) -> Self {
+            Dynamic::Html(x)
+        }
+    }
+
+    impl<T> Dynamic<T>
+    where
+        T: Serialize,
+    {
         pub(super) fn serialize(&self) -> Value {
             match self {
                 Dynamic::String(s) => json!(s),
+                Dynamic::Message(msg) => json!(serde_json::to_string(&msg).unwrap()),
                 Dynamic::Html(inner) => json!(inner.serialize()),
             }
         }
     }
-
-    impl<S> From<S> for Dynamic
-    where
-        S: fmt::Display,
-    {
-        fn from(inner: S) -> Self {
-            Self::String(inner.to_string())
-        }
-    }
-
-    impl From<Html> for Dynamic {
-        fn from(inner: Html) -> Self {
-            Self::Html(inner)
-        }
-    }
 }
 
-impl Html {
-    pub(crate) fn diff(&self, other: &Self) -> DiffResult {
+impl<T> Html<T> {
+    pub(crate) fn diff(&self, other: &Self) -> DiffResult
+    where
+        T: PartialEq + Serialize,
+    {
         let mut out = self
             .dynamic
             .iter()
@@ -80,7 +95,7 @@ impl Html {
             .filter_map(|(idx, (prev, current))| {
                 let value = match (prev, current) {
                     (Some(prev), Some(current)) => match (prev, current) {
-                        (Dynamic::String(a), Dynamic::String(b)) => {
+                        (Dynamic::Message(a), Dynamic::Message(b)) => {
                             if a == b {
                                 None
                             } else {
@@ -92,7 +107,16 @@ impl Html {
                             DiffResult::Changed(diff) => Some(json!(diff)),
                             DiffResult::Unchanged => None,
                         },
+                        (Dynamic::String(a), Dynamic::String(b)) => {
+                            if a == b {
+                                None
+                            } else {
+                                Some(json!(b))
+                            }
+                        }
+
                         (_, Dynamic::Html(inner)) => Some(json!(inner.serialize())),
+                        (_, Dynamic::Message(inner)) => Some(json!(inner)),
                         (_, Dynamic::String(inner)) => Some(json!(inner)),
                     },
                     (None, Some(current)) => Some(current.serialize()),
@@ -128,7 +152,10 @@ impl Html {
         }
     }
 
-    pub(crate) fn serialize(&self) -> Serialized {
+    pub(crate) fn serialize(&self) -> Serialized
+    where
+        T: Serialize,
+    {
         let out = self
             .dynamic
             .iter()
@@ -145,14 +172,18 @@ impl Html {
         Serialized(out)
     }
 
-    pub(crate) fn render(self) -> String {
+    pub(crate) fn render(self) -> String
+    where
+        T: Serialize,
+    {
         use itertools::Itertools;
 
         self.fixed
             .into_iter()
             .interleave(self.dynamic.into_iter().map(|dynamic| match dynamic {
-                Dynamic::String(s) => s,
+                Dynamic::Message(msg) => serde_json::to_string(&msg).unwrap(),
                 Dynamic::Html(inner) => inner.render(),
+                Dynamic::String(s) => s,
             }))
             .collect::<String>()
     }
@@ -160,7 +191,10 @@ impl Html {
 
 const FIXED: &str = "f";
 
-impl IntoResponse for Html {
+impl<T> IntoResponse for Html<T>
+where
+    T: Serialize,
+{
     fn into_response(self) -> axum::response::Response {
         axum::response::Html(self.render()).into_response()
     }
@@ -189,39 +223,39 @@ mod tests {
 
     #[test]
     fn basic() {
-        let view = html! { <div></div> };
+        let view: Html<()> = html! { <div></div> };
         assert_eq!(view.render(), "<div></div>");
     }
 
     #[test]
     fn doctype() {
-        let view = html! { <!DOCTYPE html> };
+        let view: Html<()> = html! { <!DOCTYPE html> };
         assert_eq!(view.render(), "<!DOCTYPE html>");
     }
 
     #[test]
     fn text() {
-        let view = html! { "foo" };
+        let view: Html<()> = html! { "foo" };
         assert_eq!(view.render(), "foo");
     }
 
     #[test]
     fn text_inside_tag() {
-        let view = html! { <div>"foo"</div> };
+        let view: Html<()> = html! { <div>"foo"</div> };
         assert_eq!(view.render(), "<div>foo</div>");
     }
 
     #[test]
     fn interpolate() {
         let count = 1;
-        let view = html! { <div>{ count }</div> };
+        let view: Html<()> = html! { <div>{ count }</div> };
         assert_eq!(view.render(), "<div>1</div>");
     }
 
     #[test]
     fn fixed_next_to_dynamic() {
         let count = 1;
-        let view = html! {
+        let view: Html<()> = html! {
             <div>"foo"</div>
             <div>{ count }</div>
         };
@@ -230,7 +264,7 @@ mod tests {
 
     #[test]
     fn nested_tags() {
-        let view = html! {
+        let view: Html<()> = html! {
             <div>
                 <p>"foo"</p>
             </div>
@@ -241,7 +275,7 @@ mod tests {
     #[test]
     fn deeply_nested() {
         let count = 1;
-        let view = html! {
+        let view: Html<()> = html! {
             <div>
                 <ul>
                     <li>{ count }</li>
@@ -258,15 +292,16 @@ mod tests {
 
     #[test]
     fn nested_with_more_html_calls() {
-        let view = html! {
+        let view: Html<()> = html! {
             <div>
                 <ul>
                     {
-                        html! {
+                        let nested: Html<()> = html! {
                             <li>"1"</li>
                             <li>"2"</li>
                             <li>"3"</li>
-                        }
+                        };
+                        nested
                     }
                 </ul>
             </div>
@@ -279,7 +314,7 @@ mod tests {
 
     #[test]
     fn attribute() {
-        let view = html! {
+        let view: Html<()> = html! {
             <div class="col-md">"foo"</div>
         };
         assert_eq!(view.render(), "<div class=\"col-md\">foo</div>");
@@ -287,7 +322,7 @@ mod tests {
 
     #[test]
     fn multiple_attributes() {
-        let view = html! {
+        let view: Html<()> = html! {
             <div class="col-md" id="the-thing">"foo"</div>
         };
         assert_eq!(
@@ -298,7 +333,7 @@ mod tests {
 
     #[test]
     fn attribute_with_dash() {
-        let view = html! {
+        let view: Html<()> = html! {
             <div on-click="do thing">"foo"</div>
         };
         assert_eq!(view.render(), "<div on-click=\"do thing\">foo</div>");
@@ -307,7 +342,7 @@ mod tests {
     #[test]
     fn interpolate_class() {
         let size = 8;
-        let view = html! {
+        let view: Html<String> = html! {
             <div class={ format!("col-{}", size) }>"foo"</div>
         };
         assert_eq!(view.render(), "<div class=\"col-8\">foo</div>");
@@ -315,7 +350,7 @@ mod tests {
 
     #[test]
     fn empty_attribute() {
-        let view = html! {
+        let view: Html<()> = html! {
             <button disabled>"foo"</button>
         };
         assert_eq!(view.render(), "<button disabled>foo</button>");
@@ -323,7 +358,7 @@ mod tests {
 
     #[test]
     fn empty_tag() {
-        let view = html! {
+        let view: Html<()> = html! {
             <img src="foo.png" />
         };
         assert_eq!(view.render(), "<img src=\"foo.png\">");
@@ -331,7 +366,7 @@ mod tests {
 
     #[test]
     fn conditional() {
-        let view = html! {
+        let view: Html<()> = html! {
             <div>
                 if true {
                     <p>"some paragraph..."</p>
@@ -343,7 +378,7 @@ mod tests {
 
     #[test]
     fn conditional_else() {
-        let view = html! {
+        let view: Html<()> = html! {
             <div>
                 if true {
                     <p>"some paragraph..."</p>
@@ -357,7 +392,7 @@ mod tests {
 
     #[test]
     fn conditional_else_if() {
-        let view = html! {
+        let view: Html<()> = html! {
             <div>
                 if true {
                     <p>"some paragraph..."</p>
@@ -374,7 +409,7 @@ mod tests {
     #[test]
     fn if_let() {
         let name = Some("bob");
-        let view = html! {
+        let view: Html<()> = html! {
             <div>
                 if let Some(name) = name {
                     <p>{ format!("Hi {}", name) }</p>
@@ -389,7 +424,7 @@ mod tests {
     #[test]
     fn for_loop() {
         let names = ["alice", "bob", "cindy"];
-        let view = html! {
+        let view: Html<()> = html! {
             <ul>
                 for name in names {
                     <li>{ name }</li>
@@ -405,7 +440,7 @@ mod tests {
     #[test]
     fn match_() {
         let name = Some("bob");
-        let view = html! {
+        let view: Html<()> = html! {
             <div>
                 match name {
                     Some(name) => <p>{ format!("Hi {}", name) }</p>,
@@ -419,7 +454,7 @@ mod tests {
     #[test]
     fn match_guard() {
         let count = Some(10);
-        let view = html! {
+        let view: Html<()> = html! {
             <div>
                 match count {
                     Some(count) if count == 0 => <p>"its zero!"</p>,
@@ -433,7 +468,7 @@ mod tests {
 
     #[test]
     fn keyword_attribute() {
-        let view = html! {
+        let view: Html<()> = html! {
             <input type="text" />
         };
         assert_eq!(view.render(), "<input type=\"text\">");
@@ -442,7 +477,7 @@ mod tests {
     #[test]
     fn if_up_front() {
         let content = "bar";
-        let view = html! {
+        let view: Html<()> = html! {
             if false {}
             "foo"
             { content }
@@ -453,7 +488,7 @@ mod tests {
     #[test]
     fn if_up_front_nested() {
         let content = "bar";
-        let view = html! {
+        let view: Html<()> = html! {
             <div>
                 if false {}
                 "foo"
@@ -465,93 +500,134 @@ mod tests {
 
     #[test]
     fn optional_attribute() {
-        let view = html! { <input required=() /> };
+        let view: Html<()> = html! { <input required=() /> };
         assert_eq!(view.render(), "<input required>");
 
-        let view = html! { <input required=Some(()) /> };
+        let view: Html<()> = html! { <input required=Some(()) /> };
         assert_eq!(view.render(), "<input required>");
 
-        let view = html! { <input required=Some("true") /> };
+        let view: Html<()> = html! { <input required=Some("true") /> };
         assert_eq!(view.render(), "<input required=\"true\">");
 
-        let view = html! { <input required=Some(Some("true")) /> };
+        let view: Html<()> = html! { <input required=Some(Some("true")) /> };
         assert_eq!(view.render(), "<input required=\"true\">");
 
-        let view = html! { <input required=Some(Some(None)) /> };
+        let view: Html<()> = html! { <input required=Some(Some(None)) /> };
         assert_eq!(view.render(), "<input>");
 
-        let view = html! { <input required=Some(Some({ (1 + 2).to_string() })) /> };
+        let view: Html<()> = html! { <input required=Some(Some({ (1 + 2).to_string() })) /> };
         assert_eq!(view.render(), "<input required=\"3\">");
 
-        let view = html! { <input required=None /> };
+        let view: Html<()> = html! { <input required=None /> };
         assert_eq!(view.render(), "<input>");
 
-        let view = html! {
+        let view: Html<()> = html! {
             <input required=if true { "true" } />
         };
         assert_eq!(view.render(), "<input required=\"true\">");
 
-        let view = html! {
+        let view: Html<()> = html! {
             <input required=if false { "wat" } else { "true" } />
         };
         assert_eq!(view.render(), "<input required=\"true\">");
 
-        let view = html! {
+        let view: Html<()> = html! {
             <input required=if true { () } />
         };
         assert_eq!(view.render(), "<input required>");
 
-        let view = html! {
+        let view: Html<()> = html! {
             <input required=if false { "wat" } else { () } />
         };
         assert_eq!(view.render(), "<input required>");
 
-        let view = html! {
+        let view: Html<()> = html! {
             <input required=if true { Some(()) } />
         };
         assert_eq!(view.render(), "<input required>");
 
-        let view = html! {
+        let view: Html<()> = html! {
             <input required=if true { None } />
         };
         assert_eq!(view.render(), "<input>");
 
-        let view = html! {
+        let view: Html<()> = html! {
             <input required=if true { Some(()) } else { None } />
         };
         assert_eq!(view.render(), "<input required>");
 
-        let view = html! {
+        let view: Html<()> = html! {
             <input required=if false { Some(()) } else { None } />
         };
         assert_eq!(view.render(), "<input>");
 
-        let view = html! {
+        let view: Html<()> = html! {
             <input required=if true { Some("true") } else { None } />
         };
         assert_eq!(view.render(), "<input required=\"true\">");
 
-        let view = html! {
+        let view: Html<()> = html! {
             <input required=if false { Some("true") } else { None } />
         };
         assert_eq!(view.render(), "<input>");
 
         let value = Some("true");
-        let view = html! {
+        let view: Html<()> = html! {
             <input required=if let Some(value) = value { Some({ value }) } else { None } />
         };
         assert_eq!(view.render(), "<input required=\"true\">");
 
         let value = None::<String>;
-        let view = html! {
+        let view: Html<()> = html! {
             <input required=if let Some(value) = value { Some({ value }) } else { None } />
         };
         assert_eq!(view.render(), "<input>");
     }
 
     #[test]
-    fn dynamic_attribute_name() {
-        let view = html! { <input { "class" }="foo" /> };
-        assert_eq!(view.render(), "<input class=\"foo\">");
+    fn axm_attribute() {
+        let view: Html<&str> = html! { <input axm-foo={ "foo" } /> };
+        assert_eq!(view.render(), "<input axm-foo=\"foo\">");
+
+        let view: Html<&str> = html! { <input axm-foo=if true { "foo" } else { "bar" } /> };
+        assert_eq!(view.render(), "<input axm-foo=\"foo\">");
+
+        let view: Html<Option<&str>> =
+            html! { <input axm-foo=if true { Some("foo") } else { None } /> };
+        assert_eq!(view.render(), "<input axm-foo=\"foo\">");
+
+        #[derive(Serialize)]
+        enum Msg {
+            Foo,
+            Bar { value: i32 },
+        }
+
+        let view: Html<Msg> = html! { <input axm-foo={ Msg::Foo } /> };
+        assert_eq!(view.render(), "<input axm-foo=\"Foo\">");
+
+        let view: Html<Msg> = html! { <input axm-foo={ Msg::Bar { value: 123 } } /> };
+        assert_eq!(view.render(), "<input axm-foo={\"Bar\":{\"value\":123}}>");
+    }
+
+    #[test]
+    fn axm_enum_update_attribute() {
+        #[derive(Serialize)]
+        struct Msg {
+            n: i32,
+        }
+
+        let view = html! { <foo axm-click={ Msg { n: 1 } } /> };
+        let json = json!(view.serialize());
+        dbg!(&json);
+        assert_eq!(
+            json,
+            serde_json::json!({
+                "0": "{\"n\":1}",
+                "f": [
+                    "<foo axm-click=",
+                    ">",
+                ],
+            })
+        );
     }
 }

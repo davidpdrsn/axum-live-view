@@ -1,5 +1,6 @@
-use axum::{response::IntoResponse, routing::get, Router};
-use axum_liveview::{bindings::Axm::*, html, Html, LiveView, LiveViewManager, Setup};
+use axum::{async_trait, response::IntoResponse, routing::get, Json, Router};
+use axum_liveview::{html, liveview::EventContext, Html, LiveView, LiveViewManager, Setup};
+use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 
 #[tokio::main]
@@ -47,17 +48,30 @@ struct Counter {
     count: u64,
 }
 
+#[async_trait]
 impl LiveView for Counter {
-    fn setup(&self, subscriptions: &mut Setup<Self>) {
-        subscriptions.on("incr", Self::increment);
-        subscriptions.on("decr", Self::decrement);
+    type Message = Msg;
+
+    fn setup(&self, setup: &mut Setup<Self>) {}
+
+    async fn update(mut self, msg: Msg, ctx: EventContext) -> Self {
+        match msg {
+            Msg::Incr => self.count += 1,
+            Msg::Decr => {
+                if self.count > 0 {
+                    self.count -= 1;
+                }
+            }
+        }
+
+        self
     }
 
-    fn render(&self) -> Html {
+    fn render(&self) -> Html<Self::Message> {
         html! {
             <div>
-                <button { Click }={ "incr" }>"+"</button>
-                <button { Click }={ "decr" }>"-"</button>
+                <button axm-click={ Msg::Incr }>"+"</button>
+                <button axm-click={ Msg::Decr }>"-"</button>
             </div>
 
             <div>
@@ -68,16 +82,8 @@ impl LiveView for Counter {
     }
 }
 
-impl Counter {
-    async fn increment(mut self) -> Self {
-        self.count += 1;
-        self
-    }
-
-    async fn decrement(mut self) -> Self {
-        if self.count > 0 {
-            self.count -= 1;
-        }
-        self
-    }
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
+enum Msg {
+    Incr,
+    Decr,
 }

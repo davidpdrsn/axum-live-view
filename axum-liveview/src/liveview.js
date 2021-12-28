@@ -207,15 +207,20 @@
 
             var f = (event) => {
                 let liveviewId = element.closest('[data-liveview-id]').getAttribute("data-liveview-id")
-                let eventName = element.getAttribute(attr)
+                let msg = element.getAttribute(attr)
 
                 var send = true;
 
-                var data;
+                var data = { "e": eventName };
+                try {
+                    data.m = JSON.parse(msg);
+                } catch {
+                    data.m = msg;
+                }
                 if (element.nodeName === "FORM") {
-                    data = { "e": eventName, "v": serializeForm(element) }
+                    data.v = serializeForm(element)
                 } else {
-                    data = { "e": eventName, "v": inputValue(element) }
+                    data.v = inputValue(element)
                 }
 
                 if (event.keyIdentifier) {
@@ -231,11 +236,10 @@
                     data.a = event.altKey
                     data.c = event.ctrlKey
                     data.s = event.shiftKey
-                    data.m = event.metaKey
+                    data.me = event.metaKey
                 }
 
                 if (send) {
-                    addAdditionalData(element, data)
                     this.send(liveviewId, `axum/${attr}`, data)
                 }
             }
@@ -317,22 +321,6 @@
 
         if (state[fixed].length == Object.keys(state).length - 1) {
             delete state[state[fixed].length - 1]
-        }
-    }
-
-    const addAdditionalData = (element, data) => {
-        var hasAdditionalData = false
-        var additionalData = {}
-        for (var i = 0; i < element.attributes.length; i++) {
-            var attr = element.attributes[i];
-            if (attr.name.startsWith("axm-data-")) {
-                additionalData[attr.name.slice("axm-data-".length)] = attr.value
-                hasAdditionalData = true
-            }
-        }
-
-        if (hasAdditionalData) {
-            data["d"] = additionalData;
         }
     }
 

@@ -1,6 +1,6 @@
 use crate::{
-    html, html::DiffResult, liveview::topics, liveview::LiveViewStreamItem, pubsub::PubSub,
-    ws::JsCommand, Html, LiveView,
+    html, html::DiffResult, liveview::LiveViewStreamItem, pubsub::PubSub, topics, ws::JsCommand,
+    Html, LiveView,
 };
 use axum::{
     async_trait,
@@ -8,6 +8,7 @@ use axum::{
     Json,
 };
 use futures_util::StreamExt;
+use serde::Serialize;
 use std::sync::Arc;
 use uuid::Uuid;
 
@@ -32,7 +33,7 @@ impl LiveViewManager {
 }
 
 impl LiveViewManager {
-    pub fn embed<T>(&self, liveview: T) -> Html
+    pub fn embed<T>(&self, liveview: T) -> Html<T::Message>
     where
         T: LiveView + Send + 'static,
     {
@@ -43,7 +44,7 @@ impl LiveViewManager {
     }
 }
 
-fn wrap_in_liveview_container(liveview_id: Uuid, markup: Html) -> Html {
+fn wrap_in_liveview_container<T>(liveview_id: Uuid, markup: Html<T>) -> Html<T> {
     use crate as axum_liveview;
     html! {
         <div class="liveview-container" data-liveview-id={ liveview_id }>
@@ -63,10 +64,10 @@ where
 
     futures_util::pin_mut!(markup_stream);
 
-    let mut mounted_stream = pubsub.subscribe::<()>(&topics::mounted(liveview_id)).await;
+    let mut mounted_stream = pubsub.subscribe(&topics::mounted(liveview_id)).await;
 
     let mut disconnected_stream = pubsub
-        .subscribe::<()>(&topics::socket_disconnected(liveview_id))
+        .subscribe(&topics::socket_disconnected(liveview_id))
         .await;
 
     let mut mounted_streams_count = 0;
@@ -78,16 +79,6 @@ where
                     LiveViewStreamItem::Html(new_markup) => {
                         handle_new_markup(liveview_id, &mut markup, new_markup, &pubsub).await;
                     },
-                    LiveViewStreamItem::NavigateTo(uri) => {
-                        let msg = JsCommand::NavigateTo { uri: uri.to_string() };
-
-                        if let Err(err) = pubsub
-                            .broadcast(&topics::js_command(liveview_id), Json(msg))
-                            .await
-                        {
-                            tracing::error!(%err, "failed to send markup on pubsub");
-                        }
-                    }
                 }
             }
 
@@ -116,9 +107,14 @@ where
     }
 }
 
-async fn handle_new_markup<P>(liveview_id: Uuid, markup: &mut Html, new_markup: Html, pubsub: &P)
-where
+async fn handle_new_markup<T, P>(
+    liveview_id: Uuid,
+    markup: &mut Html<T>,
+    new_markup: Html<T>,
+    pubsub: &P,
+) where
     P: PubSub,
+    T: Serialize + PartialEq,
 {
     let new_markup = wrap_in_liveview_container(liveview_id, new_markup);
 

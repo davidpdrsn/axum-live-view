@@ -1,217 +1,191 @@
 use crate::{
     html::Html,
-    pubsub::{Decode, PubSub},
+    pubsub::{Decode, PubSub, Topic},
+    topics::{self, FixedTopic},
+    ws::{FormEventValue, KeyEventValue},
 };
 use async_stream::stream;
-use axum::http::Uri;
+use axum::{async_trait, Json};
 use bytes::Bytes;
 use futures_util::{
     future::{BoxFuture, FutureExt},
     stream::StreamExt,
     Stream,
 };
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::sync::Arc;
 use std::{
-    any::TypeId,
+    any::{type_name, TypeId},
     future::{ready, Future},
     hash::Hash,
 };
 use tokio_stream::StreamMap;
 use uuid::Uuid;
 
-// ---- LiveView ----
-
+#[async_trait]
 pub trait LiveView: Sized + Send + Sync + 'static {
+    type Message: Serialize + DeserializeOwned + PartialEq + Send + Sync + 'static;
+
     fn setup(&self, sub: &mut Setup<Self>);
 
-    fn render(&self) -> Html;
-}
+    async fn update(self, msg: Self::Message, ctx: EventContext) -> Self;
 
-pub struct RenderResult<T> {
-    kind: Kind<T>,
-}
-
-pub(crate) enum Kind<T> {
-    Render(T),
-    DontRender(T),
-    NavigateTo(Uri),
-}
-
-impl<T> RenderResult<T> {
-    pub fn render(value: T) -> Self {
-        Self {
-            kind: Kind::Render(value),
-        }
-    }
-
-    pub fn dont_render(value: T) -> Self {
-        Self {
-            kind: Kind::DontRender(value),
-        }
-    }
-
-    pub fn navigate_to(uri: Uri) -> Self {
-        Self {
-            kind: Kind::NavigateTo(uri),
-        }
-    }
-}
-
-impl<T> From<T> for RenderResult<T> {
-    fn from(value: T) -> Self {
-        Self::render(value)
-    }
+    fn render(&self) -> Html<Self::Message>;
 }
 
 pub(crate) async fn run_to_stream<T, P>(
     mut liveview: T,
     pubsub: P,
     liveview_id: Uuid,
-) -> impl Stream<Item = LiveViewStreamItem> + Send
+) -> impl Stream<Item = LiveViewStreamItem<T::Message>> + Send
 where
     T: LiveView,
     P: PubSub,
 {
-    let mut setup = Setup::new();
+    let mut setup = Setup::new(liveview_id);
     liveview.setup(&mut setup);
 
+    let Setup {
+        update_topic,
+        update_callback,
+        subscriptions,
+    } = setup;
+
     let mut stream_map = StreamMap::new();
-    for (topic, callback) in setup.subscriptions {
-        let stream = match topic {
-            SubscriptionKind::Local(topic) => {
-                pubsub
-                    .subscribe_raw(&topics::liveview_local(liveview_id, &topic))
-                    .await
-            }
-            SubscriptionKind::Broadcast(topic) => pubsub.subscribe_raw(&topic).await,
-        };
+
+    let stream = pubsub.subscribe_raw(update_topic.topic()).await;
+    stream_map.insert(update_callback, stream);
+
+    for (topic, callback) in subscriptions {
+        let stream = pubsub.subscribe_raw(&topic).await;
         stream_map.insert(callback, stream);
     }
 
     stream! {
         while let Some((callback, msg)) = stream_map.next().await {
-            let result = (callback.callback)(liveview, msg).await;
-            liveview = match result.kind {
-                Kind::Render(liveview) => {
-                    let markup = liveview.render();
-                    yield LiveViewStreamItem::Html(markup);
-                    liveview
-                }
-                Kind::DontRender(liveview) => liveview,
-                Kind::NavigateTo(uri) => {
-                    yield LiveViewStreamItem::NavigateTo(uri);
-                    break;
-                }
-            };
+            liveview = (callback.callback)(liveview, msg).await;
+            let markup = liveview.render();
+            yield LiveViewStreamItem::Html(markup);
         }
     }
 }
 
-pub(crate) enum LiveViewStreamItem {
-    Html(Html),
-    NavigateTo(Uri),
+pub(crate) enum LiveViewStreamItem<T> {
+    Html(Html<T>),
 }
 
-pub(crate) mod topics {
-    use uuid::Uuid;
-
-    pub(crate) fn mounted(liveview_id: Uuid) -> String {
-        liveview_local(liveview_id, "mounted")
-    }
-
-    pub(crate) fn initial_render(liveview_id: Uuid) -> String {
-        liveview_local(liveview_id, "initial-render")
-    }
-
-    pub(crate) fn rendered(liveview_id: Uuid) -> String {
-        liveview_local(liveview_id, "rendered")
-    }
-
-    pub(crate) fn js_command(liveview_id: Uuid) -> String {
-        liveview_local(liveview_id, "js-command")
-    }
-
-    pub(crate) fn socket_disconnected(liveview_id: Uuid) -> String {
-        liveview_local(liveview_id, "socket-disconnected")
-    }
-
-    pub(crate) fn liveview_local(liveview_id: Uuid, topic: &str) -> String {
-        format!("liveview/{}/{}", liveview_id, topic)
-    }
+pub struct Setup<T>
+where
+    T: LiveView,
+{
+    update_topic: FixedTopic<Json<WithEventContext<T::Message>>>,
+    update_callback: AsyncCallback<T>,
+    subscriptions: Vec<(String, AsyncCallback<T>)>,
 }
 
-pub struct Setup<T> {
-    subscriptions: Vec<(SubscriptionKind, AsyncCallback<T>)>,
+#[derive(Serialize, Deserialize, Debug)]
+pub(crate) struct WithEventContext<T> {
+    pub(crate) msg: T,
+    pub(crate) ctx: EventContext,
 }
 
-#[derive(Clone)]
-enum SubscriptionKind {
-    Local(String),
-    Broadcast(String),
+#[derive(Serialize, Deserialize, Debug)]
+pub struct EventContext {
+    inner: EventContextInner,
 }
 
-impl<T> Setup<T> {
-    fn new() -> Self {
+impl EventContext {
+    pub(crate) fn click() -> Self {
         Self {
+            inner: EventContextInner::Click,
+        }
+    }
+
+    pub(crate) fn form(value: FormEventValue) -> Self {
+        Self {
+            inner: EventContextInner::Form(value),
+        }
+    }
+
+    pub(crate) fn key(value: KeyEventValue) -> Self {
+        Self {
+            inner: EventContextInner::Key(value),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+enum EventContextInner {
+    Click,
+    Form(FormEventValue),
+    Key(KeyEventValue),
+}
+
+impl<T> Setup<T>
+where
+    T: LiveView,
+{
+    fn new(liveview_id: Uuid) -> Self {
+        let callback = |this: T, Json(msg): Json<WithEventContext<T::Message>>| {
+            let WithEventContext { msg, ctx } = msg;
+            this.update(msg, ctx)
+        };
+        let update_topic = topics::update::<T::Message>(liveview_id);
+        let callback = make_callback(&update_topic, callback);
+
+        Self {
+            update_topic,
+            update_callback: callback,
             subscriptions: Default::default(),
         }
     }
 
-    pub fn on<F, Msg>(&mut self, topic: &str, callback: F)
+    pub fn on<F, K>(&mut self, topic: &K, callback: F)
     where
-        F: SubscriptionCallback<T, Msg>,
+        K: Topic + Send + 'static,
         T: Send + 'static,
-        Msg: Decode,
+        F: SubscriptionCallback<T, K::Message>,
     {
-        self.on_kind(SubscriptionKind::Local(topic.to_owned()), callback)
+        let callback = make_callback(topic, callback);
+        let topic = topic.topic().to_owned();
+        self.subscriptions.push((topic, callback));
     }
+}
 
-    pub fn on_broadcast<F, Msg>(&mut self, topic: &str, callback: F)
-    where
-        F: SubscriptionCallback<T, Msg>,
-        T: Send + 'static,
-        Msg: Decode,
-    {
-        self.on_kind(SubscriptionKind::Broadcast(topic.to_owned()), callback)
-    }
+fn make_callback<L, T, F, M>(topic: &T, callback: F) -> AsyncCallback<L>
+where
+    L: LiveView,
+    T: Topic,
+    F: SubscriptionCallback<L, M>,
+    M: Decode,
+{
+    let topic = topic.topic().to_owned().into();
 
-    fn on_kind<F, Msg>(&mut self, kind: SubscriptionKind, callback: F)
-    where
-        F: SubscriptionCallback<T, Msg>,
-        T: Send + 'static,
-        Msg: Decode,
-    {
-        let callback = Arc::new(
-            move |receiver: T, raw_msg: Bytes| match Msg::decode(raw_msg) {
-                Ok(msg) => Box::pin(callback.call(receiver, msg).map(|value| value.into())) as _,
-                Err(err) => {
-                    tracing::warn!(
-                        ?err,
-                        t_type_name = %std::any::type_name::<T>(),
-                        msg_type_name = %std::any::type_name::<Msg>(),
-                        "failed to decode message for subscriber",
-                    );
-                    Box::pin(ready(RenderResult::dont_render(receiver))) as _
-                }
-            },
-        );
-        let topic: Arc<str> = match kind.clone() {
-            SubscriptionKind::Local(topic) => topic.into(),
-            SubscriptionKind::Broadcast(topic) => topic.into(),
-        };
-        self.subscriptions.push((
-            kind,
-            AsyncCallback {
-                type_id: TypeId::of::<F>(),
-                topic,
-                callback,
-            },
-        ));
+    let callback = Arc::new(
+        move |receiver: L, raw_msg: Bytes| match M::decode(raw_msg.clone()) {
+            Ok(msg) => Box::pin(callback.call(receiver, msg).map(|value| value.into())) as _,
+            Err(err) => {
+                tracing::warn!(
+                    ?err,
+                    t_type_name = %type_name::<L>(),
+                    msg_type_name = %type_name::<T::Message>(),
+                    raw_msg = ?std::str::from_utf8(&raw_msg),
+                    "failed to decode message for subscriber",
+                );
+                Box::pin(ready(receiver)) as _
+            }
+        },
+    );
+
+    AsyncCallback {
+        type_id: TypeId::of::<F>(),
+        topic,
+        callback,
     }
 }
 
 pub trait SubscriptionCallback<T, Msg>: Copy + Send + Sync + 'static {
-    type Output: Into<RenderResult<T>>;
+    type Output: Into<T>;
     type Future: Future<Output = Self::Output> + Send + 'static;
 
     fn call(self, receiver: T, input: Msg) -> Self::Future;
@@ -221,7 +195,7 @@ impl<T, F, Fut, K> SubscriptionCallback<T, ()> for F
 where
     F: Fn(T) -> Fut + Copy + Send + Sync + 'static,
     Fut: Future<Output = K> + Send + 'static,
-    K: Into<RenderResult<T>>,
+    K: Into<T>,
 {
     type Output = K;
     type Future = Fut;
@@ -235,7 +209,7 @@ impl<T, Msg, F, Fut, K> SubscriptionCallback<T, (Msg,)> for F
 where
     F: Fn(T, Msg) -> Fut + Copy + Send + Sync + 'static,
     Fut: Future<Output = K> + Send + 'static,
-    K: Into<RenderResult<T>>,
+    K: Into<T>,
     Msg: Decode,
 {
     type Output = K;
@@ -249,7 +223,7 @@ where
 struct AsyncCallback<T> {
     type_id: TypeId,
     topic: Arc<str>,
-    callback: Arc<dyn Fn(T, Bytes) -> BoxFuture<'static, RenderResult<T>> + Send + Sync + 'static>,
+    callback: Arc<dyn Fn(T, Bytes) -> BoxFuture<'static, T> + Send + Sync + 'static>,
 }
 
 impl<T> Clone for AsyncCallback<T> {
