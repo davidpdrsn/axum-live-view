@@ -1,5 +1,5 @@
 use axum::{async_trait, response::IntoResponse, routing::get, Router};
-use axum_liveview::{html, liveview::EventContext, Html, LiveView, LiveViewManager, Setup};
+use axum_liveview::{html, EventContext, Html, LiveView, LiveViewManager, Subscriptions};
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 
@@ -53,7 +53,7 @@ struct View {
 impl LiveView for View {
     type Message = Msg;
 
-    fn setup(&self, setup: &mut Setup<Self>) {}
+    fn init(&self, subscriptions: &mut Subscriptions<Self>) {}
 
     async fn update(mut self, msg: Msg, ctx: EventContext) -> Self {
         self.count += 1;

@@ -1,5 +1,5 @@
-use axum::{async_trait, response::IntoResponse, routing::get, Json, Router};
-use axum_liveview::{html, liveview::EventContext, Html, LiveView, LiveViewManager, Setup};
+use axum::{async_trait, response::IntoResponse, routing::get, Router};
+use axum_liveview::{html, EventContext, Html, LiveView, LiveViewManager, Subscriptions};
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, net::SocketAddr};
 
@@ -55,7 +55,7 @@ struct FormView {
 impl LiveView for FormView {
     type Message = Msg;
 
-    fn setup(&self, setup: &mut Setup<Self>) {}
+    fn init(&self, subscriptions: &mut Subscriptions<Self>) {}
 
     async fn update(self, msg: Msg, ctx: EventContext) -> Self {
         self

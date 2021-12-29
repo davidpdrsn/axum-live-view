@@ -45,12 +45,15 @@ use axum::{
     Router,
 };
 
+#[macro_use]
+mod macros;
+
 pub mod html;
 pub mod liveview;
 pub mod middleware;
 pub mod pubsub;
 
-mod manager;
+mod subscriptions;
 mod topics;
 mod ws;
 
@@ -59,10 +62,11 @@ pub use axum_liveview_macros::html;
 #[doc(inline)]
 pub use self::{
     html::Html,
-    liveview::{LiveView, Setup},
-    manager::LiveViewManager,
+    liveview::{LiveView, LiveViewManager},
     middleware::layer,
     pubsub::PubSub,
+    subscriptions::Subscriptions,
+    ws::EventContext,
 };
 
 const APP_JS_PATH: &str = "/live/app.js";
@@ -84,6 +88,9 @@ pub fn assets<T>() -> html::Html<T> {
 }
 
 async fn js() -> impl IntoResponse {
-    const JS: &str = concat!(include_str!("morphdom.js"), include_str!("liveview.js"));
+    const JS: &str = concat!(
+        include_str!("js/morphdom.js"),
+        include_str!("js/liveview.js")
+    );
     (Headers([("content-type", "application/javascript")]), JS)
 }

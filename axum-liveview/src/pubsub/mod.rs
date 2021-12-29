@@ -1,11 +1,10 @@
 use axum::async_trait;
 use bytes::Bytes;
-use futures_util::stream::{BoxStream, StreamExt};
-use std::{
-    future::{ready, Future},
-    pin::Pin,
-    sync::Arc,
+use futures_util::{
+    future::BoxFuture,
+    stream::{BoxStream, StreamExt},
 };
+use std::{future::ready, sync::Arc};
 use tokio::sync::broadcast;
 use tokio_stream::wrappers::BroadcastStream;
 
@@ -24,25 +23,30 @@ pub trait Topic: Send + Sync + 'static {
 }
 
 #[async_trait]
-pub trait PubSub: Send + Sync + 'static {
-    async fn send_raw(&self, topic: &str, msg: Bytes) -> anyhow::Result<()>;
+pub trait PubSubBackend: Send + Sync + 'static {
+    async fn broadcast_raw(&self, topic: &str, msg: Bytes) -> anyhow::Result<()>;
 
-    async fn subscribe_raw(&self, topic: &str) -> BoxStream<'static, Bytes>;
+    async fn subscribe_raw(&self, topic: &str) -> anyhow::Result<BoxStream<'static, Bytes>>;
+}
 
-    async fn broadcast<T>(&self, topic: &T, msg: T::Message) -> anyhow::Result<()>
+pub trait PubSub: PubSubBackend {
+    fn broadcast<'a, T>(&'a self, topic: &T, msg: T::Message) -> BoxFuture<'a, anyhow::Result<()>>
     where
         T: Topic,
         Self: Sized,
     {
-        let bytes = msg.encode()?;
-        self.send_raw(topic.topic(), bytes).await?;
-        Ok(())
+        let topic = topic.topic().to_owned();
+        Box::pin(async move {
+            let bytes = msg.encode()?;
+            self.broadcast_raw(&topic, bytes).await?;
+            Ok(())
+        })
     }
 
     fn subscribe<'a, T>(
         &'a self,
         topic: &T,
-    ) -> Pin<Box<dyn Future<Output = BoxStream<'static, T::Message>> + Send + 'a>>
+    ) -> BoxFuture<'a, anyhow::Result<BoxStream<'static, T::Message>>>
     where
         T: Topic,
         Self: Sized,
@@ -50,7 +54,7 @@ pub trait PubSub: Send + Sync + 'static {
         let topic = topic.topic().to_owned();
 
         Box::pin(async move {
-            let mut stream = self.subscribe_raw(&topic).await;
+            let mut stream = self.subscribe_raw(&topic).await?;
 
             let decoded_stream = async_stream::stream! {
                 while let Some(bytes) = stream.next().await {
@@ -68,23 +72,23 @@ pub trait PubSub: Send + Sync + 'static {
                 }
             };
 
-            Box::pin(decoded_stream) as BoxStream<'static, T::Message>
+            Ok(Box::pin(decoded_stream) as BoxStream<'static, T::Message>)
         })
     }
 }
 
+impl<T> PubSub for T where T: PubSubBackend {}
+
 #[async_trait]
-impl PubSub for Arc<dyn PubSub> {
-    async fn send_raw(&self, topic: &str, msg: Bytes) -> anyhow::Result<()> {
-        PubSub::send_raw(&**self, topic, msg).await
+impl PubSubBackend for Arc<dyn PubSubBackend> {
+    async fn broadcast_raw(&self, topic: &str, msg: Bytes) -> anyhow::Result<()> {
+        PubSubBackend::broadcast_raw(&**self, topic, msg).await
     }
 
-    async fn subscribe_raw(&self, topic: &str) -> BoxStream<'static, Bytes> {
-        PubSub::subscribe_raw(&**self, topic).await
+    async fn subscribe_raw(&self, topic: &str) -> anyhow::Result<BoxStream<'static, Bytes>> {
+        PubSubBackend::subscribe_raw(&**self, topic).await
     }
 }
-
-// ---- Logging ----
 
 pub(crate) struct Logging<P> {
     inner: P,
@@ -97,19 +101,19 @@ impl<P> Logging<P> {
 }
 
 #[async_trait]
-impl<P> PubSub for Logging<P>
+impl<P> PubSubBackend for Logging<P>
 where
-    P: PubSub,
+    P: PubSubBackend,
 {
-    async fn send_raw(&self, topic: &str, msg: Bytes) -> anyhow::Result<()> {
+    async fn broadcast_raw(&self, topic: &str, msg: Bytes) -> anyhow::Result<()> {
         {
             let msg = String::from_utf8_lossy(&msg);
-            tracing::trace!(?topic, %msg, "send_raw");
+            tracing::trace!(?topic, %msg, "broadcast_raw");
         }
-        self.inner.send_raw(topic, msg).await
+        self.inner.broadcast_raw(topic, msg).await
     }
 
-    async fn subscribe_raw(&self, topic: &str) -> BoxStream<'static, Bytes> {
+    async fn subscribe_raw(&self, topic: &str) -> anyhow::Result<BoxStream<'static, Bytes>> {
         tracing::trace!(?topic, "subscribing");
         self.inner.subscribe_raw(topic).await
     }

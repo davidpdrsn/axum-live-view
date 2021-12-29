@@ -1,8 +1,7 @@
 use crate::{
     html,
-    liveview::WithEventContext,
     pubsub::{Decode, Encode, Topic},
-    ws::JsCommand,
+    ws::WithEventContext,
 };
 use axum::Json;
 use serde::{de::DeserializeOwned, Serialize};
@@ -19,10 +18,6 @@ pub(crate) fn initial_render(liveview_id: Uuid) -> impl Topic<Message = Json<htm
 
 pub(crate) fn rendered(liveview_id: Uuid) -> impl Topic<Message = Json<html::Diff>> {
     liveview_local(liveview_id, "rendered")
-}
-
-pub(crate) fn js_command(liveview_id: Uuid) -> impl Topic<Message = Json<JsCommand>> {
-    liveview_local(liveview_id, "js-command")
 }
 
 pub(crate) fn socket_disconnected(liveview_id: Uuid) -> impl Topic<Message = ()> {
