@@ -4,6 +4,8 @@ use anyhow::Context;
 use async_stream::stream;
 use axum::Json;
 use futures_util::stream::BoxStream;
+use std::time::Duration;
+use tokio::time::timeout;
 use tokio_stream::StreamExt as _;
 
 enum State<T, P>
@@ -103,7 +105,13 @@ where
             pubsub,
             mut mount_stream,
         } => {
-            mount_stream.next().await;
+            if timeout(Duration::from_secs(30), mount_stream.next())
+                .await
+                .is_err()
+            {
+                tracing::warn!("liveview mount timeout elapsed");
+                return Ok(State::EveryoneDisconnected);
+            }
 
             let mount_stream = mount_stream.map(|_| MessageForLiveView::Mounted);
 

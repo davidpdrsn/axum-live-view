@@ -42,8 +42,6 @@ async fn root(embed_liveview: EmbedLiveView) -> impl IntoResponse {
             <body>
                 { embed_liveview.embed(counter) }
 
-                <div id="thing">"The thing is here!"</div>
-
                 <script>
                     r#"
                         const liveView = new LiveView({ host: 'localhost', port: 4000 })
