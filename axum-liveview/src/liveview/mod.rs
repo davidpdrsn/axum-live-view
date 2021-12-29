@@ -48,6 +48,7 @@ pub(super) fn wrap_in_liveview_container<T>(liveview_id: LiveViewId, markup: Htm
 pub struct Updated<T> {
     liveview: T,
     js_commands: Vec<JsCommand>,
+    skip_render: bool,
 }
 
 impl<T> Updated<T> {
@@ -55,6 +56,7 @@ impl<T> Updated<T> {
         Self {
             liveview,
             js_commands: Default::default(),
+            skip_render: false,
         }
     }
 
@@ -68,6 +70,11 @@ impl<T> Updated<T> {
         I: IntoIterator<Item = JsCommand>,
     {
         self.extend(commands);
+        self
+    }
+
+    pub fn skip_render(mut self, skip: bool) -> Self {
+        self.skip_render = skip;
         self
     }
 }
