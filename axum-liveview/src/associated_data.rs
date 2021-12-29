@@ -1,36 +1,18 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-#[derive(Serialize, Deserialize, Debug)]
-pub(crate) struct WithAssociatedData<T> {
-    pub(crate) msg: T,
-    pub(crate) data: AssociatedData,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Debug)]
 pub struct AssociatedData {
-    kind: Kind,
+    kind: AssociatedDataKind,
 }
 
 impl AssociatedData {
-    pub(crate) fn click() -> Self {
-        Self { kind: Kind::Click }
-    }
-
-    pub(crate) fn form(value: FormEventValue) -> Self {
-        Self {
-            kind: Kind::Form(value),
-        }
-    }
-
-    pub(crate) fn key(value: KeyEventValue) -> Self {
-        Self {
-            kind: Kind::Key(value),
-        }
+    pub(crate) fn new(kind: crate::ws::AssociatedDataKind) -> Self {
+        Self { kind: kind.into() }
     }
 
     pub fn as_click(&self) -> Option<()> {
-        if let Kind::Click = &self.kind {
+        if let AssociatedDataKind::Click = &self.kind {
             Some(())
         } else {
             None
@@ -38,7 +20,7 @@ impl AssociatedData {
     }
 
     pub fn as_form(&self) -> Option<&FormEventValue> {
-        if let Kind::Form(kind) = &self.kind {
+        if let AssociatedDataKind::Form(kind) = &self.kind {
             Some(kind)
         } else {
             None
@@ -46,7 +28,7 @@ impl AssociatedData {
     }
 
     pub fn as_key(&self) -> Option<&KeyEventValue> {
-        if let Kind::Key(kind) = &self.kind {
+        if let AssociatedDataKind::Key(kind) = &self.kind {
             Some(kind)
         } else {
             None
@@ -54,15 +36,24 @@ impl AssociatedData {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug)]
-enum Kind {
+#[derive(Debug)]
+enum AssociatedDataKind {
     Click,
     Form(FormEventValue),
     Key(KeyEventValue),
 }
 
-#[derive(Serialize, Deserialize, Debug)]
-#[serde(untagged)]
+impl From<crate::ws::AssociatedDataKind> for AssociatedDataKind {
+    fn from(kind: crate::ws::AssociatedDataKind) -> Self {
+        match kind {
+            crate::ws::AssociatedDataKind::Click => Self::Click,
+            crate::ws::AssociatedDataKind::Form(form_kind) => Self::Form(form_kind.into()),
+            crate::ws::AssociatedDataKind::Key(key_kind) => Self::Key(key_kind.into()),
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 pub enum FormEventValue {
     String(String),
     Strings(Vec<String>),
@@ -70,18 +61,73 @@ pub enum FormEventValue {
     Map(HashMap<String, FormEventValue>),
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+impl From<crate::ws::FormEventValue> for FormEventValue {
+    fn from(value: crate::ws::FormEventValue) -> Self {
+        match value {
+            crate::ws::FormEventValue::String(inner) => Self::String(inner),
+            crate::ws::FormEventValue::Strings(inner) => Self::Strings(inner),
+            crate::ws::FormEventValue::Bool(inner) => Self::Bool(inner),
+            crate::ws::FormEventValue::Map(inner) => {
+                Self::Map(inner.into_iter().map(|(k, v)| (k, v.into())).collect())
+            }
+        }
+    }
+}
+
+#[derive(Debug)]
 pub struct KeyEventValue {
-    #[serde(rename = "k")]
-    pub key: String,
-    #[serde(rename = "kc")]
-    pub code: String,
-    #[serde(rename = "a")]
-    pub alt: bool,
-    #[serde(rename = "c")]
-    pub ctrl: bool,
-    #[serde(rename = "s")]
-    pub shift: bool,
-    #[serde(rename = "m")]
-    pub meta: bool,
+    key: String,
+    code: String,
+    alt: bool,
+    ctrl: bool,
+    shift: bool,
+    meta: bool,
+}
+
+impl KeyEventValue {
+    pub fn key(&self) -> &str {
+        self.key.as_ref()
+    }
+
+    pub fn code(&self) -> &str {
+        self.code.as_ref()
+    }
+
+    pub fn alt(&self) -> bool {
+        self.alt
+    }
+
+    pub fn ctrl(&self) -> bool {
+        self.ctrl
+    }
+
+    pub fn shift(&self) -> bool {
+        self.shift
+    }
+
+    pub fn meta(&self) -> bool {
+        self.meta
+    }
+}
+
+impl From<crate::ws::KeyEventValue> for KeyEventValue {
+    fn from(
+        crate::ws::KeyEventValue {
+            key,
+            code,
+            alt,
+            ctrl,
+            shift,
+            meta,
+        }: crate::ws::KeyEventValue,
+    ) -> Self {
+        Self {
+            key,
+            code,
+            alt,
+            ctrl,
+            shift,
+            meta,
+        }
+    }
 }

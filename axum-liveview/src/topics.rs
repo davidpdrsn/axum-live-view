@@ -1,8 +1,8 @@
 use crate::{
-    associated_data::WithAssociatedData,
     html,
     liveview::LiveViewId,
     pubsub::{Decode, Encode, Topic},
+    ws::WithAssociatedData,
 };
 use axum::Json;
 use serde::{de::DeserializeOwned, Serialize};
