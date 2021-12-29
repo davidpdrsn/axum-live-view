@@ -1,3 +1,5 @@
+#![allow(unused_imports)]
+
 use axum::{async_trait, response::IntoResponse, routing::get, Router};
 use axum_liveview::{
     html, js, liveview::Updated, AssociatedData, EmbedLiveView, Html, LiveView, Subscriptions,

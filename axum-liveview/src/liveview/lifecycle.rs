@@ -240,10 +240,14 @@ where
             let Updated {
                 liveview: new_liveview,
                 js_commands,
+                skip_render,
             } = callback.call(liveview, msg).await;
             liveview = new_liveview;
-            let markup = liveview.render();
-            yield (markup, js_commands);
+
+            if !skip_render {
+                let markup = liveview.render();
+                yield (markup, js_commands);
+            }
         }
     }))
 }
