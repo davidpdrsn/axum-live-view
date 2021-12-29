@@ -1,0 +1,16 @@
+[package]
+name = "example-chat"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+axum = "0.4"
+axum-liveview = { path = "../../axum-liveview", version = "0.1" }
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tokio = { version = "1.0", features = ["full"] }
+tracing = "0.1"
+serde = { version = "1.0", features = ["derive"] }
+tower = "0.4"
+serde_json = "1.0"
+futures-util = "0.3"
