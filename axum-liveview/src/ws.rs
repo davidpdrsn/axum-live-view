@@ -49,6 +49,7 @@ where
     let mut heartbeat_interval = tokio::time::interval(HEARTBEAT_FREQUENCY);
     let mut failed_heartbeats = 0;
     let mut heartbeat_sent_at = Instant::now();
+    let mut heartbeat_inflight = false;
 
     let heartbeat_bounce = tokio::time::sleep(A_VERY_LONG_TIME);
     tokio::pin!(heartbeat_bounce);
@@ -62,7 +63,10 @@ where
                     break;
                 }
 
+                if heartbeat_inflight { continue }
+
                 if send_heartbeat(&mut socket).await.is_ok() {
+                    heartbeat_inflight = true;
                     heartbeat_sent_at = Instant::now();
                     heartbeat_bounce.as_mut().reset(Instant::now() + HEARTBEAT_BOUNCE);
                 } else {
@@ -72,6 +76,7 @@ where
             }
 
             _ = &mut heartbeat_bounce => {
+                heartbeat_inflight = false;
                 tracing::debug!("heartbeat didn't respond in the allocated time");
                 heartbeat_bounce.as_mut().reset(Instant::now() + A_VERY_LONG_TIME);
                 failed_heartbeats += 1;
@@ -94,6 +99,7 @@ where
                             elapsed = ?heartbeat_sent_at.elapsed(),
                             "heartbeat came back",
                         );
+                        heartbeat_inflight = false;
                         heartbeat_bounce.as_mut().reset(Instant::now() + A_VERY_LONG_TIME);
                         failed_heartbeats = 0;
                     }

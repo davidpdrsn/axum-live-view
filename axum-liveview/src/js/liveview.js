@@ -1,16 +1,19 @@
 (() => {
     class LiveView {
         constructor(options) {
-            const { host, port } = options
+            const { host, port, onClosedForGood, onSocketError } = options
             this.host = host
             this.port = port
             this.viewStates = {}
             this.firstConnect = true
             this.closedForGood = false
+            this.onClosedForGood = onClosedForGood
+            this.onSocketError = onSocketError
         }
 
         reconnect() {
             if (this.closedForGood) {
+                this.onClosedForGood?.()
                 return;
             }
 
@@ -33,6 +36,10 @@
 
             this.socket.addEventListener("close", () => {
                 this.reconnect()
+            })
+
+            this.socket.addEventListener("error", (...args) => {
+                this.onSocketError?.(...args)
             })
 
             this.socket.addEventListener("message", (event) => {
