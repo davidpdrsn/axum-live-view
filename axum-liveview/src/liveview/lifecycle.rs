@@ -1,5 +1,5 @@
 use super::{wrap_in_liveview_container, LiveView, LiveViewId, Updated};
-use crate::{html::Html, js::JsCommandKind, topics, PubSub, Subscriptions};
+use crate::{html::Html, js::JsCommand, topics, PubSub, Subscriptions};
 use anyhow::Context;
 use async_stream::stream;
 use axum::Json;
@@ -31,7 +31,7 @@ where
     T: LiveView,
 {
     Mounted,
-    Rendered(Html<T::Message>, Vec<JsCommandKind>),
+    Rendered(Html<T::Message>, Vec<JsCommand>),
     WebSocketDisconnected,
 }
 
@@ -210,7 +210,7 @@ async fn markup_updates_stream<T, P>(
     mut liveview: T,
     pubsub: P,
     liveview_id: LiveViewId,
-) -> anyhow::Result<BoxStream<'static, (Html<T::Message>, Vec<JsCommandKind>)>>
+) -> anyhow::Result<BoxStream<'static, (Html<T::Message>, Vec<JsCommand>)>>
 where
     T: LiveView,
     P: PubSub,
@@ -228,12 +228,6 @@ where
             } = callback.call(liveview, msg).await;
             liveview = new_liveview;
             let markup = liveview.render();
-
-            let js_commands = js_commands
-                .into_iter()
-                .map(|js_command| js_command.kind)
-                .collect::<Vec<_>>();
-
             yield (markup, js_commands);
         }
     }))

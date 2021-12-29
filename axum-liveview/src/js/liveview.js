@@ -123,33 +123,44 @@
 
         handleJsCommand(commands) {
             for (var i = 0; i < commands.length; i++) {
-                const key = Object.keys(commands[i])[0]
-                const data = commands[i][key]
+                const command = commands[i].kind
+                const delayMs = commands[i].delay_ms
 
-                if (key === "ToggleClass") {
-                    document.querySelectorAll(data.selector).forEach((element) => {
-                        element.classList.toggle(data.class)
-                    })
+                const key = Object.keys(command)[0]
+                const data = command[key]
 
-                } else if (key === "AddClass") {
-                    document.querySelectorAll(data.selector).forEach((element) => {
-                        element.classList.add(data.class)
-                    })
+                const run = () => {
+                    if (key === "ToggleClass") {
+                        document.querySelectorAll(data.selector).forEach((element) => {
+                            element.classList.toggle(data.class)
+                        })
 
-                } else if (key === "RemoveClass") {
-                    document.querySelectorAll(data.selector).forEach((element) => {
-                        element.classList.remove(data.class)
-                    })
+                    } else if (key === "AddClass") {
+                        document.querySelectorAll(data.selector).forEach((element) => {
+                            element.classList.add(data.class)
+                        })
 
-                } else if (key === "NavigateTo") {
-                    if (data.uri.startsWith("http")) {
-                        window.location.href = data.uri
+                    } else if (key === "RemoveClass") {
+                        document.querySelectorAll(data.selector).forEach((element) => {
+                            element.classList.remove(data.class)
+                        })
+
+                    } else if (key === "NavigateTo") {
+                        if (data.uri.startsWith("http")) {
+                            window.location.href = data.uri
+                        } else {
+                            window.location.pathname = data.uri
+                        }
+
                     } else {
-                        window.location.pathname = data.uri
+                        console.error(`unsupported JS command: ${key}`)
                     }
+                }
 
+                if (delayMs) {
+                    setTimeout(run, delayMs)
                 } else {
-                    console.error(`unsupported JS command: ${key}`)
+                    run()
                 }
             }
         }

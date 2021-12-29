@@ -1,6 +1,6 @@
 use crate::{
     html::{self, Diff},
-    js::JsCommandKind,
+    js::JsCommand,
     liveview::{embed::EmbedLiveView, LiveViewId},
     pubsub::PubSub,
     topics,
@@ -32,7 +32,7 @@ async fn ws(upgrade: WebSocketUpgrade, embed_liveview: EmbedLiveView) -> impl In
 
 #[derive(Default)]
 struct SocketState {
-    diff_streams: StreamMap<LiveViewId, BoxStream<'static, (Diff, Vec<JsCommandKind>)>>,
+    diff_streams: StreamMap<LiveViewId, BoxStream<'static, (Diff, Vec<JsCommand>)>>,
 }
 
 async fn handle_socket<P>(mut socket: WebSocket, pubsub: P)

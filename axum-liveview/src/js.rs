@@ -1,9 +1,19 @@
+use std::time::Duration;
+
 use axum::http::Uri;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct JsCommand {
     pub(crate) kind: JsCommandKind,
+    pub(crate) delay_ms: Option<u64>,
+}
+
+impl JsCommand {
+    pub fn delay(mut self, duration: Duration) -> Self {
+        self.delay_ms = Some(duration.as_millis() as _);
+        self
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -16,7 +26,10 @@ pub(crate) enum JsCommandKind {
 }
 
 fn command(kind: JsCommandKind) -> JsCommand {
-    JsCommand { kind }
+    JsCommand {
+        kind,
+        delay_ms: None,
+    }
 }
 
 pub fn navigate_to(uri: Uri) -> JsCommand {
