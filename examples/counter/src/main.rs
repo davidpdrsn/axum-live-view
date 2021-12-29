@@ -1,5 +1,7 @@
-use axum::{async_trait, response::IntoResponse, routing::get, Json, Router};
-use axum_liveview::{html, liveview::EventContext, Html, LiveView, LiveViewManager, Setup};
+#![allow(unused_variables)]
+
+use axum::{async_trait, response::IntoResponse, routing::get, Router};
+use axum_liveview::{html, AssociatedData, EmbedLiveView, Html, LiveView, Subscriptions};
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 
@@ -21,7 +23,7 @@ async fn main() {
         .unwrap();
 }
 
-async fn root(live: LiveViewManager) -> impl IntoResponse {
+async fn root(embed_liveview: EmbedLiveView) -> impl IntoResponse {
     let counter = Counter::default();
 
     html! {
@@ -31,7 +33,7 @@ async fn root(live: LiveViewManager) -> impl IntoResponse {
                 { axum_liveview::assets() }
             </head>
             <body>
-                { live.embed(counter) }
+                { embed_liveview.embed(counter) }
                 <script>
                     r#"
                         const liveView = new LiveView({ host: 'localhost', port: 4000 })
@@ -52,9 +54,9 @@ struct Counter {
 impl LiveView for Counter {
     type Message = Msg;
 
-    fn setup(&self, setup: &mut Setup<Self>) {}
+    fn init(&self, subscriptions: &mut Subscriptions<Self>) {}
 
-    async fn update(mut self, msg: Msg, ctx: EventContext) -> Self {
+    async fn update(mut self, msg: Msg, data: AssociatedData) -> Self {
         match msg {
             Msg::Incr => self.count += 1,
             Msg::Decr => {

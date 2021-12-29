@@ -1,42 +1,38 @@
 use crate::{
     html,
-    liveview::WithEventContext,
+    liveview::{associated_data::WithAssociatedData, LiveViewId},
     pubsub::{Decode, Encode, Topic},
-    ws::JsCommand,
 };
 use axum::Json;
 use serde::{de::DeserializeOwned, Serialize};
 use std::marker::PhantomData;
-use uuid::Uuid;
 
-pub(crate) fn mounted(liveview_id: Uuid) -> impl Topic<Message = ()> {
+pub(crate) fn mounted(liveview_id: LiveViewId) -> impl Topic<Message = ()> {
     liveview_local(liveview_id, "mounted")
 }
 
-pub(crate) fn initial_render(liveview_id: Uuid) -> impl Topic<Message = Json<html::Serialized>> {
+pub(crate) fn initial_render(
+    liveview_id: LiveViewId,
+) -> impl Topic<Message = Json<html::Serialized>> {
     liveview_local(liveview_id, "initial-render")
 }
 
-pub(crate) fn rendered(liveview_id: Uuid) -> impl Topic<Message = Json<html::Diff>> {
+pub(crate) fn rendered(liveview_id: LiveViewId) -> impl Topic<Message = Json<html::Diff>> {
     liveview_local(liveview_id, "rendered")
 }
 
-pub(crate) fn js_command(liveview_id: Uuid) -> impl Topic<Message = Json<JsCommand>> {
-    liveview_local(liveview_id, "js-command")
-}
-
-pub(crate) fn socket_disconnected(liveview_id: Uuid) -> impl Topic<Message = ()> {
+pub(crate) fn socket_disconnected(liveview_id: LiveViewId) -> impl Topic<Message = ()> {
     liveview_local(liveview_id, "socket-disconnected")
 }
 
-pub(crate) fn update<M>(liveview_id: Uuid) -> FixedTopic<Json<WithEventContext<M>>>
+pub(crate) fn update<M>(liveview_id: LiveViewId) -> FixedTopic<Json<WithAssociatedData<M>>>
 where
     M: Serialize + DeserializeOwned + Send + 'static,
 {
     liveview_local(liveview_id, "update")
 }
 
-fn liveview_local<M>(liveview_id: Uuid, topic: &str) -> FixedTopic<M>
+fn liveview_local<M>(liveview_id: LiveViewId, topic: &str) -> FixedTopic<M>
 where
     M: Encode + Decode + Send + 'static,
 {

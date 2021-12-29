@@ -1,6 +1,6 @@
 use crate::{
     pubsub::{self, PubSub},
-    LiveViewManager,
+    EmbedLiveView,
 };
 use axum::http::{Request, Response};
 use std::task::{Context, Poll};
@@ -52,7 +52,7 @@ where
 
     fn call(&mut self, mut req: Request<ReqBody>) -> Self::Future {
         req.extensions_mut()
-            .insert(LiveViewManager::new(pubsub::Logging::new(
+            .insert(EmbedLiveView::new(pubsub::Logging::new(
                 self.pubsub.clone(),
             )));
 

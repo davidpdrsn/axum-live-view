@@ -74,7 +74,7 @@ pub mod __private {
 }
 
 impl<T> Html<T> {
-    pub(crate) fn diff(&self, other: &Self) -> DiffResult
+    pub(crate) fn diff(&self, other: &Self) -> Option<Diff>
     where
         T: PartialEq + Serialize,
     {
@@ -103,10 +103,7 @@ impl<T> Html<T> {
                             }
                         }
                         #[allow(clippy::needless_borrow)] // false positive
-                        (Dynamic::Html(a), Dynamic::Html(b)) => match a.diff(&b) {
-                            DiffResult::Changed(diff) => Some(json!(diff)),
-                            DiffResult::Unchanged => None,
-                        },
+                        (Dynamic::Html(a), Dynamic::Html(b)) => a.diff(&b).map(|diff| json!(diff)),
                         (Dynamic::String(a), Dynamic::String(b)) => {
                             if a == b {
                                 None
@@ -146,9 +143,9 @@ impl<T> Html<T> {
         }
 
         if out.is_empty() {
-            DiffResult::Unchanged
+            None
         } else {
-            DiffResult::Changed(Diff(json!(out)))
+            Some(Diff(json!(out)))
         }
     }
 
@@ -203,12 +200,6 @@ where
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(transparent)]
 pub(crate) struct Serialized(Value);
-
-#[derive(Debug)]
-pub(crate) enum DiffResult {
-    Changed(Diff),
-    Unchanged,
-}
 
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(transparent)]

@@ -1,18 +1,14 @@
 use crate::{
-    html::Html,
+    liveview::{associated_data::WithAssociatedData, LiveView, LiveViewId},
     pubsub::{Decode, PubSub, Topic},
     topics::{self, FixedTopic},
-    ws::{FormEventValue, KeyEventValue},
 };
-use async_stream::stream;
-use axum::{async_trait, Json};
+use axum::Json;
 use bytes::Bytes;
 use futures_util::{
     future::{BoxFuture, FutureExt},
-    stream::StreamExt,
     Stream,
 };
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::sync::Arc;
 use std::{
     any::{type_name, TypeId},
@@ -20,115 +16,24 @@ use std::{
     hash::Hash,
 };
 use tokio_stream::StreamMap;
-use uuid::Uuid;
 
-#[async_trait]
-pub trait LiveView: Sized + Send + Sync + 'static {
-    type Message: Serialize + DeserializeOwned + PartialEq + Send + Sync + 'static;
-
-    fn setup(&self, sub: &mut Setup<Self>);
-
-    async fn update(self, msg: Self::Message, ctx: EventContext) -> Self;
-
-    fn render(&self) -> Html<Self::Message>;
-}
-
-pub(crate) async fn run_to_stream<T, P>(
-    mut liveview: T,
-    pubsub: P,
-    liveview_id: Uuid,
-) -> impl Stream<Item = LiveViewStreamItem<T::Message>> + Send
-where
-    T: LiveView,
-    P: PubSub,
-{
-    let mut setup = Setup::new(liveview_id);
-    liveview.setup(&mut setup);
-
-    let Setup {
-        update_topic,
-        update_callback,
-        subscriptions,
-    } = setup;
-
-    let mut stream_map = StreamMap::new();
-
-    let stream = pubsub.subscribe_raw(update_topic.topic()).await;
-    stream_map.insert(update_callback, stream);
-
-    for (topic, callback) in subscriptions {
-        let stream = pubsub.subscribe_raw(&topic).await;
-        stream_map.insert(callback, stream);
-    }
-
-    stream! {
-        while let Some((callback, msg)) = stream_map.next().await {
-            liveview = (callback.callback)(liveview, msg).await;
-            let markup = liveview.render();
-            yield LiveViewStreamItem::Html(markup);
-        }
-    }
-}
-
-pub(crate) enum LiveViewStreamItem<T> {
-    Html(Html<T>),
-}
-
-pub struct Setup<T>
+pub struct Subscriptions<T>
 where
     T: LiveView,
 {
-    update_topic: FixedTopic<Json<WithEventContext<T::Message>>>,
+    update_topic: FixedTopic<Json<WithAssociatedData<T::Message>>>,
     update_callback: AsyncCallback<T>,
     subscriptions: Vec<(String, AsyncCallback<T>)>,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
-pub(crate) struct WithEventContext<T> {
-    pub(crate) msg: T,
-    pub(crate) ctx: EventContext,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-pub struct EventContext {
-    inner: EventContextInner,
-}
-
-impl EventContext {
-    pub(crate) fn click() -> Self {
-        Self {
-            inner: EventContextInner::Click,
-        }
-    }
-
-    pub(crate) fn form(value: FormEventValue) -> Self {
-        Self {
-            inner: EventContextInner::Form(value),
-        }
-    }
-
-    pub(crate) fn key(value: KeyEventValue) -> Self {
-        Self {
-            inner: EventContextInner::Key(value),
-        }
-    }
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-enum EventContextInner {
-    Click,
-    Form(FormEventValue),
-    Key(KeyEventValue),
-}
-
-impl<T> Setup<T>
+impl<T> Subscriptions<T>
 where
     T: LiveView,
 {
-    fn new(liveview_id: Uuid) -> Self {
-        let callback = |this: T, Json(msg): Json<WithEventContext<T::Message>>| {
-            let WithEventContext { msg, ctx } = msg;
-            this.update(msg, ctx)
+    pub(crate) fn new(liveview_id: LiveViewId) -> Self {
+        let callback = |this: T, Json(msg): Json<WithAssociatedData<T::Message>>| {
+            let WithAssociatedData { msg, data } = msg;
+            this.update(msg, data)
         };
         let update_topic = topics::update::<T::Message>(liveview_id);
         let callback = make_callback(&update_topic, callback);
@@ -149,6 +54,32 @@ where
         let callback = make_callback(topic, callback);
         let topic = topic.topic().to_owned();
         self.subscriptions.push((topic, callback));
+    }
+
+    pub(crate) async fn into_stream<P>(
+        self,
+        pubsub: P,
+    ) -> anyhow::Result<impl Stream<Item = (AsyncCallback<T>, Bytes)>>
+    where
+        P: PubSub,
+    {
+        let Subscriptions {
+            update_topic,
+            update_callback,
+            subscriptions,
+        } = self;
+
+        let mut stream_map = StreamMap::with_capacity(subscriptions.len() + 1);
+
+        let stream = pubsub.subscribe_raw(update_topic.topic()).await?;
+        stream_map.insert(update_callback, stream);
+
+        for (topic, callback) in subscriptions {
+            let stream = pubsub.subscribe_raw(&topic).await?;
+            stream_map.insert(callback, stream);
+        }
+
+        Ok(stream_map)
     }
 }
 
@@ -220,10 +151,16 @@ where
     }
 }
 
-struct AsyncCallback<T> {
+pub(crate) struct AsyncCallback<T> {
     type_id: TypeId,
     topic: Arc<str>,
     callback: Arc<dyn Fn(T, Bytes) -> BoxFuture<'static, T> + Send + Sync + 'static>,
+}
+
+impl<T> AsyncCallback<T> {
+    pub(crate) async fn call(self, t: T, msg: Bytes) -> T {
+        (self.callback)(t, msg).await
+    }
 }
 
 impl<T> Clone for AsyncCallback<T> {

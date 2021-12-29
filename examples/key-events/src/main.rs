@@ -1,5 +1,7 @@
+#![allow(unused_variables)]
+
 use axum::{async_trait, response::IntoResponse, routing::get, Router};
-use axum_liveview::{html, liveview::EventContext, Html, LiveView, LiveViewManager, Setup};
+use axum_liveview::{html, AssociatedData, EmbedLiveView, Html, LiveView, Subscriptions};
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 
@@ -21,7 +23,7 @@ async fn main() {
         .unwrap();
 }
 
-async fn root(live: LiveViewManager) -> impl IntoResponse {
+async fn root(embed_liveview: EmbedLiveView) -> impl IntoResponse {
     let form = View::default();
 
     html! {
@@ -31,7 +33,7 @@ async fn root(live: LiveViewManager) -> impl IntoResponse {
                 { axum_liveview::assets() }
             </head>
             <body>
-                { live.embed(form) }
+                { embed_liveview.embed(form) }
                 <script>
                     r#"
                         const liveView = new LiveView({ host: 'localhost', port: 4000 })
@@ -53,9 +55,9 @@ struct View {
 impl LiveView for View {
     type Message = Msg;
 
-    fn setup(&self, setup: &mut Setup<Self>) {}
+    fn init(&self, subscriptions: &mut Subscriptions<Self>) {}
 
-    async fn update(mut self, msg: Msg, ctx: EventContext) -> Self {
+    async fn update(mut self, msg: Msg, data: AssociatedData) -> Self {
         self.count += 1;
         self.prev = Some(msg);
         self
