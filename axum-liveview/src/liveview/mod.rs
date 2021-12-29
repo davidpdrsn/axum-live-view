@@ -1,10 +1,11 @@
-use crate::{html::Html, EventContext, Subscriptions};
+use crate::{html::Html, AssociatedData, Subscriptions};
 use axum::async_trait;
 use axum_liveview_macros::html;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::fmt;
 use uuid::Uuid;
 
+pub(crate) mod associated_data;
 pub(crate) mod embed;
 mod lifecycle;
 
@@ -14,7 +15,7 @@ pub trait LiveView: Sized + Send + Sync + 'static {
 
     fn init(&self, subscriptions: &mut Subscriptions<Self>);
 
-    async fn update(self, msg: Self::Message, ctx: EventContext) -> Self;
+    async fn update(self, msg: Self::Message, data: AssociatedData) -> Self;
 
     fn render(&self) -> Html<Self::Message>;
 }

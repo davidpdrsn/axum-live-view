@@ -1,7 +1,7 @@
 #![allow(unused_variables)]
 
 use axum::{async_trait, response::IntoResponse, routing::get, Router};
-use axum_liveview::{html, EmbedLiveView, EventContext, Html, LiveView, Subscriptions};
+use axum_liveview::{html, AssociatedData, EmbedLiveView, Html, LiveView, Subscriptions};
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, net::SocketAddr};
 
@@ -59,7 +59,7 @@ impl LiveView for FormView {
 
     fn init(&self, subscriptions: &mut Subscriptions<Self>) {}
 
-    async fn update(self, msg: Msg, ctx: EventContext) -> Self {
+    async fn update(self, msg: Msg, data: AssociatedData) -> Self {
         self
     }
 

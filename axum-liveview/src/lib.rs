@@ -62,11 +62,10 @@ pub use axum_liveview_macros::html;
 #[doc(inline)]
 pub use self::{
     html::Html,
-    liveview::{embed::EmbedLiveView, LiveView},
+    liveview::{associated_data::AssociatedData, embed::EmbedLiveView, LiveView},
     middleware::layer,
     pubsub::PubSub,
     subscriptions::Subscriptions,
-    ws::EventContext,
 };
 
 const APP_JS_PATH: &str = "/live/app.js";

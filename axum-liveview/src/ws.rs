@@ -1,8 +1,12 @@
 use crate::{
     html::{self, Diff},
-    liveview::{embed::EmbedLiveView, LiveViewId},
+    liveview::{
+        associated_data::{FormEventValue, KeyEventValue, WithAssociatedData},
+        embed::EmbedLiveView,
+        LiveViewId,
+    },
     pubsub::PubSub,
-    topics,
+    topics, AssociatedData,
 };
 use anyhow::Context;
 use axum::{
@@ -14,7 +18,7 @@ use axum::{
 use futures_util::{stream::BoxStream, StreamExt};
 use serde::{Deserialize, Serialize};
 use serde_json::{from_value, json, Value};
-use std::{collections::HashMap, time::Duration};
+use std::time::Duration;
 use tokio::time::{timeout, Instant};
 use tokio_stream::StreamMap;
 
@@ -240,9 +244,9 @@ where
 
         EventFromBrowser::Click(ClickEvent { msg }) => {
             let topic = topics::update(liveview_id);
-            let msg = WithEventContext {
+            let msg = WithAssociatedData {
                 msg,
-                ctx: EventContext::click(),
+                data: AssociatedData::click(),
             };
             pubsub
                 .broadcast(&topic, Json(msg))
@@ -252,9 +256,9 @@ where
 
         EventFromBrowser::FormEvent(FormEvent { msg, value }) => {
             let topic = topics::update(liveview_id);
-            let msg = WithEventContext {
+            let msg = WithAssociatedData {
                 msg,
-                ctx: EventContext::form(value),
+                data: AssociatedData::form(value),
             };
             pubsub
                 .broadcast(&topic, Json(msg))
@@ -272,9 +276,9 @@ where
             meta,
         }) => {
             let topic = topics::update(liveview_id);
-            let msg = WithEventContext {
+            let msg = WithAssociatedData {
                 msg,
-                ctx: EventContext::key(KeyEventValue {
+                data: AssociatedData::key(KeyEventValue {
                     key,
                     code,
                     alt,
@@ -386,69 +390,6 @@ struct KeyEvent {
     shift: bool,
     #[serde(rename = "me")]
     meta: bool,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-pub(crate) struct WithEventContext<T> {
-    pub(crate) msg: T,
-    pub(crate) ctx: EventContext,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-pub struct EventContext {
-    inner: EventContextInner,
-}
-
-impl EventContext {
-    pub(crate) fn click() -> Self {
-        Self {
-            inner: EventContextInner::Click,
-        }
-    }
-
-    pub(crate) fn form(value: FormEventValue) -> Self {
-        Self {
-            inner: EventContextInner::Form(value),
-        }
-    }
-
-    pub(crate) fn key(value: KeyEventValue) -> Self {
-        Self {
-            inner: EventContextInner::Key(value),
-        }
-    }
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-enum EventContextInner {
-    Click,
-    Form(FormEventValue),
-    Key(KeyEventValue),
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-#[serde(untagged)]
-pub(crate) enum FormEventValue {
-    String(String),
-    Strings(Vec<String>),
-    Bool(bool),
-    Map(HashMap<String, FormEventValue>),
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-pub(crate) struct KeyEventValue {
-    #[serde(rename = "k")]
-    pub(crate) key: String,
-    #[serde(rename = "kc")]
-    pub(crate) code: String,
-    #[serde(rename = "a")]
-    pub(crate) alt: bool,
-    #[serde(rename = "c")]
-    pub(crate) ctrl: bool,
-    #[serde(rename = "s")]
-    pub(crate) shift: bool,
-    #[serde(rename = "m")]
-    pub(crate) meta: bool,
 }
 
 axm! {

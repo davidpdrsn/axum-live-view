@@ -1,8 +1,7 @@
 use crate::{
-    liveview::{LiveView, LiveViewId},
+    liveview::{associated_data::WithAssociatedData, LiveView, LiveViewId},
     pubsub::{Decode, PubSub, Topic},
     topics::{self, FixedTopic},
-    ws::WithEventContext,
 };
 use axum::Json;
 use bytes::Bytes;
@@ -22,7 +21,7 @@ pub struct Subscriptions<T>
 where
     T: LiveView,
 {
-    update_topic: FixedTopic<Json<WithEventContext<T::Message>>>,
+    update_topic: FixedTopic<Json<WithAssociatedData<T::Message>>>,
     update_callback: AsyncCallback<T>,
     subscriptions: Vec<(String, AsyncCallback<T>)>,
 }
@@ -32,9 +31,9 @@ where
     T: LiveView,
 {
     pub(crate) fn new(liveview_id: LiveViewId) -> Self {
-        let callback = |this: T, Json(msg): Json<WithEventContext<T::Message>>| {
-            let WithEventContext { msg, ctx } = msg;
-            this.update(msg, ctx)
+        let callback = |this: T, Json(msg): Json<WithAssociatedData<T::Message>>| {
+            let WithAssociatedData { msg, data } = msg;
+            this.update(msg, data)
         };
         let update_topic = topics::update::<T::Message>(liveview_id);
         let callback = make_callback(&update_topic, callback);

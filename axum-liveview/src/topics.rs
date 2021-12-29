@@ -1,8 +1,7 @@
 use crate::{
     html,
-    liveview::LiveViewId,
+    liveview::{associated_data::WithAssociatedData, LiveViewId},
     pubsub::{Decode, Encode, Topic},
-    ws::WithEventContext,
 };
 use axum::Json;
 use serde::{de::DeserializeOwned, Serialize};
@@ -26,7 +25,7 @@ pub(crate) fn socket_disconnected(liveview_id: LiveViewId) -> impl Topic<Message
     liveview_local(liveview_id, "socket-disconnected")
 }
 
-pub(crate) fn update<M>(liveview_id: LiveViewId) -> FixedTopic<Json<WithEventContext<M>>>
+pub(crate) fn update<M>(liveview_id: LiveViewId) -> FixedTopic<Json<WithAssociatedData<M>>>
 where
     M: Serialize + DeserializeOwned + Send + 'static,
 {
