@@ -32,7 +32,7 @@ async fn ws(upgrade: WebSocketUpgrade, embed_liveview: EmbedLiveView) -> impl In
 
 #[derive(Default)]
 struct SocketState {
-    diff_streams: StreamMap<LiveViewId, BoxStream<'static, (Diff, Vec<JsCommand>)>>,
+    diff_streams: StreamMap<LiveViewId, BoxStream<'static, (Option<Diff>, Vec<JsCommand>)>>,
 }
 
 async fn handle_socket<P>(mut socket: WebSocket, pubsub: P)
@@ -117,9 +117,22 @@ where
 
             Some((liveview_id, (diff, js_commands))) = state.diff_streams.next() => {
                 // TODO(david): extract to function
-                let _ = send_message_to_socket(&mut socket, liveview_id, RENDERED_TOPIC, diff).await;
+                if let Some(diff) = diff {
+                    let _ = send_message_to_socket(
+                        &mut socket,
+                        liveview_id,
+                        RENDERED_TOPIC,
+                        diff,
+                    ).await;
+                }
+
                 if !js_commands.is_empty() {
-                    let _ = send_message_to_socket(&mut socket, liveview_id, JS_COMMANDS_TOPIC, js_commands).await;
+                    let _ = send_message_to_socket(
+                        &mut socket,
+                        liveview_id,
+                        JS_COMMANDS_TOPIC,
+                        js_commands,
+                    ).await;
                 }
             }
         }

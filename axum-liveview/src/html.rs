@@ -71,23 +71,39 @@ impl<T> DynamicFragment<T> {
         }
     }
 
-    fn unit(self) -> DynamicFragment<()> {
+    fn map_with_mut<F, K>(self, f: &mut F) -> DynamicFragment<K>
+    where
+        F: FnMut(T) -> K,
+    {
         match self {
             DynamicFragment::String(s) => DynamicFragment::String(s),
-            DynamicFragment::Message(_) => DynamicFragment::Message(()),
-            DynamicFragment::Html(inner) => DynamicFragment::Html(inner.unit()),
+            DynamicFragment::Message(msg) => DynamicFragment::Message(f(msg)),
+            DynamicFragment::Html(inner) => DynamicFragment::Html(inner.map_with_mut(f)),
         }
     }
 }
 
 impl<T> Html<T> {
     pub fn unit(self) -> Html<()> {
+        self.map(|_| ())
+    }
+
+    pub fn map<F, K>(self, mut f: F) -> Html<K>
+    where
+        F: FnMut(T) -> K,
+    {
+        self.map_with_mut(&mut f)
+    }
+
+    fn map_with_mut<F, K>(self, f: &mut F) -> Html<K>
+    where
+        F: FnMut(T) -> K,
+    {
         let dynamic = self
             .dynamic
             .into_iter()
-            .map(DynamicFragment::unit)
+            .map(move |d| d.map_with_mut(f))
             .collect();
-
         Html {
             fixed: self.fixed,
             dynamic,
