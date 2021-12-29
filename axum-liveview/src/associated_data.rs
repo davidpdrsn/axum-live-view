@@ -1,6 +1,5 @@
-use std::collections::HashMap;
-
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub(crate) struct WithAssociatedData<T> {
@@ -29,6 +28,30 @@ impl AssociatedData {
             kind: Kind::Key(value),
         }
     }
+
+    pub fn as_click(&self) -> Option<()> {
+        if let Kind::Click = &self.kind {
+            Some(())
+        } else {
+            None
+        }
+    }
+
+    pub fn as_form(&self) -> Option<&FormEventValue> {
+        if let Kind::Form(kind) = &self.kind {
+            Some(kind)
+        } else {
+            None
+        }
+    }
+
+    pub fn as_key(&self) -> Option<&KeyEventValue> {
+        if let Kind::Key(kind) = &self.kind {
+            Some(kind)
+        } else {
+            None
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -40,7 +63,7 @@ enum Kind {
 
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(untagged)]
-pub(crate) enum FormEventValue {
+pub enum FormEventValue {
     String(String),
     Strings(Vec<String>),
     Bool(bool),
@@ -48,17 +71,17 @@ pub(crate) enum FormEventValue {
 }
 
 #[derive(Debug, Deserialize, Serialize)]
-pub(crate) struct KeyEventValue {
+pub struct KeyEventValue {
     #[serde(rename = "k")]
-    pub(crate) key: String,
+    pub key: String,
     #[serde(rename = "kc")]
-    pub(crate) code: String,
+    pub code: String,
     #[serde(rename = "a")]
-    pub(crate) alt: bool,
+    pub alt: bool,
     #[serde(rename = "c")]
-    pub(crate) ctrl: bool,
+    pub ctrl: bool,
     #[serde(rename = "s")]
-    pub(crate) shift: bool,
+    pub shift: bool,
     #[serde(rename = "m")]
-    pub(crate) meta: bool,
+    pub meta: bool,
 }

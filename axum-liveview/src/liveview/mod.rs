@@ -5,7 +5,6 @@ use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::fmt;
 use uuid::Uuid;
 
-pub(crate) mod associated_data;
 pub(crate) mod embed;
 mod lifecycle;
 

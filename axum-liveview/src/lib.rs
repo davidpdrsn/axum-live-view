@@ -48,6 +48,7 @@ use axum::{
 #[macro_use]
 mod macros;
 
+pub mod associated_data;
 pub mod html;
 pub mod liveview;
 pub mod middleware;
@@ -59,10 +60,10 @@ mod ws;
 
 pub use axum_liveview_macros::html;
 
-#[doc(inline)]
 pub use self::{
+    associated_data::AssociatedData,
     html::Html,
-    liveview::{associated_data::AssociatedData, embed::EmbedLiveView, LiveView},
+    liveview::{embed::EmbedLiveView, LiveView},
     middleware::layer,
     pubsub::PubSub,
     subscriptions::Subscriptions,
