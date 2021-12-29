@@ -1,8 +1,6 @@
-#![allow(unused_variables)]
-
 use axum::{async_trait, response::IntoResponse, routing::get, Router};
 use axum_liveview::{html, AssociatedData, EmbedLiveView, Html, LiveView, Subscriptions};
-use serde::{Deserialize, Serialize};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::{collections::HashMap, net::SocketAddr};
 
 #[tokio::main]
@@ -57,9 +55,35 @@ struct FormView {
 impl LiveView for FormView {
     type Message = Msg;
 
-    fn init(&self, subscriptions: &mut Subscriptions<Self>) {}
+    fn init(&self, _subscriptions: &mut Subscriptions<Self>) {}
 
-    async fn update(self, msg: Msg, data: AssociatedData) -> Self {
+    async fn update(mut self, msg: Msg, data: AssociatedData) -> Self {
+        match msg {
+            Msg::Validate => {
+                let values: FormValues = transcode(&data.as_form().unwrap());
+                self.perform_validations(&values);
+            }
+            Msg::Submit => {
+                let values: FormValues = transcode(&data.as_form().unwrap());
+                self.perform_validations(&values);
+                if self.errors.is_empty() {
+                    tracing::info!("submitting");
+                } else {
+                    tracing::info!("there are warnings, not submitting");
+                }
+                self.values = Some(values);
+            }
+            Msg::TextInputChanged => {
+                self.text_input_value = transcode(&data.as_form().unwrap());
+            }
+            Msg::TextAreaChanged => {
+                self.textarea_value = transcode(&data.as_form().unwrap());
+            }
+            Msg::Changed(msg) => {
+                println!("change: {:?}", msg);
+            }
+        }
+
         self
     }
 
@@ -175,82 +199,47 @@ enum Input {
 }
 
 impl FormView {
-    // #[tracing::instrument(skip(self))]
-    // async fn text_input_changed(mut self, event: FormEvent) -> Self {
-    //     self.text_input_value = event.into_value();
-    //     self
-    // }
+    fn perform_validations(&mut self, values: &FormValues) {
+        self.errors.clear();
 
-    // #[tracing::instrument(skip(self))]
-    // async fn changed(self, _event: FormEvent<ChangedInputValue, ChangedInput>) -> Self {
-    //     self
-    // }
+        let FormValues {
+            input,
+            textarea,
+            number,
+            numbers,
+            radio,
+            checkboxes,
+        } = values;
 
-    // #[tracing::instrument(skip(self))]
-    // async fn textarea_changed(mut self, event: FormEvent) -> Self {
-    //     self.textarea_value = event.into_value();
-    //     self
-    // }
+        if input.is_empty() {
+            self.errors.push("`input` cannot be empty".to_owned());
+        }
 
-    // #[tracing::instrument(skip(self))]
-    // async fn validate(mut self, event: FormEvent<FormValues>) -> Self {
-    //     self.perform_validations(event.value());
-    //     self
-    // }
+        if textarea.len() > TEXTAREA_MAX_LEN as _ {
+            self.errors.push(format!(
+                "textarea cannot be longer than {} characters",
+                TEXTAREA_MAX_LEN
+            ));
+        }
 
-    // #[tracing::instrument(skip(self))]
-    // async fn submit(mut self, event: FormEvent<FormValues>) -> Self {
-    //     self.perform_validations(event.value());
-    //     if self.errors.is_empty() {
-    //         tracing::info!("submitting");
-    //     } else {
-    //         tracing::info!("there are warnings, not submitting");
-    //     }
-    //     self.values = Some(event.into_value());
-    //     self
-    // }
+        if number == "1" {
+            self.errors.push("`number` cannot be 1".to_owned());
+        }
 
-    // fn perform_validations(&mut self, values: &FormValues) {
-    //     self.errors.clear();
+        if numbers.len() > 3 {
+            self.errors
+                .push("cannot select more than 3 options".to_owned());
+        }
 
-    //     let FormValues {
-    //         input,
-    //         textarea,
-    //         number,
-    //         numbers,
-    //         radio,
-    //         checkboxes,
-    //     } = values;
+        if radio.is_none() {
+            self.errors.push("no radio option checked".to_owned());
+        }
 
-    //     if input.is_empty() {
-    //         self.errors.push("`input` cannot be empty".to_owned());
-    //     }
-
-    //     if textarea.len() > TEXTAREA_MAX_LEN as _ {
-    //         self.errors.push(format!(
-    //             "textarea cannot be longer than {} characters",
-    //             TEXTAREA_MAX_LEN
-    //         ));
-    //     }
-
-    //     if number == "1" {
-    //         self.errors.push("`number` cannot be 1".to_owned());
-    //     }
-
-    //     if numbers.len() > 3 {
-    //         self.errors
-    //             .push("cannot select more than 3 options".to_owned());
-    //     }
-
-    //     if radio.is_none() {
-    //         self.errors.push("no radio option checked".to_owned());
-    //     }
-
-    //     if checkboxes.values().filter(|value| **value).count() > 3 {
-    //         self.errors
-    //             .push("cannot check more than 3 boxes".to_owned());
-    //     }
-    // }
+        if checkboxes.values().filter(|value| **value).count() > 3 {
+            self.errors
+                .push("cannot check more than 3 boxes".to_owned());
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -274,6 +263,14 @@ struct FormValues {
     numbers: Vec<String>,
     radio: Option<String>,
     checkboxes: HashMap<String, bool>,
+}
+
+fn transcode<A, B>(from: &A) -> B
+where
+    A: Serialize,
+    B: DeserializeOwned,
+{
+    serde_json::from_value(serde_json::json!(from)).unwrap()
 }
 
 const TEXTAREA_MAX_LEN: i32 = 10;

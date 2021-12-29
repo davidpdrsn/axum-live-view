@@ -1,5 +1,3 @@
-#![allow(unused_variables)]
-
 use axum::{async_trait, response::IntoResponse, routing::get, Router};
 use axum_liveview::{html, AssociatedData, EmbedLiveView, Html, LiveView, Subscriptions};
 use serde::{Deserialize, Serialize};
@@ -54,9 +52,9 @@ struct Counter {
 impl LiveView for Counter {
     type Message = Msg;
 
-    fn init(&self, subscriptions: &mut Subscriptions<Self>) {}
+    fn init(&self, _subscriptions: &mut Subscriptions<Self>) {}
 
-    async fn update(mut self, msg: Msg, data: AssociatedData) -> Self {
+    async fn update(mut self, msg: Msg, _data: AssociatedData) -> Self {
         match msg {
             Msg::Incr => self.count += 1,
             Msg::Decr => {

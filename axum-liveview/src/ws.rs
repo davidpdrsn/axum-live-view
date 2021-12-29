@@ -1,10 +1,7 @@
 use crate::{
+    associated_data::{FormEventValue, KeyEventValue, WithAssociatedData},
     html::{self, Diff},
-    liveview::{
-        associated_data::{FormEventValue, KeyEventValue, WithAssociatedData},
-        embed::EmbedLiveView,
-        LiveViewId,
-    },
+    liveview::{embed::EmbedLiveView, LiveViewId},
     pubsub::PubSub,
     topics, AssociatedData,
 };

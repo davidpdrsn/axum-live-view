@@ -1,5 +1,6 @@
 use crate::{
-    liveview::{associated_data::WithAssociatedData, LiveView, LiveViewId},
+    associated_data::WithAssociatedData,
+    liveview::{LiveView, LiveViewId},
     pubsub::{Decode, PubSub, Topic},
     topics::{self, FixedTopic},
 };

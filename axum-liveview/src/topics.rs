@@ -1,6 +1,7 @@
 use crate::{
+    associated_data::WithAssociatedData,
     html,
-    liveview::{associated_data::WithAssociatedData, LiveViewId},
+    liveview::LiveViewId,
     pubsub::{Decode, Encode, Topic},
 };
 use axum::Json;
