@@ -19,6 +19,14 @@ impl AssociatedData {
         }
     }
 
+    pub fn as_window_focus_blur(&self) -> Option<()> {
+        if let AssociatedDataKind::WindowFocusBlur = &self.kind {
+            Some(())
+        } else {
+            None
+        }
+    }
+
     pub fn as_form(&self) -> Option<&FormEventValue> {
         if let AssociatedDataKind::Form(kind) = &self.kind {
             Some(kind)
@@ -41,6 +49,7 @@ enum AssociatedDataKind {
     Click,
     Form(FormEventValue),
     Key(KeyEventValue),
+    WindowFocusBlur,
 }
 
 impl From<crate::ws::AssociatedDataKind> for AssociatedDataKind {
@@ -49,6 +58,7 @@ impl From<crate::ws::AssociatedDataKind> for AssociatedDataKind {
             crate::ws::AssociatedDataKind::Click => Self::Click,
             crate::ws::AssociatedDataKind::Form(form_kind) => Self::Form(form_kind.into()),
             crate::ws::AssociatedDataKind::Key(key_kind) => Self::Key(key_kind.into()),
+            crate::ws::AssociatedDataKind::WindowFocusBlur => Self::WindowFocusBlur,
         }
     }
 }

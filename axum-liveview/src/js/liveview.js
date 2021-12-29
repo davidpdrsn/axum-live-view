@@ -203,17 +203,17 @@
             }
 
             document.querySelectorAll("[axm-window-keydown]").forEach((el) => {
-                this.bindLiveEvent(
-                    el,
-                    { attr: "axm-window-keydown", eventName: "keydown", bindEventTo: window }
-                )
+                this.bindLiveEvent(el, { attr: "axm-window-keydown", eventName: "keydown", bindEventTo: window })
+            })
+            document.querySelectorAll("[axm-window-keyup]").forEach((el) => {
+                this.bindLiveEvent(el, { attr: "axm-window-keyup", eventName: "keyup", bindEventTo: window })
             })
 
-            document.querySelectorAll("[axm-window-keyup]").forEach((el) => {
-                this.bindLiveEvent(
-                    el,
-                    { attr: "axm-window-keyup", eventName: "keyup", bindEventTo: window }
-                )
+            document.querySelectorAll("[axm-window-focus]").forEach((el) => {
+                this.bindLiveEvent(el, { attr: "axm-window-focus", eventName: "focus", bindEventTo: window })
+            })
+            document.querySelectorAll("[axm-window-blur]").forEach((el) => {
+                this.bindLiveEvent(el, { attr: "axm-window-blur", eventName: "blur", bindEventTo: window })
             })
         }
 
