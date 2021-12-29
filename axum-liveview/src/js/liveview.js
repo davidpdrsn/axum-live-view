@@ -137,6 +137,7 @@
 
         send(liveviewId, topic, data) {
             let msg = [liveviewId, topic, data]
+            console.log(msg)
             this.socket.send(JSON.stringify(msg))
         }
 

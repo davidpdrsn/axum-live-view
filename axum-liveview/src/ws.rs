@@ -1,7 +1,8 @@
 use crate::{
     html::{self, Diff},
+    liveview::{embed::EmbedLiveView, LiveViewId},
     pubsub::PubSub,
-    topics, LiveViewManager,
+    topics,
 };
 use anyhow::Context;
 use axum::{
@@ -16,7 +17,6 @@ use serde_json::{from_value, json, Value};
 use std::{collections::HashMap, time::Duration};
 use tokio::time::{timeout, Instant};
 use tokio_stream::StreamMap;
-use uuid::Uuid;
 
 pub(crate) fn routes<B>() -> Router<B>
 where
@@ -25,13 +25,13 @@ where
     Router::new().route("/live", get(ws))
 }
 
-async fn ws(upgrade: WebSocketUpgrade, live: LiveViewManager) -> impl IntoResponse {
-    upgrade.on_upgrade(move |socket| handle_socket(socket, live.pubsub))
+async fn ws(upgrade: WebSocketUpgrade, embed_liveview: EmbedLiveView) -> impl IntoResponse {
+    upgrade.on_upgrade(move |socket| handle_socket(socket, embed_liveview.pubsub))
 }
 
 #[derive(Default)]
 struct SocketState {
-    diff_streams: StreamMap<Uuid, BoxStream<'static, Diff>>,
+    diff_streams: StreamMap<LiveViewId, BoxStream<'static, Diff>>,
 }
 
 async fn handle_socket<P>(mut socket: WebSocket, pubsub: P)
@@ -77,7 +77,7 @@ where
 
             Some(Ok(msg)) = socket.recv() => {
                 match handle_message_from_socket(msg, &pubsub, &mut state).await {
-                    Some(HandledMessagedResult::Mounted(liveview_id, initial_render_html)) => {
+                    Ok(Some(HandledMessagedResult::Mounted(liveview_id, initial_render_html))) => {
                         let _ = send_message_to_socket(
                             &mut socket,
                             liveview_id,
@@ -86,7 +86,7 @@ where
                         )
                         .await;
                     },
-                    Some(HandledMessagedResult::HeartbeatResponse) => {
+                    Ok(Some(HandledMessagedResult::HeartbeatResponse)) => {
                         tracing::trace!(
                             elapsed = ?heartbeat_sent_at.elapsed(),
                             "heartbeat came back",
@@ -94,7 +94,7 @@ where
                         heartbeat_bounce.as_mut().reset(Instant::now() + A_VERY_LONG_TIME);
                         failed_heartbeats = 0;
                     }
-                    Some(HandledMessagedResult::InitialRenderError(liveview_id)) => {
+                    Ok(Some(HandledMessagedResult::InitialRenderError(liveview_id))) => {
                         tracing::warn!("no response from `initial-render` message sent to liveview");
                         let _ = send_message_to_socket(
                             &mut socket,
@@ -105,7 +105,10 @@ where
                         .await;
                         state.diff_streams.remove(&liveview_id);
                     }
-                    None => {},
+                    Ok(None) => {},
+                    Err(err) => {
+                        tracing::error!(%err, "error handling message from socket");
+                    },
                 }
             }
 
@@ -144,14 +147,14 @@ const RENDERED_TOPIC: &str = "r";
 
 async fn send_message_to_socket<T>(
     socket: &mut WebSocket,
-    liveview_id: Uuid,
+    liveview_id: LiveViewId,
     topic: &'static str,
     msg: T,
 ) -> Result<(), axum::Error>
 where
     T: serde::Serialize,
 {
-    let msg = json!([liveview_id, topic, msg,]);
+    let msg = json!([liveview_id, topic, msg]);
     let msg = serde_json::to_string(&msg).unwrap();
     tracing::trace!(%msg, "sending message to websocket");
 
@@ -159,100 +162,106 @@ where
 }
 
 enum HandledMessagedResult {
-    Mounted(Uuid, html::Serialized),
+    Mounted(LiveViewId, html::Serialized),
     HeartbeatResponse,
-    InitialRenderError(Uuid),
+    InitialRenderError(LiveViewId),
 }
 
 async fn handle_message_from_socket<P>(
     msg: ws::Message,
     pubsub: &P,
     state: &mut SocketState,
-) -> Option<HandledMessagedResult>
+) -> anyhow::Result<Option<HandledMessagedResult>>
 where
     P: PubSub,
 {
-    macro_rules! tri {
-        ($expr:expr, $pattern:path $(,)?) => {
-            match $expr {
-                $pattern(inner) => inner,
-                _other => {
-                    tracing::error!(file = file!(), line = line!(), "`tri!` didn't match");
-                    return None;
-                }
-            }
-        };
-    }
+    let text = if let ws::Message::Text(text) = msg {
+        text
+    } else {
+        return Ok(None);
+    };
 
-    let text = tri!(msg, ws::Message::Text);
-    let msg: RawMessageOrHeartbeat = tri!(serde_json::from_str(&text), Ok);
+    let msg = serde_json::from_str::<RawMessageOrHeartbeat>(&text)
+        .with_context(|| format!("parsing into `RawMessageOrHeartbeat`. text = {:?}", text))?;
 
     let msg = match msg {
         RawMessageOrHeartbeat::HeartbeatResponse(heartbeat_response) => {
             if heartbeat_response.h != "ok" {
                 tracing::debug!(?heartbeat_response, "invalid status in heartbeat response");
             }
-            return Some(HandledMessagedResult::HeartbeatResponse);
+            return Ok(Some(HandledMessagedResult::HeartbeatResponse));
         }
         RawMessageOrHeartbeat::RawMessage(msg) => msg,
     };
 
     let liveview_id = msg.liveview_id;
-    let msg = tri!(EventFromBrowser::try_from(msg), Ok);
+    let msg = EventFromBrowser::try_from(msg).context("Parsing into `EventFromBrowser`")?;
 
     tracing::trace!(?msg, "received message from websocket");
 
     match msg {
         EventFromBrowser::Mount => {
-            let mut initial_render_stream = tri!(
-                pubsub.subscribe(&topics::initial_render(liveview_id)).await,
-                Ok,
-            );
+            let mut initial_render_stream = pubsub
+                .subscribe(&topics::initial_render(liveview_id))
+                .await
+                .context("creating initial-render stream")?;
 
-            tri!(
-                pubsub.broadcast(&topics::mounted(liveview_id), ()).await,
-                Ok,
-            );
+            pubsub
+                .broadcast(&topics::mounted(liveview_id), ())
+                .await
+                .context("broadcasting mounted")?;
 
             let Json(initial_render_html) =
                 match timeout(Duration::from_secs(5), initial_render_stream.next()).await {
                     Ok(Some(initial_render_html)) => initial_render_html,
                     Ok(None) => {
-                        return Some(HandledMessagedResult::InitialRenderError(liveview_id));
+                        return Ok(Some(HandledMessagedResult::InitialRenderError(liveview_id)));
                     }
                     Err(err) => {
                         tracing::warn!(?err, "error from initial render stream");
-                        return Some(HandledMessagedResult::InitialRenderError(liveview_id));
+                        return Ok(Some(HandledMessagedResult::InitialRenderError(liveview_id)));
                     }
                 };
 
-            let diff_stream = tri!(pubsub.subscribe(&topics::rendered(liveview_id)).await, Ok)
+            let diff_stream = pubsub
+                .subscribe(&topics::rendered(liveview_id))
+                .await
+                .context("creating rendered stream")?
                 .map(|Json(diff)| diff);
             state
                 .diff_streams
                 .insert(liveview_id, Box::pin(diff_stream));
 
-            return Some(HandledMessagedResult::Mounted(
+            return Ok(Some(HandledMessagedResult::Mounted(
                 liveview_id,
                 initial_render_html,
-            ));
+            )));
         }
+
         EventFromBrowser::Click(ClickEvent { msg }) => {
             let topic = topics::update(liveview_id);
             let msg = WithEventContext {
                 msg,
                 ctx: EventContext::click(),
             };
-            tri!(pubsub.broadcast(&topic, Json(msg)).await, Ok);
+            pubsub
+                .broadcast(&topic, Json(msg))
+                .await
+                .context("broadcasting click event")?;
         }
+
         EventFromBrowser::FormEvent(FormEvent { msg, value }) => {
             let topic = topics::update(liveview_id);
             let msg = WithEventContext {
                 msg,
                 ctx: EventContext::form(value),
             };
-            tri!(pubsub.broadcast(&topic, Json(msg)).await, Ok);
+            pubsub
+                .broadcast(&topic, Json(msg))
+                .await
+                .context("broadcasting form event")?;
         }
+
         EventFromBrowser::KeyEvent(KeyEvent {
             msg,
             key,
@@ -274,11 +283,14 @@ where
                     meta,
                 }),
             };
-            tri!(pubsub.broadcast(&topic, Json(msg)).await, Ok);
+            pubsub
+                .broadcast(&topic, Json(msg))
+                .await
+                .context("broadcasting key event")?;
         }
     }
 
-    None
+    Ok(None)
 }
 
 #[derive(Debug, Deserialize)]
@@ -295,7 +307,7 @@ struct HeartbeatResponse {
 
 #[derive(Debug, Deserialize)]
 struct RawMessage {
-    liveview_id: Uuid,
+    liveview_id: LiveViewId,
     topic: String,
     data: Value,
 }

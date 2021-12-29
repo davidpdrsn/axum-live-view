@@ -62,7 +62,7 @@ pub use axum_liveview_macros::html;
 #[doc(inline)]
 pub use self::{
     html::Html,
-    liveview::{LiveView, LiveViewManager},
+    liveview::{embed::EmbedLiveView, LiveView},
     middleware::layer,
     pubsub::PubSub,
     subscriptions::Subscriptions,

@@ -1,5 +1,5 @@
 use crate::{
-    liveview::LiveView,
+    liveview::{LiveView, LiveViewId},
     pubsub::{Decode, PubSub, Topic},
     topics::{self, FixedTopic},
     ws::WithEventContext,
@@ -17,7 +17,6 @@ use std::{
     hash::Hash,
 };
 use tokio_stream::StreamMap;
-use uuid::Uuid;
 
 pub struct Subscriptions<T>
 where
@@ -32,7 +31,7 @@ impl<T> Subscriptions<T>
 where
     T: LiveView,
 {
-    pub(crate) fn new(liveview_id: Uuid) -> Self {
+    pub(crate) fn new(liveview_id: LiveViewId) -> Self {
         let callback = |this: T, Json(msg): Json<WithEventContext<T::Message>>| {
             let WithEventContext { msg, ctx } = msg;
             this.update(msg, ctx)

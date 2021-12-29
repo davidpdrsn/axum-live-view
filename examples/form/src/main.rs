@@ -1,5 +1,7 @@
+#![allow(unused_variables)]
+
 use axum::{async_trait, response::IntoResponse, routing::get, Router};
-use axum_liveview::{html, EventContext, Html, LiveView, LiveViewManager, Subscriptions};
+use axum_liveview::{html, EmbedLiveView, EventContext, Html, LiveView, Subscriptions};
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, net::SocketAddr};
 
@@ -21,7 +23,7 @@ async fn main() {
         .unwrap();
 }
 
-async fn root(live: LiveViewManager) -> impl IntoResponse {
+async fn root(embed_liveview: EmbedLiveView) -> impl IntoResponse {
     let form = FormView::default();
 
     html! {
@@ -31,7 +33,7 @@ async fn root(live: LiveViewManager) -> impl IntoResponse {
                 { axum_liveview::assets() }
             </head>
             <body>
-                { live.embed(form) }
+                { embed_liveview.embed(form) }
                 <script>
                     r#"
                         const liveView = new LiveView({ host: 'localhost', port: 4000 })
