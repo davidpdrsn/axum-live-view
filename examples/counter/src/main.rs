@@ -77,9 +77,7 @@ impl LiveView for Counter {
             }
         }
 
-        let title = format!("Count: {}", self.count);
-
-        Updated::new(self).with(js::set_title(title))
+        Updated::new(self)
     }
 
     fn render(&self) -> Html<Self::Message> {

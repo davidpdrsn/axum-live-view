@@ -24,6 +24,7 @@ pub(crate) enum JsCommandKind {
     ToggleClass { selector: String, class: String },
     ClearValue { selector: String },
     SetTitle { title: String },
+    HistoryPushState { uri: String },
 }
 
 fn command(kind: JsCommandKind) -> JsCommand {
@@ -69,5 +70,11 @@ pub fn clear_value(selector: impl Into<String>) -> JsCommand {
 pub fn set_title(title: impl Into<String>) -> JsCommand {
     command(JsCommandKind::SetTitle {
         title: title.into(),
+    })
+}
+
+pub fn history_push_state(uri: Uri) -> JsCommand {
+    command(JsCommandKind::HistoryPushState {
+        uri: uri.to_string(),
     })
 }

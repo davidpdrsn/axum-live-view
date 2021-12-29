@@ -162,6 +162,9 @@
                     } else if (key === "SetTitle") {
                         document.title = data.title
 
+                    } else if (key === "HistoryPushState") {
+                        window.history.pushState({}, "", data.uri);
+
                     } else {
                         console.error(`unsupported JS command: ${key}`)
                     }
