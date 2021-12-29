@@ -1,5 +1,9 @@
 use super::{wrap_in_liveview_container, LiveView, LiveViewId, Updated};
-use crate::{html::Html, topics, PubSub, Subscriptions};
+use crate::{
+    html::Html,
+    js::{JsCommand, JsCommandKind},
+    topics, PubSub, Subscriptions,
+};
 use anyhow::Context;
 use async_stream::stream;
 use axum::Json;
@@ -31,7 +35,7 @@ where
     T: LiveView,
 {
     Mounted,
-    Rendered(Html<T::Message>),
+    Rendered(Html<T::Message>, Vec<JsCommandKind>),
     WebSocketDisconnected,
 }
 
@@ -121,7 +125,7 @@ where
                 markup_updates_stream(liveview, pubsub.clone(), liveview_id)
                     .await
                     .context("failed to create markup updates stream")?
-                    .map(MessageForLiveView::Rendered);
+                    .map(|(markup, js_commands)| MessageForLiveView::Rendered(markup, js_commands));
 
             let disconnected_stream = pubsub
                 .subscribe(&topics::socket_disconnected(liveview_id))
@@ -175,14 +179,14 @@ where
                         .await;
                 }
 
-                MessageForLiveView::Rendered(new_markup) => {
+                MessageForLiveView::Rendered(new_markup, js_commands) => {
                     tracing::trace!(?liveview_id, "liveview re-rendered its markup");
 
                     let new_markup = wrap_in_liveview_container(liveview_id, new_markup);
                     if let Some(diff) = markup.diff(&new_markup) {
                         markup = new_markup;
                         let _ = pubsub
-                            .broadcast(&topics::rendered(liveview_id), Json(diff))
+                            .broadcast(&topics::rendered(liveview_id), Json((diff, js_commands)))
                             .await;
                     }
                 }
@@ -210,7 +214,7 @@ async fn markup_updates_stream<T, P>(
     mut liveview: T,
     pubsub: P,
     liveview_id: LiveViewId,
-) -> anyhow::Result<BoxStream<'static, Html<T::Message>>>
+) -> anyhow::Result<BoxStream<'static, (Html<T::Message>, Vec<JsCommandKind>)>>
 where
     T: LiveView,
     P: PubSub,
@@ -222,10 +226,19 @@ where
 
     Ok(Box::pin(stream! {
         while let Some((callback, msg)) = stream.next().await {
-            let Updated { liveview: new_liveview } = callback.call(liveview, msg).await;
+            let Updated {
+                liveview: new_liveview,
+                js_commands,
+            } = callback.call(liveview, msg).await;
             liveview = new_liveview;
             let markup = liveview.render();
-            yield markup;
+
+            let js_commands = js_commands
+                .into_iter()
+                .map(|js_command| js_command.kind)
+                .collect::<Vec<_>>();
+
+            yield (markup, js_commands);
         }
     }))
 }

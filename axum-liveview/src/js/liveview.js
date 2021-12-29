@@ -121,18 +121,41 @@
             })
         }
 
-        handleJsCommand({ type, data }) {
-            if (type == "navigate_to") {
-                const uri = data.uri
-                if (uri.startsWith("http")) {
-                    window.location.href = uri
-                } else {
-                    window.location.pathname = uri
-                }
+        handleJsCommand(commands) {
+            for (var i = 0; i < commands.length; i++) {
+                const key = Object.keys(commands[i])[0]
+                const data = commands[i][key]
 
-            } else {
-                console.error("unknown type", data)
+                if (key === "ToggleClass") {
+                    document.querySelectorAll(data.selector).forEach((element) => {
+                        element.classList.toggle(data.class)
+                    })
+
+                } else if (key === "AddClass") {
+                    document.querySelectorAll(data.selector).forEach((element) => {
+                        element.classList.add(data.class)
+                    })
+
+                } else if (key === "RemoveClass") {
+                    document.querySelectorAll(data.selector).forEach((element) => {
+                        element.classList.remove(data.class)
+                    })
+
+                } else if (key === "NavigateTo") {
+                    console.error("unimplemented: NavigateTo")
+                    console.log(data)
+
+                } else {
+                    console.error(`unsupported JS command: ${key}`)
+                }
             }
+
+            // const uri = data.uri
+            // if (uri.startsWith("http")) {
+            //     window.location.href = uri
+            // } else {
+            //     window.location.pathname = uri
+            // }
         }
 
         send(liveviewId, topic, data) {
