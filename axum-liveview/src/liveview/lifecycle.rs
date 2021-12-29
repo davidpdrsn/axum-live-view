@@ -182,7 +182,14 @@ where
                     if let Some(diff) = markup.diff(&new_markup) {
                         markup = new_markup;
                         let _ = pubsub
-                            .broadcast(&topics::rendered(liveview_id), Json((diff, js_commands)))
+                            .broadcast(
+                                &topics::rendered(liveview_id),
+                                Json((Some(diff), js_commands)),
+                            )
+                            .await;
+                    } else {
+                        let _ = pubsub
+                            .broadcast(&topics::rendered(liveview_id), Json((None, js_commands)))
                             .await;
                     }
                 }
