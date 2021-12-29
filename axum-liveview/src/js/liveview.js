@@ -159,6 +159,9 @@
                             window.location.pathname = data.uri
                         }
 
+                    } else if (key === "SetTitle") {
+                        document.title = data.title
+
                     } else {
                         console.error(`unsupported JS command: ${key}`)
                     }

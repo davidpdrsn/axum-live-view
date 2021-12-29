@@ -23,6 +23,7 @@ pub(crate) enum JsCommandKind {
     RemoveClass { selector: String, class: String },
     ToggleClass { selector: String, class: String },
     ClearValue { selector: String },
+    SetTitle { title: String },
 }
 
 fn command(kind: JsCommandKind) -> JsCommand {
@@ -62,5 +63,11 @@ pub fn toggle_class(selector: impl Into<String>, class: impl Into<String>) -> Js
 pub fn clear_value(selector: impl Into<String>) -> JsCommand {
     command(JsCommandKind::ClearValue {
         selector: selector.into(),
+    })
+}
+
+pub fn set_title(title: impl Into<String>) -> JsCommand {
+    command(JsCommandKind::SetTitle {
+        title: title.into(),
     })
 }
