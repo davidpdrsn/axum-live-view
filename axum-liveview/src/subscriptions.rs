@@ -6,10 +6,7 @@ use crate::{
 };
 use axum::Json;
 use bytes::Bytes;
-use futures_util::{
-    future::{BoxFuture, FutureExt},
-    Stream,
-};
+use futures_util::{future::BoxFuture, Stream};
 use std::sync::Arc;
 use std::{
     any::{type_name, TypeId},
@@ -46,11 +43,11 @@ where
         }
     }
 
-    pub fn on<F, K>(&mut self, topic: &K, callback: F)
+    pub fn on<F, K, Fut>(&mut self, topic: &K, callback: F)
     where
         K: Topic + Send + 'static,
-        T: Send + 'static,
-        F: SubscriptionCallback<T, K::Message>,
+        F: Fn(T, K::Message) -> Fut + Copy + Send + Sync + 'static,
+        Fut: Future<Output = T> + Send + 'static,
     {
         let callback = make_callback(topic, callback);
         let topic = topic.topic().to_owned();
@@ -84,18 +81,19 @@ where
     }
 }
 
-fn make_callback<L, T, F, M>(topic: &T, callback: F) -> AsyncCallback<L>
+fn make_callback<L, T, F, M, Fut>(topic: &T, callback: F) -> AsyncCallback<L>
 where
     L: LiveView,
     T: Topic,
-    F: SubscriptionCallback<L, M>,
+    F: Fn(L, M) -> Fut + Copy + Send + Sync + 'static,
+    Fut: Future<Output = L> + Send + 'static,
     M: Decode,
 {
     let topic = topic.topic().to_owned().into();
 
     let callback = Arc::new(
         move |receiver: L, raw_msg: Bytes| match M::decode(raw_msg.clone()) {
-            Ok(msg) => Box::pin(callback.call(receiver, msg).map(|value| value.into())) as _,
+            Ok(msg) => Box::pin(callback(receiver, msg)) as _,
             Err(err) => {
                 tracing::warn!(
                     ?err,
@@ -113,42 +111,6 @@ where
         type_id: TypeId::of::<F>(),
         topic,
         callback,
-    }
-}
-
-pub trait SubscriptionCallback<T, Msg>: Copy + Send + Sync + 'static {
-    type Output: Into<T>;
-    type Future: Future<Output = Self::Output> + Send + 'static;
-
-    fn call(self, receiver: T, input: Msg) -> Self::Future;
-}
-
-impl<T, F, Fut, K> SubscriptionCallback<T, ()> for F
-where
-    F: Fn(T) -> Fut + Copy + Send + Sync + 'static,
-    Fut: Future<Output = K> + Send + 'static,
-    K: Into<T>,
-{
-    type Output = K;
-    type Future = Fut;
-
-    fn call(self, receiver: T, _: ()) -> Self::Future {
-        self(receiver)
-    }
-}
-
-impl<T, Msg, F, Fut, K> SubscriptionCallback<T, (Msg,)> for F
-where
-    F: Fn(T, Msg) -> Fut + Copy + Send + Sync + 'static,
-    Fut: Future<Output = K> + Send + 'static,
-    K: Into<T>,
-    Msg: Decode,
-{
-    type Output = K;
-    type Future = Fut;
-
-    fn call(self, receiver: T, (input,): (Msg,)) -> Self::Future {
-        self(receiver, input)
     }
 }
 

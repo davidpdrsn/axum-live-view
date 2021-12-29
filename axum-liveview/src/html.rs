@@ -16,7 +16,6 @@ pub mod __private {
 
     use super::*;
     use fmt;
-    use serde::Serialize;
 
     pub fn html<T>() -> Html<T> {
         Html {
@@ -58,22 +57,43 @@ pub mod __private {
             DynamicFragment::Html(x)
         }
     }
+}
 
-    impl<T> DynamicFragment<T>
+impl<T> DynamicFragment<T> {
+    fn serialize(&self) -> Value
     where
         T: Serialize,
     {
-        pub(super) fn serialize(&self) -> Value {
-            match self {
-                DynamicFragment::String(s) => json!(s),
-                DynamicFragment::Message(msg) => json!(serde_json::to_string(&msg).unwrap()),
-                DynamicFragment::Html(inner) => json!(inner.serialize()),
-            }
+        match self {
+            DynamicFragment::String(s) => json!(s),
+            DynamicFragment::Message(msg) => json!(serde_json::to_string(&msg).unwrap()),
+            DynamicFragment::Html(inner) => json!(inner.serialize()),
+        }
+    }
+
+    fn unit(self) -> DynamicFragment<()> {
+        match self {
+            DynamicFragment::String(s) => DynamicFragment::String(s),
+            DynamicFragment::Message(_) => DynamicFragment::Message(()),
+            DynamicFragment::Html(inner) => DynamicFragment::Html(inner.unit()),
         }
     }
 }
 
 impl<T> Html<T> {
+    pub fn unit(self) -> Html<()> {
+        let dynamic = self
+            .dynamic
+            .into_iter()
+            .map(DynamicFragment::unit)
+            .collect();
+
+        Html {
+            fixed: self.fixed,
+            dynamic,
+        }
+    }
+
     pub(crate) fn diff(&self, other: &Self) -> Option<Diff>
     where
         T: PartialEq + Serialize,
