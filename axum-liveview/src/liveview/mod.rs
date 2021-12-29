@@ -1,4 +1,4 @@
-use crate::{html::Html, AssociatedData, Subscriptions};
+use crate::{html::Html, js::JsCommand, AssociatedData, Subscriptions};
 use axum::async_trait;
 use axum_liveview_macros::html;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
@@ -14,7 +14,7 @@ pub trait LiveView: Sized + Send + Sync + 'static {
 
     fn init(&self, _subscriptions: &mut Subscriptions<Self>) {}
 
-    async fn update(self, msg: Self::Message, data: AssociatedData) -> Self;
+    async fn update(self, msg: Self::Message, data: AssociatedData) -> Updated<Self>;
 
     fn render(&self) -> Html<Self::Message>;
 }
@@ -42,5 +42,41 @@ pub(super) fn wrap_in_liveview_container<T>(liveview_id: LiveViewId, markup: Htm
         <div class="liveview-container" data-liveview-id={ liveview_id.to_string() }>
             { markup }
         </div>
+    }
+}
+
+pub struct Updated<T> {
+    liveview: T,
+    js_commands: Vec<JsCommand>,
+}
+
+impl<T> Updated<T> {
+    pub fn new(liveview: T) -> Self {
+        Self {
+            liveview,
+            js_commands: Default::default(),
+        }
+    }
+
+    pub fn with(mut self, js_command: JsCommand) -> Self {
+        self.js_commands.push(js_command);
+        self
+    }
+
+    pub fn with_all<I>(mut self, commands: I) -> Self
+    where
+        I: IntoIterator<Item = JsCommand>,
+    {
+        self.extend(commands);
+        self
+    }
+}
+
+impl<T> Extend<JsCommand> for Updated<T> {
+    fn extend<I>(&mut self, iter: I)
+    where
+        I: IntoIterator<Item = JsCommand>,
+    {
+        self.js_commands.extend(iter);
     }
 }

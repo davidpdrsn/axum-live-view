@@ -1,5 +1,6 @@
 use crate::{
     html::{self, Diff},
+    js::JsCommand,
     liveview::{embed::EmbedLiveView, LiveViewId},
     pubsub::PubSub,
     topics,
@@ -31,7 +32,7 @@ async fn ws(upgrade: WebSocketUpgrade, embed_liveview: EmbedLiveView) -> impl In
 
 #[derive(Default)]
 struct SocketState {
-    diff_streams: StreamMap<LiveViewId, BoxStream<'static, Diff>>,
+    diff_streams: StreamMap<LiveViewId, BoxStream<'static, (Diff, Vec<JsCommand>)>>,
 }
 
 async fn handle_socket<P>(mut socket: WebSocket, pubsub: P)
@@ -55,6 +56,7 @@ where
     loop {
         tokio::select! {
             _ = heartbeat_interval.tick() => {
+                // TODO(david): extract to function
                 if failed_heartbeats >= HEARTBEAT_MAX_FAILED_ATTEMPTS {
                     tracing::debug!("failed too many heartbeats");
                     break;
@@ -76,6 +78,7 @@ where
             }
 
             Some(Ok(msg)) = socket.recv() => {
+                // TODO(david): extract to function
                 match handle_message_from_socket(msg, &pubsub, &mut state).await {
                     Ok(Some(HandledMessagedResult::Mounted(liveview_id, initial_render_html))) => {
                         let _ = send_message_to_socket(
@@ -112,8 +115,12 @@ where
                 }
             }
 
-            Some((liveview_id, diff)) = state.diff_streams.next() => {
+            Some((liveview_id, (diff, js_commands))) = state.diff_streams.next() => {
+                // TODO(david): extract to function
                 let _ = send_message_to_socket(&mut socket, liveview_id, RENDERED_TOPIC, diff).await;
+                if !js_commands.is_empty() {
+                    let _ = send_message_to_socket(&mut socket, liveview_id, JS_COMMANDS_TOPIC, js_commands).await;
+                }
             }
         }
     }
@@ -144,6 +151,7 @@ async fn send_heartbeat(socket: &mut WebSocket) -> Result<(), axum::Error> {
 const INITIAL_RENDER_TOPIC: &str = "i";
 const LIVEVIEW_GONE_TOPIC: &str = "liveview-gone";
 const RENDERED_TOPIC: &str = "r";
+const JS_COMMANDS_TOPIC: &str = "j";
 
 async fn send_message_to_socket<T>(
     socket: &mut WebSocket,

@@ -1,7 +1,9 @@
 #![allow(unused_variables)]
 
 use axum::{async_trait, response::IntoResponse, routing::get, Router};
-use axum_liveview::{html, AssociatedData, EmbedLiveView, Html, LiveView, Subscriptions};
+use axum_liveview::{
+    html, liveview::Updated, AssociatedData, EmbedLiveView, Html, LiveView, Subscriptions,
+};
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 
@@ -57,10 +59,10 @@ impl LiveView for View {
 
     fn init(&self, subscriptions: &mut Subscriptions<Self>) {}
 
-    async fn update(mut self, msg: Msg, data: AssociatedData) -> Self {
+    async fn update(mut self, msg: Msg, data: AssociatedData) -> Updated<Self> {
         self.count += 1;
         self.prev = Some(msg);
-        self
+        Updated::new(self)
     }
 
     fn render(&self) -> Html<Self::Message> {

@@ -1,5 +1,6 @@
 use crate::{
     html,
+    js::JsCommand,
     liveview::LiveViewId,
     pubsub::{Decode, Encode, Topic},
     ws::WithAssociatedData,
@@ -18,7 +19,9 @@ pub(crate) fn initial_render(
     liveview_local(liveview_id, "initial-render")
 }
 
-pub(crate) fn rendered(liveview_id: LiveViewId) -> impl Topic<Message = Json<html::Diff>> {
+pub(crate) fn rendered(
+    liveview_id: LiveViewId,
+) -> impl Topic<Message = Json<(html::Diff, Vec<JsCommand>)>> {
     liveview_local(liveview_id, "rendered")
 }
 

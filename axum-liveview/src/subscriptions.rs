@@ -1,5 +1,5 @@
 use crate::{
-    liveview::{LiveView, LiveViewId},
+    liveview::{LiveView, LiveViewId, Updated},
     pubsub::{Decode, PubSub, Topic},
     topics::{self, FixedTopic},
     ws::WithAssociatedData,
@@ -48,7 +48,7 @@ where
     where
         K: Topic + Send + 'static,
         F: Fn(T, K::Message) -> Fut + Copy + Send + Sync + 'static,
-        Fut: Future<Output = T> + Send + 'static,
+        Fut: Future<Output = Updated<T>> + Send + 'static,
     {
         let callback = make_callback(topic, callback);
         let topic = topic.topic().to_owned();
@@ -87,7 +87,7 @@ where
     L: LiveView,
     T: Topic,
     F: Fn(L, M) -> Fut + Copy + Send + Sync + 'static,
-    Fut: Future<Output = L> + Send + 'static,
+    Fut: Future<Output = Updated<L>> + Send + 'static,
     M: Decode,
 {
     let topic = topic.topic().to_owned().into();
@@ -103,7 +103,7 @@ where
                     raw_msg = ?std::str::from_utf8(&raw_msg),
                     "failed to decode message for subscriber",
                 );
-                Box::pin(ready(receiver)) as _
+                Box::pin(ready(Updated::new(receiver))) as _
             }
         },
     );
@@ -118,11 +118,11 @@ where
 pub(crate) struct AsyncCallback<T> {
     type_id: TypeId,
     topic: Arc<str>,
-    callback: Arc<dyn Fn(T, Bytes) -> BoxFuture<'static, T> + Send + Sync + 'static>,
+    callback: Arc<dyn Fn(T, Bytes) -> BoxFuture<'static, Updated<T>> + Send + Sync + 'static>,
 }
 
 impl<T> AsyncCallback<T> {
-    pub(crate) async fn call(self, t: T, msg: Bytes) -> T {
+    pub(crate) async fn call(self, t: T, msg: Bytes) -> Updated<T> {
         (self.callback)(t, msg).await
     }
 }

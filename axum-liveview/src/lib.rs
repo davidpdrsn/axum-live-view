@@ -50,6 +50,7 @@ mod macros;
 
 pub mod associated_data;
 pub mod html;
+pub mod js;
 pub mod liveview;
 pub mod middleware;
 pub mod pubsub;

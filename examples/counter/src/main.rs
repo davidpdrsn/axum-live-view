@@ -1,5 +1,7 @@
 use axum::{async_trait, response::IntoResponse, routing::get, Router};
-use axum_liveview::{html, AssociatedData, EmbedLiveView, Html, LiveView, Subscriptions};
+use axum_liveview::{
+    html, liveview::Updated, AssociatedData, EmbedLiveView, Html, LiveView, Subscriptions,
+};
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 
@@ -29,9 +31,19 @@ async fn root(embed_liveview: EmbedLiveView) -> impl IntoResponse {
         <html>
             <head>
                 { axum_liveview::assets() }
+                <style>
+                    r#"
+                        .hide {
+                            display: none;
+                        }
+                    "#
+                </style>
             </head>
             <body>
                 { embed_liveview.embed(counter) }
+
+                <div id="thing">"The thing is here!"</div>
+
                 <script>
                     r#"
                         const liveView = new LiveView({ host: 'localhost', port: 4000 })
@@ -54,7 +66,7 @@ impl LiveView for Counter {
 
     fn init(&self, _subscriptions: &mut Subscriptions<Self>) {}
 
-    async fn update(mut self, msg: Msg, _data: AssociatedData) -> Self {
+    async fn update(mut self, msg: Msg, _data: AssociatedData) -> Updated<Self> {
         match msg {
             Msg::Incr => self.count += 1,
             Msg::Decr => {
@@ -64,7 +76,7 @@ impl LiveView for Counter {
             }
         }
 
-        self
+        Updated::new(self)
     }
 
     fn render(&self) -> Html<Self::Message> {

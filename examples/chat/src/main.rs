@@ -5,6 +5,7 @@ use axum::{
 use axum_liveview::{
     associated_data::FormEventValue,
     html,
+    liveview::Updated,
     pubsub::{InProcess, Topic},
     AssociatedData, EmbedLiveView, Html, LiveView, PubSub, Subscriptions,
 };
@@ -97,11 +98,13 @@ impl LiveView for MessagesList {
     type Message = ();
 
     fn init(&self, subscriptions: &mut Subscriptions<Self>) {
-        subscriptions.on(&ReRenderMessageList, |this, ()| async move { this });
+        subscriptions.on(&ReRenderMessageList, |this, ()| async move {
+            Updated::new(this)
+        });
     }
 
-    async fn update(mut self, _msg: (), _data: AssociatedData) -> Self {
-        self
+    async fn update(mut self, _msg: (), _data: AssociatedData) -> Updated<Self> {
+        Updated::new(self)
     }
 
     fn render(&self) -> Html<Self::Message> {
@@ -140,7 +143,7 @@ where
 
     fn init(&self, _subscriptions: &mut Subscriptions<Self>) {}
 
-    async fn update(mut self, msg: FormMsg, data: AssociatedData) -> Self {
+    async fn update(mut self, msg: FormMsg, data: AssociatedData) -> Updated<Self> {
         match msg {
             FormMsg::Submit => {
                 let new_msg = serde_json::json!(data.as_form().unwrap());
@@ -175,7 +178,7 @@ where
             },
         }
 
-        self
+        Updated::new(self)
     }
 
     fn render(&self) -> Html<Self::Message> {
