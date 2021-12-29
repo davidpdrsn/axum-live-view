@@ -1,4 +1,4 @@
-use super::{wrap_in_liveview_container, LiveView, LiveViewId};
+use super::{wrap_in_liveview_container, LiveView, LiveViewId, Updated};
 use crate::{html::Html, topics, PubSub, Subscriptions};
 use anyhow::Context;
 use async_stream::stream;
@@ -222,7 +222,8 @@ where
 
     Ok(Box::pin(stream! {
         while let Some((callback, msg)) = stream.next().await {
-            liveview = callback.call(liveview, msg).await;
+            let Updated { liveview: new_liveview } = callback.call(liveview, msg).await;
+            liveview = new_liveview;
             let markup = liveview.render();
             yield markup;
         }

@@ -14,9 +14,19 @@ pub trait LiveView: Sized + Send + Sync + 'static {
 
     fn init(&self, _subscriptions: &mut Subscriptions<Self>) {}
 
-    async fn update(self, msg: Self::Message, data: AssociatedData) -> Self;
+    async fn update(self, msg: Self::Message, data: AssociatedData) -> Updated<Self>;
 
     fn render(&self) -> Html<Self::Message>;
+}
+
+pub struct Updated<T> {
+    liveview: T,
+}
+
+impl<T> Updated<T> {
+    pub fn new(liveview: T) -> Self {
+        Self { liveview }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, Serialize, Deserialize)]
