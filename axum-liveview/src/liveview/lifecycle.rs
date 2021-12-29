@@ -33,7 +33,7 @@ where
     T: LiveView,
 {
     Mounted,
-    Rendered(Html<T::Message>, Vec<JsCommand>),
+    Rendered(Option<Html<T::Message>>, Vec<JsCommand>),
     WebSocketDisconnected,
 }
 
@@ -186,16 +186,25 @@ where
                 MessageForLiveView::Rendered(new_markup, js_commands) => {
                     tracing::trace!(?liveview_id, "liveview re-rendered its markup");
 
-                    let new_markup = wrap_in_liveview_container(liveview_id, new_markup);
-                    if let Some(diff) = markup.diff(&new_markup) {
+                    let new_markup = new_markup
+                        .map(|new_markup| wrap_in_liveview_container(liveview_id, new_markup));
+
+                    let diff = new_markup
+                        .as_ref()
+                        .and_then(|new_markup| markup.diff(new_markup));
+
+                    if let Some(new_markup) = new_markup {
                         markup = new_markup;
+                    }
+
+                    if let Some(diff) = diff {
                         let _ = pubsub
                             .broadcast(
                                 &topics::rendered(liveview_id),
                                 Json((Some(diff), js_commands)),
                             )
                             .await;
-                    } else {
+                    } else if !js_commands.is_empty() {
                         let _ = pubsub
                             .broadcast(&topics::rendered(liveview_id), Json((None, js_commands)))
                             .await;
@@ -225,7 +234,7 @@ async fn markup_updates_stream<T, P>(
     mut liveview: T,
     pubsub: P,
     liveview_id: LiveViewId,
-) -> anyhow::Result<BoxStream<'static, (Html<T::Message>, Vec<JsCommand>)>>
+) -> anyhow::Result<BoxStream<'static, (Option<Html<T::Message>>, Vec<JsCommand>)>>
 where
     T: LiveView,
     P: PubSub,
@@ -244,9 +253,11 @@ where
             } = callback.call(liveview, msg).await;
             liveview = new_liveview;
 
-            if !skip_render {
+            if skip_render {
+                yield (None, js_commands);
+            } else {
                 let markup = liveview.render();
-                yield (markup, js_commands);
+                yield (Some(markup), js_commands);
             }
         }
     }))
