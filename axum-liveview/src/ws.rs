@@ -1,9 +1,8 @@
 use crate::{
-    associated_data::{FormEventValue, KeyEventValue, WithAssociatedData},
     html::{self, Diff},
     liveview::{embed::EmbedLiveView, LiveViewId},
     pubsub::PubSub,
-    topics, AssociatedData,
+    topics,
 };
 use anyhow::Context;
 use axum::{
@@ -15,7 +14,7 @@ use axum::{
 use futures_util::{stream::BoxStream, StreamExt};
 use serde::{Deserialize, Serialize};
 use serde_json::{from_value, json, Value};
-use std::time::Duration;
+use std::{collections::HashMap, time::Duration};
 use tokio::time::{timeout, Instant};
 use tokio_stream::StreamMap;
 
@@ -243,7 +242,7 @@ where
             let topic = topics::update(liveview_id);
             let msg = WithAssociatedData {
                 msg,
-                data: AssociatedData::click(),
+                data: AssociatedDataKind::Click,
             };
             pubsub
                 .broadcast(&topic, Json(msg))
@@ -255,7 +254,7 @@ where
             let topic = topics::update(liveview_id);
             let msg = WithAssociatedData {
                 msg,
-                data: AssociatedData::form(value),
+                data: AssociatedDataKind::Form(value),
             };
             pubsub
                 .broadcast(&topic, Json(msg))
@@ -275,7 +274,7 @@ where
             let topic = topics::update(liveview_id);
             let msg = WithAssociatedData {
                 msg,
-                data: AssociatedData::key(KeyEventValue {
+                data: AssociatedDataKind::Key(KeyEventValue {
                     key,
                     code,
                     alt,
@@ -387,6 +386,44 @@ struct KeyEvent {
     shift: bool,
     #[serde(rename = "me")]
     meta: bool,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub(crate) struct WithAssociatedData<T> {
+    pub(crate) msg: T,
+    pub(crate) data: AssociatedDataKind,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub(crate) enum AssociatedDataKind {
+    Click,
+    Form(FormEventValue),
+    Key(KeyEventValue),
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(untagged)]
+pub(crate) enum FormEventValue {
+    String(String),
+    Strings(Vec<String>),
+    Bool(bool),
+    Map(HashMap<String, FormEventValue>),
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub(crate) struct KeyEventValue {
+    #[serde(rename = "k")]
+    pub(crate) key: String,
+    #[serde(rename = "kc")]
+    pub(crate) code: String,
+    #[serde(rename = "a")]
+    pub(crate) alt: bool,
+    #[serde(rename = "c")]
+    pub(crate) ctrl: bool,
+    #[serde(rename = "s")]
+    pub(crate) shift: bool,
+    #[serde(rename = "m")]
+    pub(crate) meta: bool,
 }
 
 axm! {

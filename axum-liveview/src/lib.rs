@@ -58,8 +58,6 @@ mod subscriptions;
 mod topics;
 mod ws;
 
-pub use axum_liveview_macros::html;
-
 pub use self::{
     associated_data::AssociatedData,
     html::Html,
@@ -68,6 +66,7 @@ pub use self::{
     pubsub::PubSub,
     subscriptions::Subscriptions,
 };
+pub use axum_liveview_macros::html;
 
 const APP_JS_PATH: &str = "/live/app.js";
 

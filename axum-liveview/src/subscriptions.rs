@@ -1,8 +1,8 @@
 use crate::{
-    associated_data::WithAssociatedData,
     liveview::{LiveView, LiveViewId},
     pubsub::{Decode, PubSub, Topic},
     topics::{self, FixedTopic},
+    ws::WithAssociatedData,
 };
 use axum::Json;
 use bytes::Bytes;
@@ -31,6 +31,7 @@ where
     pub(crate) fn new(liveview_id: LiveViewId) -> Self {
         let callback = |this: T, Json(msg): Json<WithAssociatedData<T::Message>>| {
             let WithAssociatedData { msg, data } = msg;
+            let data = crate::associated_data::AssociatedData::new(data);
             this.update(msg, data)
         };
         let update_topic = topics::update::<T::Message>(liveview_id);
