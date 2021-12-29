@@ -7,7 +7,7 @@ use std::{collections::HashMap, fmt};
 #[derive(Debug)]
 pub struct Html<T> {
     fixed: Vec<String>,
-    dynamic: Vec<Dynamic<T>>,
+    dynamic: Vec<DynamicFragment<T>>,
 }
 
 #[doc(hidden)]
@@ -29,45 +29,45 @@ pub mod __private {
         html.fixed.push(part.to_owned());
     }
 
-    pub fn string<T>(html: &mut Html<T>, part: impl Into<Dynamic<T>>) {
+    pub fn string<T>(html: &mut Html<T>, part: impl Into<DynamicFragment<T>>) {
         html.dynamic.push(part.into());
     }
 
     pub fn message<T>(html: &mut Html<T>, msg: T) {
-        html.dynamic.push(Dynamic::Message(msg));
+        html.dynamic.push(DynamicFragment::Message(msg));
     }
 
     #[derive(Debug)]
-    pub enum Dynamic<T> {
+    pub enum DynamicFragment<T> {
         String(String),
         Message(T),
         Html(Html<T>),
     }
 
-    impl<S, T> From<S> for Dynamic<T>
+    impl<S, T> From<S> for DynamicFragment<T>
     where
         S: fmt::Display,
     {
         fn from(x: S) -> Self {
-            Dynamic::String(x.to_string())
+            DynamicFragment::String(x.to_string())
         }
     }
 
-    impl<T> From<Html<T>> for Dynamic<T> {
+    impl<T> From<Html<T>> for DynamicFragment<T> {
         fn from(x: Html<T>) -> Self {
-            Dynamic::Html(x)
+            DynamicFragment::Html(x)
         }
     }
 
-    impl<T> Dynamic<T>
+    impl<T> DynamicFragment<T>
     where
         T: Serialize,
     {
         pub(super) fn serialize(&self) -> Value {
             match self {
-                Dynamic::String(s) => json!(s),
-                Dynamic::Message(msg) => json!(serde_json::to_string(&msg).unwrap()),
-                Dynamic::Html(inner) => json!(inner.serialize()),
+                DynamicFragment::String(s) => json!(s),
+                DynamicFragment::Message(msg) => json!(serde_json::to_string(&msg).unwrap()),
+                DynamicFragment::Html(inner) => json!(inner.serialize()),
             }
         }
     }
@@ -95,7 +95,7 @@ impl<T> Html<T> {
             .filter_map(|(idx, (prev, current))| {
                 let value = match (prev, current) {
                     (Some(prev), Some(current)) => match (prev, current) {
-                        (Dynamic::Message(a), Dynamic::Message(b)) => {
+                        (DynamicFragment::Message(a), DynamicFragment::Message(b)) => {
                             if a == b {
                                 None
                             } else {
@@ -103,8 +103,10 @@ impl<T> Html<T> {
                             }
                         }
                         #[allow(clippy::needless_borrow)] // false positive
-                        (Dynamic::Html(a), Dynamic::Html(b)) => a.diff(&b).map(|diff| json!(diff)),
-                        (Dynamic::String(a), Dynamic::String(b)) => {
+                        (DynamicFragment::Html(a), DynamicFragment::Html(b)) => {
+                            a.diff(&b).map(|diff| json!(diff))
+                        }
+                        (DynamicFragment::String(a), DynamicFragment::String(b)) => {
                             if a == b {
                                 None
                             } else {
@@ -112,9 +114,9 @@ impl<T> Html<T> {
                             }
                         }
 
-                        (_, Dynamic::Html(inner)) => Some(json!(inner.serialize())),
-                        (_, Dynamic::Message(inner)) => Some(json!(inner)),
-                        (_, Dynamic::String(inner)) => Some(json!(inner)),
+                        (_, DynamicFragment::Html(inner)) => Some(json!(inner.serialize())),
+                        (_, DynamicFragment::Message(inner)) => Some(json!(inner)),
+                        (_, DynamicFragment::String(inner)) => Some(json!(inner)),
                     },
                     (None, Some(current)) => Some(current.serialize()),
                     (Some(_prev), None) => {
@@ -178,9 +180,9 @@ impl<T> Html<T> {
         self.fixed
             .into_iter()
             .interleave(self.dynamic.into_iter().map(|dynamic| match dynamic {
-                Dynamic::Message(msg) => serde_json::to_string(&msg).unwrap(),
-                Dynamic::Html(inner) => inner.render(),
-                Dynamic::String(s) => s,
+                DynamicFragment::Message(msg) => serde_json::to_string(&msg).unwrap(),
+                DynamicFragment::Html(inner) => inner.render(),
+                DynamicFragment::String(s) => s,
             }))
             .collect::<String>()
     }
