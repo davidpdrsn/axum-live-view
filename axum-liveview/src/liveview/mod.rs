@@ -62,4 +62,21 @@ impl<T> Updated<T> {
         self.js_commands.push(js_command);
         self
     }
+
+    pub fn with_all<I>(mut self, commands: I) -> Self
+    where
+        I: IntoIterator<Item = JsCommand>,
+    {
+        self.extend(commands);
+        self
+    }
+}
+
+impl<T> Extend<JsCommand> for Updated<T> {
+    fn extend<I>(&mut self, iter: I)
+    where
+        I: IntoIterator<Item = JsCommand>,
+    {
+        self.js_commands.extend(iter);
+    }
 }

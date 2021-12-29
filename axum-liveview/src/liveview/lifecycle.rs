@@ -1,9 +1,5 @@
 use super::{wrap_in_liveview_container, LiveView, LiveViewId, Updated};
-use crate::{
-    html::Html,
-    js::{JsCommand, JsCommandKind},
-    topics, PubSub, Subscriptions,
-};
+use crate::{html::Html, js::JsCommandKind, topics, PubSub, Subscriptions};
 use anyhow::Context;
 use async_stream::stream;
 use axum::Json;

@@ -142,20 +142,16 @@
                     })
 
                 } else if (key === "NavigateTo") {
-                    console.error("unimplemented: NavigateTo")
-                    console.log(data)
+                    if (data.uri.startsWith("http")) {
+                        window.location.href = data.uri
+                    } else {
+                        window.location.pathname = data.uri
+                    }
 
                 } else {
                     console.error(`unsupported JS command: ${key}`)
                 }
             }
-
-            // const uri = data.uri
-            // if (uri.startsWith("http")) {
-            //     window.location.href = uri
-            // } else {
-            //     window.location.pathname = uri
-            // }
         }
 
         send(liveviewId, topic, data) {

@@ -1,6 +1,6 @@
 use axum::{async_trait, response::IntoResponse, routing::get, Router};
 use axum_liveview::{
-    html, js, liveview::Updated, AssociatedData, EmbedLiveView, Html, LiveView, Subscriptions,
+    html, liveview::Updated, AssociatedData, EmbedLiveView, Html, LiveView, Subscriptions,
 };
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
@@ -76,7 +76,7 @@ impl LiveView for Counter {
             }
         }
 
-        Updated::new(self).with(js::toggle_class("#thing", "hide"))
+        Updated::new(self)
     }
 
     fn render(&self) -> Html<Self::Message> {

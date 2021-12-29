@@ -56,6 +56,7 @@ where
     loop {
         tokio::select! {
             _ = heartbeat_interval.tick() => {
+                // TODO(david): extract to function
                 if failed_heartbeats >= HEARTBEAT_MAX_FAILED_ATTEMPTS {
                     tracing::debug!("failed too many heartbeats");
                     break;
@@ -77,6 +78,7 @@ where
             }
 
             Some(Ok(msg)) = socket.recv() => {
+                // TODO(david): extract to function
                 match handle_message_from_socket(msg, &pubsub, &mut state).await {
                     Ok(Some(HandledMessagedResult::Mounted(liveview_id, initial_render_html))) => {
                         let _ = send_message_to_socket(
@@ -114,8 +116,11 @@ where
             }
 
             Some((liveview_id, (diff, js_commands))) = state.diff_streams.next() => {
+                // TODO(david): extract to function
                 let _ = send_message_to_socket(&mut socket, liveview_id, RENDERED_TOPIC, diff).await;
-                let _ = send_message_to_socket(&mut socket, liveview_id, JS_COMMANDS_TOPIC, js_commands).await;
+                if !js_commands.is_empty() {
+                    let _ = send_message_to_socket(&mut socket, liveview_id, JS_COMMANDS_TOPIC, js_commands).await;
+                }
             }
         }
     }

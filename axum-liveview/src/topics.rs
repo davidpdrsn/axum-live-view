@@ -1,6 +1,6 @@
 use crate::{
     html,
-    js::{JsCommand, JsCommandKind},
+    js::JsCommandKind,
     liveview::LiveViewId,
     pubsub::{Decode, Encode, Topic},
     ws::WithAssociatedData,
