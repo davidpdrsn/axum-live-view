@@ -12,7 +12,7 @@ mod lifecycle;
 pub trait LiveView: Sized + Send + Sync + 'static {
     type Message: Serialize + DeserializeOwned + PartialEq + Send + Sync + 'static;
 
-    fn init(&self, subscriptions: &mut Subscriptions<Self>);
+    fn init(&self, _subscriptions: &mut Subscriptions<Self>) {}
 
     async fn update(self, msg: Self::Message, data: AssociatedData) -> Self;
 

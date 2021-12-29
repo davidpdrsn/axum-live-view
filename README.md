@@ -16,8 +16,9 @@ change and you shouldn't use this for anything serious.
 This is what using axum-liveview looks like.
 
 ```rust
-use axum::{routing::get, Router};
-use axum_liveview::{html, Html, LiveView, LiveViewManager, bindings::Axm, Setup};
+use axum::{async_trait, response::IntoResponse, routing::get, Router};
+use axum_liveview::{html, AssociatedData, EmbedLiveView, Html, LiveView};
+use serde::{Deserialize, Serialize};
 
 #[tokio::main]
 async fn main() {
@@ -48,10 +49,10 @@ async fn main() {
 
 // Our handler function for `GET /`
 async fn root(
-    // `LiveViewManager` is an extractor that is hooked up to the liveview setup
+    // `EmbedLiveView` is an extractor that is hooked up to the liveview setup
     // and enables you to embed liveviews into HTML templates.
-    live: LiveViewManager,
-) -> Html {
+    embed_liveview: EmbedLiveView,
+) -> impl IntoResponse {
     // `Counter` is our liveview and we initialize it with the default values.
     let counter = Counter::default();
 
@@ -70,7 +71,7 @@ async fn root(
                 // It will also start a stateful async task for updating the view
                 // and sending the changes down to the client via a WebSocket
                 // connection.
-                { live.embed(counter) }
+                { embed_liveview.embed(counter) }
 
                 // This is all the JavaScript you need to write to initialize
                 // the liveview connection and handle updates.
@@ -92,17 +93,30 @@ struct Counter {
 }
 
 // ...that implements the `LiveView` trait.
+#[async_trait]
 impl LiveView for Counter {
-    // Setup our liveview by specifying which pubsub topics we want to subscribe to
-    // and which callbacks to associated with each topic.
-    fn setup(&self, setup: &mut Setup<Self>) {
-        // `on` is for subscribing to a topic local to this liveview instance.
-        // This is how you subscribe to events from the browser.
-        //
-        // There is also `on_broadcast` for subscribing to events from other
-        // parts of the application.
-        setup.on("increment", Self::increment);
-        setup.on("decrement", Self::decrement);
+    // This is the type of update messages our HTML contains. They will be sent
+    // to the view in the `update` method
+    type Message = Msg;
+
+    // Update the view based on which message it receives.
+    //
+    // `AssociatedData` contains data from the event that happened in the
+    // browser. This might be values of input fields or which key was pressed in
+    // a keyboard event.
+    async fn update(mut self, msg: Msg, data: AssociatedData) -> Self {
+        match msg {
+            Msg::Increment => {
+                self.count += 1;
+            }
+            Msg::Decrement => {
+                if self.count > 0 {
+                    self.count -= 1;
+                }
+            }
+        }
+
+        self
     }
 
     // Render the liveview into an HTML template. This function is called during
@@ -112,7 +126,7 @@ impl LiveView for Counter {
     // The HTML is diff'ed on the server and only minimal deltas are sent over
     // the wire. The browser then builds the full HTML template and efficiently
     // updates the DOM.
-    fn render(&self) -> Html {
+    fn render(&self) -> Html<Self::Message> {
         html! {
             <div>
                 "Counter value: "
@@ -126,27 +140,17 @@ impl LiveView for Counter {
                 // Elements with the `axm-click` attribute will send a message
                 // on the corresponding pubsub topic which will call a callback,
                 // update the liveview state, and call `render` again.
-                <button { Amx::Click }="increment">"+"</button>
-                <button { Amx::Click }="decrement">"-"</button>
+                <button axm-click={ Msg::Increment }>"+"</button>
+                <button axm-click={ Msg::Decrement }>"-"</button>
             </div>
         }
     }
 }
 
-// The callbacks that will be called when there are new messages on the pubsub
-// topics we subscribed to in `LiveView::setup`
-impl Counter {
-    async fn increment(mut self) -> Self {
-        self.count += 1;
-        self
-    }
-
-    async fn decrement(mut self) -> Self {
-        if self.count > 0 {
-            self.count -= 1;
-        }
-        self
-    }
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
+enum Msg {
+    Increment,
+    Decrement,
 }
 ```
 
