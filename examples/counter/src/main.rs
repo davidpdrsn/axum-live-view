@@ -1,6 +1,6 @@
 use axum::{async_trait, response::IntoResponse, routing::get, Router};
 use axum_liveview::{
-    html, liveview::Updated, AssociatedData, EmbedLiveView, Html, LiveView, Subscriptions,
+    html, js, liveview::Updated, AssociatedData, EmbedLiveView, Html, LiveView, Subscriptions,
 };
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
