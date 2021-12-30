@@ -289,6 +289,18 @@ where
                 .context("broadcasting window focus/blur event")?;
         }
 
+        EventFromBrowser::MouseEvent(MouseEvent { msg, fields }) => {
+            let topic = topics::update(liveview_id);
+            let msg = WithAssociatedData {
+                msg,
+                data: AssociatedDataKind::Mouse(fields),
+            };
+            pubsub
+                .broadcast(&topic, Json(msg))
+                .await
+                .context("broadcasting mouse event")?;
+        }
+
         EventFromBrowser::FormEvent(FormEvent { msg, value }) => {
             let topic = topics::update(liveview_id);
             let msg = WithAssociatedData {
@@ -301,26 +313,11 @@ where
                 .context("broadcasting form event")?;
         }
 
-        EventFromBrowser::KeyEvent(KeyEvent {
-            msg,
-            key,
-            code,
-            alt,
-            ctrl,
-            shift,
-            meta,
-        }) => {
+        EventFromBrowser::KeyEvent(KeyEvent { msg, fields }) => {
             let topic = topics::update(liveview_id);
             let msg = WithAssociatedData {
                 msg,
-                data: AssociatedDataKind::Key(KeyEventValue {
-                    key,
-                    code,
-                    alt,
-                    ctrl,
-                    shift,
-                    meta,
-                }),
+                data: AssociatedDataKind::Key(fields),
             };
             pubsub
                 .broadcast(&topic, Json(msg))
@@ -383,6 +380,12 @@ impl TryFrom<RawMessage> for EventFromBrowser {
                     Ok(EventFromBrowser::KeyEvent(from_value(data)?))
                 }
 
+                Axm::Mouseenter
+                | Axm::Mouseover
+                | Axm::Mouseleave
+                | Axm::Mouseout
+                | Axm::Mousemove => Ok(EventFromBrowser::MouseEvent(from_value(data)?)),
+
                 Axm::Throttle | Axm::Debounce => {
                     anyhow::bail!("{:?} is not a valid event type", topic)
                 }
@@ -398,6 +401,7 @@ enum EventFromBrowser {
     WindowFocusBlur(WindowFocusBlurEvent),
     FormEvent(FormEvent),
     KeyEvent(KeyEvent),
+    MouseEvent(MouseEvent),
 }
 
 #[derive(Debug, Deserialize)]
@@ -413,6 +417,14 @@ struct WindowFocusBlurEvent {
 }
 
 #[derive(Debug, Deserialize)]
+struct MouseEvent {
+    #[serde(rename = "m")]
+    msg: Value,
+    #[serde(flatten)]
+    fields: MouseEventFields,
+}
+
+#[derive(Debug, Deserialize)]
 struct FormEvent {
     #[serde(rename = "m")]
     msg: Value,
@@ -424,18 +436,8 @@ struct FormEvent {
 struct KeyEvent {
     #[serde(rename = "m")]
     msg: Value,
-    #[serde(rename = "k")]
-    key: String,
-    #[serde(rename = "kc")]
-    code: String,
-    #[serde(rename = "a")]
-    alt: bool,
-    #[serde(rename = "c")]
-    ctrl: bool,
-    #[serde(rename = "s")]
-    shift: bool,
-    #[serde(rename = "me")]
-    meta: bool,
+    #[serde(flatten)]
+    fields: KeyEventFields,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -449,7 +451,8 @@ pub(crate) enum AssociatedDataKind {
     Click,
     WindowFocusBlur,
     Form(FormEventValue),
-    Key(KeyEventValue),
+    Key(KeyEventFields),
+    Mouse(MouseEventFields),
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -462,7 +465,7 @@ pub(crate) enum FormEventValue {
 }
 
 #[derive(Debug, Deserialize, Serialize)]
-pub(crate) struct KeyEventValue {
+pub(crate) struct KeyEventFields {
     #[serde(rename = "k")]
     pub(crate) key: String,
     #[serde(rename = "kc")]
@@ -475,6 +478,30 @@ pub(crate) struct KeyEventValue {
     pub(crate) shift: bool,
     #[serde(rename = "m")]
     pub(crate) meta: bool,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub(crate) struct MouseEventFields {
+    #[serde(rename = "cx")]
+    pub(crate) client_x: f64,
+    #[serde(rename = "cy")]
+    pub(crate) client_y: f64,
+    #[serde(rename = "px")]
+    pub(crate) page_x: f64,
+    #[serde(rename = "py")]
+    pub(crate) page_y: f64,
+    #[serde(rename = "ox")]
+    pub(crate) offset_x: f64,
+    #[serde(rename = "oy")]
+    pub(crate) offset_y: f64,
+    #[serde(rename = "mx")]
+    pub(crate) movement_x: f64,
+    #[serde(rename = "my")]
+    pub(crate) movement_y: f64,
+    #[serde(rename = "sx")]
+    pub(crate) screen_x: f64,
+    #[serde(rename = "sy")]
+    pub(crate) screen_y: f64,
 }
 
 axm! {
@@ -510,5 +537,15 @@ axm! {
         WindowFocus,
         #[attr = "window-blur"]
         WindowBlur,
+        #[attr = "mouseenter"]
+        Mouseenter,
+        #[attr = "mouseover"]
+        Mouseover,
+        #[attr = "mouseleave"]
+        Mouseleave,
+        #[attr = "mouseout"]
+        Mouseout,
+        #[attr = "mousemove"]
+        Mousemove,
     }
 }

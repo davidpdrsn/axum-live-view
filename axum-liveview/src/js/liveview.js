@@ -227,6 +227,11 @@
                 { attr: "axm-submit", eventName: "submit" },
                 { attr: "axm-keydown", eventName: "keydown" },
                 { attr: "axm-keyup", eventName: "keyup" },
+                { attr: "axm-mouseenter", eventName: "mouseenter" },
+                { attr: "axm-mouseover", eventName: "mouseover" },
+                { attr: "axm-mouseleave", eventName: "mouseleave" },
+                { attr: "axm-mouseout", eventName: "mouseout" },
+                { attr: "axm-mousemove", eventName: "mousemove" },
             ]
         }
 
@@ -266,7 +271,20 @@
                     data.v = inputValue(element)
                 }
 
-                if (event.keyIdentifier) {
+                if (event.constructor === MouseEvent) {
+                    data.cx = event.clientX
+                    data.cy = event.clientY
+                    data.px = event.pageX
+                    data.py = event.pageY
+                    data.ox = event.offsetX
+                    data.oy = event.offsetY
+                    data.mx = event.movementX
+                    data.my = event.movementY
+                    data.sx = event.screenX
+                    data.sy = event.screenY
+                }
+
+                if (event.constructor === KeyboardEvent) {
                     if (
                         element.hasAttribute("axm-key") &&
                         element.getAttribute("axm-key").toLowerCase() !== event.key.toLowerCase()
