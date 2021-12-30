@@ -1,8 +1,0 @@
-{
-  "devDependencies": {
-    "typescript": "^4.5.4"
-  },
-  "dependencies": {
-    "morphdom": "^2.6.1"
-  }
-}

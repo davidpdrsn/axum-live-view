@@ -1,6 +1,4 @@
 {
-  "exclude": ["target/doc/**/*", "axum-liveview/src/js/**/*"],
-  "include": ["axum-liveview/src/ts/**/*"],
   "compilerOptions": {
     "incremental": true,
     "target": "es2016",
@@ -8,7 +6,7 @@
     "rootDir": "./",
     "allowJs": true,
     "sourceMap": true,
-    "outDir": "./target/ts",
+    "outDir": "./dist",
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
     "strict": true,
@@ -29,5 +27,8 @@
     "noImplicitOverride": true,
     "noPropertyAccessFromIndexSignature": true,
     "skipLibCheck": true,
-  }
+    "removeComments": true,
+    "declaration": true,
+  },
+  "exclude": ["node_modules", "dist"]
 }

@@ -1,3 +1,5 @@
+import morphdom from "morphdom"
+
 export interface LiveViewOptions {
   host: string;
   port: number;
