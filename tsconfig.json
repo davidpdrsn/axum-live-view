@@ -21,7 +21,7 @@
     "useUnknownInCatchVariables": true,
     "alwaysStrict": true,
     // "noUnusedLocals": true,
-    "noUnusedParameters": true,
+    // "noUnusedParameters": true,
     "exactOptionalPropertyTypes": true,
     "noImplicitReturns": true,
     "noFallthroughCasesInSwitch": true,
