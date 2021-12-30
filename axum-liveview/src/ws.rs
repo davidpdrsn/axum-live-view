@@ -277,6 +277,18 @@ where
                 .context("broadcasting click event")?;
         }
 
+        EventFromBrowser::WindowFocusBlur(WindowFocusBlurEvent { msg }) => {
+            let topic = topics::update(liveview_id);
+            let msg = WithAssociatedData {
+                msg,
+                data: AssociatedDataKind::WindowFocusBlur,
+            };
+            pubsub
+                .broadcast(&topic, Json(msg))
+                .await
+                .context("broadcasting window focus/blur event")?;
+        }
+
         EventFromBrowser::FormEvent(FormEvent { msg, value }) => {
             let topic = topics::update(liveview_id);
             let msg = WithAssociatedData {
@@ -359,6 +371,10 @@ impl TryFrom<RawMessage> for EventFromBrowser {
             other => match Axm::from_str(other)? {
                 Axm::Click => Ok(EventFromBrowser::Click(from_value(data)?)),
 
+                Axm::WindowFocus | Axm::WindowBlur => {
+                    Ok(EventFromBrowser::WindowFocusBlur(from_value(data)?))
+                }
+
                 Axm::Input | Axm::Change | Axm::Focus | Axm::Blur | Axm::Submit => {
                     Ok(EventFromBrowser::FormEvent(from_value(data)?))
                 }
@@ -379,12 +395,19 @@ impl TryFrom<RawMessage> for EventFromBrowser {
 enum EventFromBrowser {
     Mount,
     Click(ClickEvent),
+    WindowFocusBlur(WindowFocusBlurEvent),
     FormEvent(FormEvent),
     KeyEvent(KeyEvent),
 }
 
 #[derive(Debug, Deserialize)]
 struct ClickEvent {
+    #[serde(rename = "m")]
+    msg: Value,
+}
+
+#[derive(Debug, Deserialize)]
+struct WindowFocusBlurEvent {
     #[serde(rename = "m")]
     msg: Value,
 }
@@ -424,6 +447,7 @@ pub(crate) struct WithAssociatedData<T> {
 #[derive(Serialize, Deserialize, Debug)]
 pub(crate) enum AssociatedDataKind {
     Click,
+    WindowFocusBlur,
     Form(FormEventValue),
     Key(KeyEventValue),
 }
@@ -482,5 +506,9 @@ axm! {
         WindowKeydown,
         #[attr = "window-keyup"]
         WindowKeyup,
+        #[attr = "window-focus"]
+        WindowFocus,
+        #[attr = "window-blur"]
+        WindowBlur,
     }
 }
