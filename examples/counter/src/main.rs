@@ -1,11 +1,18 @@
 #![allow(unused_imports)]
 
-use axum::{async_trait, response::IntoResponse, routing::get, Router};
+use axum::{
+    async_trait,
+    http::header::CONTENT_TYPE,
+    response::{Headers, IntoResponse},
+    routing::get,
+    Router,
+};
 use axum_liveview::{
     html, liveview::Updated, AssociatedData, EmbedLiveView, Html, LiveView, Subscriptions,
 };
 use serde::{Deserialize, Serialize};
-use std::net::SocketAddr;
+use std::{env, net::SocketAddr, path::PathBuf};
+use tokio::fs;
 
 #[tokio::main]
 async fn main() {
@@ -15,6 +22,16 @@ async fn main() {
 
     let app = Router::new()
         .route("/", get(root))
+        .route(
+            "/bundle.js",
+            get(|| async {
+                let path =
+                    PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap()).join("dist/bundle.js");
+                let js = fs::read_to_string(path).await.unwrap();
+
+                (Headers([(CONTENT_TYPE, "application/javascript")]), js)
+            }),
+        )
         .merge(axum_liveview::routes())
         .layer(axum_liveview::layer(pubsub));
 
@@ -32,7 +49,7 @@ async fn root(embed_liveview: EmbedLiveView) -> impl IntoResponse {
         <!DOCTYPE html>
         <html>
             <head>
-                { axum_liveview::assets() }
+                <script src="/bundle.js"></script>
                 <style>
                     r#"
                         .hide {
@@ -43,16 +60,6 @@ async fn root(embed_liveview: EmbedLiveView) -> impl IntoResponse {
             </head>
             <body>
                 { embed_liveview.embed(counter) }
-
-                <script>
-                    r#"
-                        const liveView = new LiveView({
-                            host: 'localhost',
-                            port: 4000,
-                        })
-                        liveView.connect()
-                    "#
-                </script>
             </body>
         </html>
     }

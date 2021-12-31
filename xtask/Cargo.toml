@@ -1,0 +1,10 @@
+[package]
+name = "xtask"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+# be _very_ careful about adding dependencies here. Wanna keep xtasks compiling
+# quickly
+structopt = "0.3"

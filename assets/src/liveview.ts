@@ -3,10 +3,10 @@ import morphdom from "morphdom"
 export interface LiveViewOptions {
   host: string;
   port: number;
-  onSocketOpen: (() => void) | undefined;
-  onSocketMessage: (() => void) | undefined;
-  onSocketClose: (() => void) | undefined;
-  onSocketError: (() => void) | undefined;
+  onSocketOpen?: () => void;
+  onSocketMessage?: () => void;
+  onSocketClose?: () => void;
+  onSocketError?: () => void;
 }
 
 export function connectAndRun(options: LiveViewOptions) {
@@ -18,7 +18,7 @@ export function connectAndRun(options: LiveViewOptions) {
     onOpen(socket)
 
     if (firstConnect) {
-      bindInitialEvents()
+      bindInitialEvents(socket)
     }
   })
 }
@@ -44,60 +44,72 @@ function mountComponents(socket: WebSocket) {
   })
 }
 
-function bindInitialEvents() {
+function bindInitialEvents(socket: WebSocket) {
   var elements = new Set()
   for (let def of elementLocalAttrs) {
     document.querySelectorAll(`[${def.attr}]`).forEach((el) => {
       if (!elements.has(el)) {
-        addEventListeners(el)
+        addEventListeners(socket, el)
       }
       elements.add(el)
     })
   }
 
-    // document.querySelectorAll("[axm-window-keydown]").forEach((el) => {
-    //     this.bindLiveEvent(el, { attr: "axm-window-keydown", eventName: "keydown", bindEventTo: window })
-    // })
-    // document.querySelectorAll("[axm-window-keyup]").forEach((el) => {
-    //     this.bindLiveEvent(el, { attr: "axm-window-keyup", eventName: "keyup", bindEventTo: window })
-    // })
-
-    // document.querySelectorAll("[axm-window-focus]").forEach((el) => {
-    //     this.bindLiveEvent(el, { attr: "axm-window-focus", eventName: "focus", bindEventTo: window })
-    // })
-    // document.querySelectorAll("[axm-window-blur]").forEach((el) => {
-    //     this.bindLiveEvent(el, { attr: "axm-window-blur", eventName: "blur", bindEventTo: window })
-    // })
-}
-
-function addEventListeners(element: Element) {
-    const defs = elementLocalAttrs
-
-  for (let def of elementLocalAttrs) {
-    bindLiveEvent(element, def)
+  for (let def of windowAttrs) {
+    document.querySelectorAll(`[${def.attr}]`).forEach((el) => {
+        bindLiveEvent(socket, el, def)
+    })
   }
 }
 
-interface Data {
+function addEventListeners(socket: WebSocket, element: Element) {
+    const defs = elementLocalAttrs
+
+  for (let def of elementLocalAttrs) {
+    bindLiveEvent(socket, element, def)
+  }
+}
+
+interface EventData {
   e: string;
   m?: JSON | string;
   v?: FormData | InputValue;
+  cx?: number;
+  cy?: number;
+  px?: number;
+  py?: number;
+  ox?: number;
+  oy?: number;
+  mx?: number;
+  my?: number;
+  sx?: number;
+  sy?: number;
+  k?: string;
+  kc?: string;
+  a?: boolean;
+  c?: boolean;
+  s?: boolean;
+  me?: boolean;
 }
 
-function bindLiveEvent(element: Element, { attr, eventName, bindEventTo }: AttrDef) {
-  var bindEventTo2: Element | typeof window = bindEventTo || element
+function bindLiveEvent(
+  socket: WebSocket,
+  element: Element,
+  { attr, eventName, bindEventTo }: AttrDef,
+) {
+  var actualBindEventTo: Element | typeof window = bindEventTo || element
 
   if (!element.getAttribute?.(attr)) {
     return;
   }
 
-  var f = (event: UIEvent) => {
+  var f = (event: Event) => {
     let liveviewId = element.closest("[data-liveview-id]")?.getAttribute("data-liveview-id")
     if (!liveviewId) return
     let msg = element.getAttribute(attr)
     if (!msg) return
 
-    var data: Data = { e: eventName };
+    var data: EventData = { e: eventName };
 
     try {
       data.m = JSON.parse(msg);
@@ -114,56 +126,54 @@ function bindLiveEvent(element: Element, { attr, eventName, bindEventTo }: AttrD
       }
     }
 
-    // if (event.constructor === MouseEvent) {
-    //   data.cx = event.clientX
-    //   data.cy = event.clientY
-    //   data.px = event.pageX
-    //   data.py = event.pageY
-    //   data.ox = event.offsetX
-    //   data.oy = event.offsetY
-    //   data.mx = event.movementX
-    //   data.my = event.movementY
-    //   data.sx = event.screenX
-    //   data.sy = event.screenY
-    // }
+    if (event instanceof MouseEvent) {
+      data.cx = event.clientX
+      data.cy = event.clientY
+      data.px = event.pageX
+      data.py = event.pageY
+      data.ox = event.offsetX
+      data.oy = event.offsetY
+      data.mx = event.movementX
+      data.my = event.movementY
+      data.sx = event.screenX
+      data.sy = event.screenY
+    }
 
-    // if (event.constructor === KeyboardEvent) {
-    //   if (
-    //     element.hasAttribute("axm-key") &&
-    //     element.getAttribute("axm-key").toLowerCase() !== event.key.toLowerCase()
-    //   ) {
-    //     return;
-    //   }
+    if (event instanceof KeyboardEvent) {
+      if (
+        element.hasAttribute("axm-key") &&
+        element?.getAttribute("axm-key")?.toLowerCase() !== event.key.toLowerCase()
+      ) {
+        return;
+      }
 
-    //   data.k = event.key
-    //   data.kc = event.code
-    //   data.a = event.altKey
-    //   data.c = event.ctrlKey
-    //   data.s = event.shiftKey
-    //   data.me = event.metaKey
-    // }
+      data.k = event.key
+      data.kc = event.code
+      data.a = event.altKey
+      data.c = event.ctrlKey
+      data.s = event.shiftKey
+      data.me = event.metaKey
+    }
 
-    // if (send) {
-    //   this.send(liveviewId, `axum/${attr}`, data)
-    // }
+    socketSend(socket, liveviewId, `axum/${attr}`, data)
   }
 
-  // var delayMs = numberAttr(element, "axm-debounce")
-  // if (delayMs) {
-  //   f = debounce(f, delayMs)
-  // }
+  var delayMs = numberAttr(element, "axm-debounce")
+  if (delayMs) {
+    f = debounce(f, delayMs)
+  }
 
-  // var delayMs = numberAttr(element, "axm-throttle")
-  // if (delayMs) {
-  //   f = throttle(f, delayMs)
-  // }
+  var delayMs = numberAttr(element, "axm-throttle")
+  if (delayMs) {
+    f = throttle(f, delayMs)
+  }
 
-  // bindEventTo.addEventListener(eventName, (event) => {
-  //   if (!event.keyIdentifier) {
-  //     event.preventDefault()
-  //   }
-  //   f(event)
-  // })
+  actualBindEventTo.addEventListener(eventName, (event) => {
+    if (!(event instanceof KeyboardEvent)) {
+      event.preventDefault()
+    }
+    f(event)
+  })
 }
 
 interface AttrDef { attr: string; eventName: string; bindEventTo?: typeof window }
@@ -292,4 +302,15 @@ function throttle<In extends unknown[]>(f: Fn<In>, delayMs: number): Fn<In> {
       }, delayMs)
     }
   }
+}
+
+function numberAttr(element: Element, attr: string): number | null {
+  const value = element.getAttribute(attr)
+  if (value) {
+    const number = parseInt(value, 10)
+    if (number) {
+      return number
+    }
+  }
+  return null
 }

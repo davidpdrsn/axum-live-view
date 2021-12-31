@@ -1,8 +1,10 @@
 {
   "compilerOptions": {
     "incremental": true,
-    "target": "es2016",
-    "module": "commonjs",
+    "target": "es2015",
+    "module": "esnext",
+    "moduleResolution": "node",
+    "esModuleInterop": true,
     "rootDir": "./",
     "allowJs": true,
     "sourceMap": true,
@@ -18,8 +20,6 @@
     "noImplicitThis": true,
     "useUnknownInCatchVariables": true,
     "alwaysStrict": true,
-    // "noUnusedLocals": true,
-    // "noUnusedParameters": true,
     "exactOptionalPropertyTypes": true,
     "noImplicitReturns": true,
     "noFallthroughCasesInSwitch": true,
