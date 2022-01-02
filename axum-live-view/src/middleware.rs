@@ -1,7 +1,4 @@
-use crate::{
-    live_view::EmbedLiveView,
-    pubsub::{self, PubSub},
-};
+use crate::{live_view::EmbedLiveView, pubsub::PubSub};
 use axum::http::{Request, Response};
 use std::task::{Context, Poll};
 use tower_service::Service;
@@ -55,9 +52,7 @@ where
 
     fn call(&mut self, mut req: Request<ReqBody>) -> Self::Future {
         req.extensions_mut()
-            .insert(EmbedLiveView::new(pubsub::Logging::new(
-                self.pubsub.clone(),
-            )));
+            .insert(EmbedLiveView::new(self.pubsub.clone()));
 
         self.inner.call(req)
     }

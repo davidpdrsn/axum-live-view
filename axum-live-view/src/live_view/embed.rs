@@ -1,40 +1,32 @@
 use super::{wrap_in_liveview_container, LiveView, LiveViewId};
 use crate::{
     html::Html,
-    pubsub::{PubSub, PubSubBackend},
+    pubsub::{Logging, PubSub},
 };
 use axum::{
     async_trait,
     extract::{Extension, FromRequest, RequestParts},
 };
-use std::{fmt, sync::Arc};
 
-#[derive(Clone)]
-pub struct EmbedLiveView {
-    pub(crate) pubsub: Arc<dyn PubSubBackend>,
+#[derive(Clone, Debug)]
+pub struct EmbedLiveView<P> {
+    pub(crate) pubsub: Logging<P>,
 }
 
-impl fmt::Debug for EmbedLiveView {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("EmbedLiveView")
-            .field("pubsub", &"...")
-            .finish()
-    }
-}
-
-impl EmbedLiveView {
-    pub(crate) fn new<P>(pubsub: P) -> Self
+impl<P> EmbedLiveView<P> {
+    pub(crate) fn new(pubsub: P) -> Self
     where
-        P: PubSub,
+        P: PubSub + Clone,
     {
         Self {
-            pubsub: Arc::new(pubsub),
+            pubsub: Logging::new(pubsub),
         }
     }
 
     pub fn embed<T>(&self, liveview: T) -> Html<T::Message>
     where
         T: LiveView,
+        P: PubSub + Clone,
     {
         let initial_markup = liveview.render();
         let liveview_id = LiveViewId::new();
@@ -48,11 +40,12 @@ impl EmbedLiveView {
 }
 
 #[async_trait]
-impl<B> FromRequest<B> for EmbedLiveView
+impl<B, P> FromRequest<B> for EmbedLiveView<P>
 where
     B: Send,
+    P: PubSub + Clone,
 {
-    type Rejection = <Extension<EmbedLiveView> as FromRequest<B>>::Rejection;
+    type Rejection = <Extension<Self> as FromRequest<B>>::Rejection;
 
     async fn from_request(req: &mut RequestParts<B>) -> Result<Self, Self::Rejection> {
         let Extension(manager) = Extension::<Self>::from_request(req).await?;

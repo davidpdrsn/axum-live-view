@@ -5,7 +5,9 @@ use axum::{
     routing::{get, get_service},
     Router,
 };
-use axum_live_view::{html, EmbedLiveView, EventData, Html, LiveView, LiveViewLayer, Updated};
+use axum_live_view::{
+    html, pubsub::InProcess, EmbedLiveView, EventData, Html, LiveView, LiveViewLayer, Updated,
+};
 use serde::{Deserialize, Serialize};
 use std::{env, net::SocketAddr, path::PathBuf};
 use tower_http::services::ServeFile;
@@ -14,7 +16,7 @@ use tower_http::services::ServeFile;
 async fn main() {
     tracing_subscriber::fmt::init();
 
-    let pubsub = axum_live_view::pubsub::InProcess::new();
+    let pubsub = InProcess::new();
 
     let app = Router::new()
         .route("/", get(root))
@@ -25,7 +27,7 @@ async fn main() {
             ))
             .handle_error(|_| async { StatusCode::INTERNAL_SERVER_ERROR }),
         )
-        .merge(axum_live_view::routes())
+        .merge(axum_live_view::routes::<InProcess, _>())
         .layer(LiveViewLayer::new(pubsub));
 
     let addr = SocketAddr::from(([0, 0, 0, 0], 4000));
@@ -35,7 +37,7 @@ async fn main() {
         .unwrap();
 }
 
-async fn root(embed_liveview: EmbedLiveView) -> impl IntoResponse {
+async fn root(embed_liveview: EmbedLiveView<InProcess>) -> impl IntoResponse {
     let counter = Counter::default();
 
     html! {

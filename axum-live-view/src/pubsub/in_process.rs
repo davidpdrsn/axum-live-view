@@ -1,3 +1,5 @@
+use std::convert::Infallible;
+
 use super::*;
 
 #[derive(Debug, Clone)]
@@ -20,12 +22,14 @@ impl Default for InProcess {
 
 #[async_trait]
 impl PubSubBackend for InProcess {
-    async fn broadcast_raw(&self, topic: &str, msg: Bytes) -> anyhow::Result<()> {
+    type Error = Infallible;
+
+    async fn broadcast_raw(&self, topic: &str, msg: Bytes) -> Result<(), Self::Error> {
         let _ = self.tx.send((topic.to_owned(), msg));
         Ok(())
     }
 
-    async fn subscribe_raw(&self, topic: &str) -> anyhow::Result<BoxStream<'static, Bytes>> {
+    async fn subscribe_raw(&self, topic: &str) -> Result<BoxStream<'static, Bytes>, Self::Error> {
         let topic = topic.to_owned();
 
         let stream = BroadcastStream::new(self.tx.subscribe())
