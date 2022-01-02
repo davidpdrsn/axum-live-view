@@ -39,8 +39,6 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![cfg_attr(test, allow(clippy::float_cmp))]
 
-use axum::Router;
-
 #[macro_use]
 mod macros;
 
@@ -55,12 +53,10 @@ pub mod pubsub;
 mod topics;
 mod ws;
 
-pub use self::html::Html;
-pub use axum_liveview_macros::html;
-
-pub fn routes<B>() -> Router<B>
-where
-    B: Send + 'static,
-{
-    Router::new().merge(ws::routes())
-}
+pub use self::{
+    html::Html,
+    live_view::{EmbedLiveView, EventData, LiveView, Updated},
+    middleware::LiveViewLayer,
+    ws::routes,
+};
+pub use axum_live_view_macros::html;

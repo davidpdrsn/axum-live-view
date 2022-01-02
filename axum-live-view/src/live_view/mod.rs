@@ -1,6 +1,6 @@
 use crate::{html::Html, js_command::JsCommand};
 use axum::async_trait;
-use axum_liveview_macros::html;
+use axum_live_view_macros::html;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::fmt;
 use uuid::Uuid;
@@ -44,7 +44,7 @@ impl fmt::Display for LiveViewId {
 }
 
 pub(super) fn wrap_in_liveview_container<T>(liveview_id: LiveViewId, markup: Html<T>) -> Html<T> {
-    use crate as axum_liveview;
+    use crate as axum_live_view;
 
     html! {
         <div class="liveview-container" data-liveview-id={ liveview_id.to_string() }>

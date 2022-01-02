@@ -6,7 +6,7 @@ use axum::{
     routing::{get, get_service},
     AddExtensionLayer, Json, Router,
 };
-use axum_liveview::{
+use axum_live_view::{
     html, js_command,
     live_view::{EmbedLiveView, EventData, FormEventData, LiveView, Subscriptions, Updated},
     middleware::LiveViewLayer,
@@ -53,7 +53,7 @@ async fn main() {
             ))
             .handle_error(|_| async { StatusCode::INTERNAL_SERVER_ERROR }),
         )
-        .merge(axum_liveview::routes())
+        .merge(axum_live_view::routes())
         .layer(
             ServiceBuilder::new()
                 .layer(LiveViewLayer::new(pubsub.clone()))

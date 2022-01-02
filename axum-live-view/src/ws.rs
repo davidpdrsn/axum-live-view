@@ -18,7 +18,7 @@ use std::{collections::HashMap, time::Duration};
 use tokio::time::{timeout, Instant};
 use tokio_stream::StreamMap;
 
-pub(crate) fn routes<B>() -> Router<B>
+pub fn routes<B>() -> Router<B>
 where
     B: Send + 'static,
 {

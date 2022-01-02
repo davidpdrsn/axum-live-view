@@ -558,13 +558,13 @@ where
         let mut inside_braces = TokenStream::new();
 
         inside_braces.extend(quote! {
-            let mut html = axum_liveview::html::__private::html();
+            let mut html = axum_live_view::html::__private::html();
         });
 
         let mut buf = String::new();
         self.0.node_to_tokens(&mut buf, &mut inside_braces);
         inside_braces.extend(quote! {
-            axum_liveview::html::__private::fixed(&mut html, #buf);
+            axum_live_view::html::__private::fixed(&mut html, #buf);
         });
 
         out.extend(quote! {
@@ -649,12 +649,12 @@ impl NodeToTokens for Attr {
                     ident.node_to_tokens(buf, out);
                     write!(buf, "=");
                     out.extend(quote! {
-                        axum_liveview::html::__private::fixed(&mut html, #buf);
+                        axum_live_view::html::__private::fixed(&mut html, #buf);
                     });
                     buf.clear();
                     out.extend(quote! {
                         #[allow(unused_braces)]
-                        axum_liveview::html::__private::string(
+                        axum_live_view::html::__private::string(
                             &mut html,
                             format!("{:?}", #block),
                         );
@@ -679,12 +679,12 @@ impl NodeToTokens for Attr {
                     ident.node_to_tokens(buf, out);
                     write!(buf, "=");
                     out.extend(quote! {
-                        axum_liveview::html::__private::fixed(&mut html, #buf);
+                        axum_live_view::html::__private::fixed(&mut html, #buf);
                     });
                     buf.clear();
                     out.extend(quote! {
                         #[allow(unused_braces)]
-                        axum_liveview::html::__private::message(
+                        axum_live_view::html::__private::message(
                             &mut html,
                             #block,
                         );
@@ -720,13 +720,13 @@ impl NodeToTokens for LitStr {
 impl NodeToTokens for Block {
     fn node_to_tokens(&self, buf: &mut String, out: &mut TokenStream) {
         out.extend(quote! {
-            axum_liveview::html::__private::fixed(&mut html, #buf);
+            axum_live_view::html::__private::fixed(&mut html, #buf);
         });
         buf.clear();
 
         out.extend(quote! {
             #[allow(unused_braces)]
-            axum_liveview::html::__private::string(&mut html, #self);
+            axum_live_view::html::__private::string(&mut html, #self);
         });
     }
 }
@@ -743,7 +743,7 @@ where
         } = self;
 
         out.extend(quote! {
-            axum_liveview::html::__private::fixed(&mut html, #buf);
+            axum_live_view::html::__private::fixed(&mut html, #buf);
         });
         buf.clear();
 
@@ -755,9 +755,9 @@ where
                     let else_if = ToTokensViaNodeToTokens(else_if);
                     out.extend(quote! {
                         if #cond {
-                            axum_liveview::html::__private::string(&mut html, #then_tree);
+                            axum_live_view::html::__private::string(&mut html, #then_tree);
                         } else {
-                            axum_liveview::html::__private::string(&mut html, #else_if);
+                            axum_live_view::html::__private::string(&mut html, #else_if);
                         }
                     });
                 }
@@ -765,9 +765,9 @@ where
                     let else_ = ToTokensViaNodeToTokens(else_);
                     out.extend(quote! {
                         if #cond {
-                            axum_liveview::html::__private::string(&mut html, #then_tree);
+                            axum_live_view::html::__private::string(&mut html, #then_tree);
                         } else {
-                            axum_liveview::html::__private::string(&mut html, #else_);
+                            axum_live_view::html::__private::string(&mut html, #else_);
                         }
                     });
                 }
@@ -775,9 +775,9 @@ where
         } else {
             out.extend(quote! {
                 if #cond {
-                    axum_liveview::html::__private::string(&mut html, #then_tree);
+                    axum_live_view::html::__private::string(&mut html, #then_tree);
                 } else {
-                    axum_liveview::html::__private::string(&mut html, "");
+                    axum_live_view::html::__private::string(&mut html, "");
                 }
             });
         }
@@ -789,18 +789,18 @@ impl NodeToTokens for For {
         let Self { pat, expr, tree } = self;
 
         out.extend(quote! {
-            axum_liveview::html::__private::fixed(&mut html, #buf);
+            axum_live_view::html::__private::fixed(&mut html, #buf);
         });
         buf.clear();
 
         out.extend(quote! {
             let mut __first = true;
             for #pat in #expr {
-                axum_liveview::html::__private::string(&mut html, #tree);
+                axum_live_view::html::__private::string(&mut html, #tree);
 
                 // add some empty segments so the number of placeholders matches up
                 if !__first {
-                    axum_liveview::html::__private::fixed(&mut html, "");
+                    axum_live_view::html::__private::fixed(&mut html, "");
                 }
                 __first = false;
             }
@@ -813,7 +813,7 @@ impl NodeToTokens for Match {
         let Match { expr, arms } = self;
 
         out.extend(quote! {
-            axum_liveview::html::__private::fixed(&mut html, #buf);
+            axum_live_view::html::__private::fixed(&mut html, #buf);
         });
         buf.clear();
 
@@ -822,7 +822,7 @@ impl NodeToTokens for Match {
             .map(|Arm { pat, guard, tree }| {
                 let guard = guard.as_ref().map(|guard| quote! { if #guard });
                 quote! {
-                    #pat #guard => axum_liveview::html::__private::string(&mut html, #tree),
+                    #pat #guard => axum_live_view::html::__private::string(&mut html, #tree),
                 }
             })
             .collect::<TokenStream>();

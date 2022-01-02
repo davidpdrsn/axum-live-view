@@ -5,7 +5,7 @@ use axum::{
     routing::{get, get_service},
     Router,
 };
-use axum_liveview::{
+use axum_live_view::{
     html,
     live_view::{EmbedLiveView, EventData, LiveView, Subscriptions, Updated},
     middleware::LiveViewLayer,
@@ -19,7 +19,7 @@ use tower_http::services::ServeFile;
 async fn main() {
     tracing_subscriber::fmt::init();
 
-    let pubsub = axum_liveview::pubsub::InProcess::new();
+    let pubsub = axum_live_view::pubsub::InProcess::new();
 
     let app = Router::new()
         .route("/", get(root))
@@ -30,7 +30,7 @@ async fn main() {
             ))
             .handle_error(|_| async { StatusCode::INTERNAL_SERVER_ERROR }),
         )
-        .merge(axum_liveview::routes())
+        .merge(axum_live_view::routes())
         .layer(LiveViewLayer::new(pubsub));
 
     let addr = SocketAddr::from(([0, 0, 0, 0], 4000));

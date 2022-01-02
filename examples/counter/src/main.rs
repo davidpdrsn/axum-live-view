@@ -5,12 +5,7 @@ use axum::{
     routing::{get, get_service},
     Router,
 };
-use axum_liveview::{
-    html,
-    live_view::{EmbedLiveView, EventData, LiveView, Subscriptions, Updated},
-    middleware::LiveViewLayer,
-    Html,
-};
+use axum_live_view::{html, EmbedLiveView, EventData, Html, LiveView, LiveViewLayer, Updated};
 use serde::{Deserialize, Serialize};
 use std::{env, net::SocketAddr, path::PathBuf};
 use tower_http::services::ServeFile;
@@ -19,7 +14,7 @@ use tower_http::services::ServeFile;
 async fn main() {
     tracing_subscriber::fmt::init();
 
-    let pubsub = axum_liveview::pubsub::InProcess::new();
+    let pubsub = axum_live_view::pubsub::InProcess::new();
 
     let app = Router::new()
         .route("/", get(root))
@@ -30,7 +25,7 @@ async fn main() {
             ))
             .handle_error(|_| async { StatusCode::INTERNAL_SERVER_ERROR }),
         )
-        .merge(axum_liveview::routes())
+        .merge(axum_live_view::routes())
         .layer(LiveViewLayer::new(pubsub));
 
     let addr = SocketAddr::from(([0, 0, 0, 0], 4000));
@@ -64,8 +59,6 @@ struct Counter {
 #[async_trait]
 impl LiveView for Counter {
     type Message = Msg;
-
-    fn init(&self, _subscriptions: &mut Subscriptions<Self>) {}
 
     async fn update(mut self, msg: Msg, _data: EventData) -> Updated<Self> {
         match msg {
