@@ -8,7 +8,7 @@ anyhow = "1.0"
 async-stream = "0.3"
 async-trait = "0.1"
 axum = { version = "0.4", features = ["ws"] }
-axum-liveview-macros = { path = "../axum-liveview-macros", version = "0.1" }
+axum-live-view-macros = { path = "../axum-live-view-macros", version = "0.1" }
 bincode = "1.3"
 bytes = "1.0"
 futures-util = "0.3"

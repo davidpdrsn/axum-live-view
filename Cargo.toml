@@ -1,7 +1,7 @@
 [workspace]
 members = [
-    "axum-liveview",
-    "axum-liveview-macros",
+    "axum-live-view",
+    "axum-live-view-macros",
     "examples/*",
     "xtask",
 ]
