@@ -47,7 +47,7 @@ pub(super) fn wrap_in_live_view_container<T>(live_view_id: LiveViewId, markup: H
     use crate as axum_live_view;
 
     html! {
-        <div class="live_view-container" data-live_view-id={ live_view_id.to_string() }>
+        <div class="live-view-container" data-live-view-id={ live_view_id.to_string() }>
             { markup }
         </div>
     }

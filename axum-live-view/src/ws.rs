@@ -186,7 +186,7 @@ const HEARTBEAT_TOPIC: &str = "h";
 const INITIAL_RENDER_TOPIC: &str = "i";
 const RENDERED_TOPIC: &str = "r";
 const JS_COMMANDS_TOPIC: &str = "j";
-const LIVEVIEW_GONE_TOPIC: &str = "live_view-gone";
+const LIVEVIEW_GONE_TOPIC: &str = "live-view-gone";
 
 async fn send_message_to_socket<W, T>(
     write: &mut W,
@@ -389,7 +389,7 @@ impl TryFrom<RawMessage> for EventFromBrowser {
             .with_context(|| format!("unknown message topic: {:?}", topic))?;
 
         match &*topic {
-            "mount-live_view" => Ok(EventFromBrowser::Mount),
+            "mount-live-view" => Ok(EventFromBrowser::Mount),
 
             other => match Axm::from_str(other)? {
                 Axm::Click => Ok(EventFromBrowser::Click(from_value(data)?)),

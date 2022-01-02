@@ -71,7 +71,7 @@ interface HealthPing { t: "h" }
 interface InitialRender { t: "i", i: string, d: ViewState }
 interface Rendered { t: "r", i: string, d: ViewStateDiff }
 interface JsCommand { t: "j", i: string, d: JsCommandData[] }
-interface LiveViewGone { t: "liveView-gone", i: string }
+interface LiveViewGone { t: "live-view-gone", i: string }
 
 type Msg = HealthPing | InitialRender | Rendered | JsCommand | LiveViewGone
 
@@ -92,7 +92,7 @@ function onMessage(
 
     const liveViewId = payload.i
     const data = payload.d
-    const element = document.querySelector(`[data-liveView-id="${liveViewId}"]`)
+    const element = document.querySelector(`[data-live-view-id="${liveViewId}"]`)
     if (!element) { throw "Element not found" }
     const html = buildHtmlFromState(data)
     updateDom(socket, element, html)
@@ -102,7 +102,7 @@ function onMessage(
     // rendered
     const liveViewId = payload.i
     const diff = payload.d
-    const element = document.querySelector(`[data-liveView-id="${liveViewId}"]`)
+    const element = document.querySelector(`[data-live-view-id="${liveViewId}"]`)
     if (!element) { throw "Element not found" }
 
     const state = viewStates[liveViewId]
@@ -118,7 +118,7 @@ function onMessage(
     // js-command
     payload.d.forEach(handleJsCommand)
 
-  } else if (payload.t === "liveView-gone") {
+  } else if (payload.t === "live-view-gone") {
     // liveView-gone
     const liveViewId = payload.i
     console.error(
@@ -159,13 +159,13 @@ function socketSend(socket: WebSocket, liveViewId: string, topic: string, data: 
 }
 
 function mountComponents(socket: WebSocket) {
-  const liveViewIdAttr = "data-liveView-id"
+  const liveViewIdAttr = "data-live-view-id"
 
   document.querySelectorAll(`[${liveViewIdAttr}]`).forEach((component) => {
     const liveViewId = component.getAttribute(liveViewIdAttr)
 
     if (liveViewId) {
-      socketSend(socket, liveViewId, "axum/mount-liveView", {})
+      socketSend(socket, liveViewId, "axum/mount-live-view", {})
     }
   })
 }
@@ -271,7 +271,7 @@ function bindLiveEvent(
   }
 
   var f = (event: Event) => {
-    let liveViewId = element.closest("[data-liveView-id]")?.getAttribute("data-liveView-id")
+    let liveViewId = element.closest("[data-live-view-id]")?.getAttribute("data-live-view-id")
     if (!liveViewId) return
     let msg = element.getAttribute(attr)
     if (!msg) return
