@@ -26,6 +26,7 @@ fn main() -> Result {
         Opt::Ts(Ts::Build(opt)) => ts_build(opt)?,
         Opt::Ts(Ts::Install(opt)) => ts_install(opt)?,
         Opt::Examples(Examples::Build(opt)) => examples_build(opt)?,
+        Opt::Examples(Examples::Run(opt)) => examples_run(opt)?,
     }
 
     Ok(())
@@ -109,6 +110,7 @@ fn ts_install(opt: TsInstall) -> Result {
 #[derive(Debug, StructOpt)]
 enum Examples {
     Build(ExamplesBuild),
+    Run(ExamplesRun),
 }
 
 #[derive(Debug, StructOpt)]
@@ -189,6 +191,33 @@ fn examples_build(opt: ExamplesBuild) -> Result {
     for t in threads {
         t.join().expect("thread panicked")?;
     }
+
+    Ok(())
+}
+
+#[derive(Debug, StructOpt)]
+struct ExamplesRun {
+    #[structopt(flatten)]
+    build: ExamplesBuild,
+}
+
+fn examples_run(opt: ExamplesRun) -> Result {
+    let which = if let Some(which) = opt.build.which.as_ref() {
+        which.to_owned()
+    } else {
+        Err("Must specify which example to run")?
+    };
+
+    examples_build(opt.build)?;
+
+    let mut cmd = Command::new("cargo");
+    cmd.current_dir(project_root());
+    cmd.args(&["run", "-p", &format!("example-{}", which)]);
+    cmd.env(
+        "RUST_LOG",
+        format!("axum_liveview=debug,example_{}=trace", which),
+    );
+    cmd.status()?;
 
     Ok(())
 }
