@@ -75,8 +75,6 @@ interface LiveViewGone { t: "liveview-gone", i: string }
 
 type Msg = HealthPing | InitialRender | Rendered | JsCommand | LiveViewGone
 
-interface JsCommandData { delay_ms: number | null, kind: JsCommandKind }
-
 function onMessage(
   socket: WebSocket,
   event: MessageEvent,
@@ -191,12 +189,46 @@ function bindInitialEvents(socket: WebSocket) {
 }
 
 function addEventListeners(socket: WebSocket, element: Element) {
-    const defs = elementLocalAttrs
+  const defs = elementLocalAttrs
 
   for (let def of elementLocalAttrs) {
     bindLiveEvent(socket, element, def)
   }
 }
+
+interface AttrDef {
+  attr: string;
+  eventName: string;
+}
+
+const elementLocalAttrs: AttrDef[] = [
+  { attr: "axm-click", eventName: "click" },
+  { attr: "axm-input", eventName: "input" },
+  { attr: "axm-blur", eventName: "blur" },
+  { attr: "axm-focus", eventName: "focus" },
+  { attr: "axm-change", eventName: "change" },
+  { attr: "axm-submit", eventName: "submit" },
+  { attr: "axm-keydown", eventName: "keydown" },
+  { attr: "axm-keyup", eventName: "keyup" },
+  { attr: "axm-mouseenter", eventName: "mouseenter" },
+  { attr: "axm-mouseover", eventName: "mouseover" },
+  { attr: "axm-mouseleave", eventName: "mouseleave" },
+  { attr: "axm-mouseout", eventName: "mouseout" },
+  { attr: "axm-mousemove", eventName: "mousemove" },
+]
+
+interface WindowAttrDef {
+  attr: string;
+  eventName: string;
+  bindEventTo: typeof window;
+}
+
+const windowAttrs: WindowAttrDef[] = [
+  { attr: "axm-window-keydown", eventName: "keydown", bindEventTo: window },
+  { attr: "axm-window-keyup", eventName: "keyup", bindEventTo: window },
+  { attr: "axm-window-focus", eventName: "focus", bindEventTo: window },
+  { attr: "axm-window-blur", eventName: "blur", bindEventTo: window },
+]
 
 interface EventData {
   e: string;
@@ -223,9 +255,16 @@ interface EventData {
 function bindLiveEvent(
   socket: WebSocket,
   element: Element,
-  { attr, eventName, bindEventTo }: AttrDef,
+  def: AttrDef | WindowAttrDef,
 ) {
-  var actualBindEventTo: Element | typeof window = bindEventTo || element
+  var actualBindEventTo: Element | typeof window
+  if ("bindEventTo" in def) {
+    actualBindEventTo = def.bindEventTo
+  } else {
+    actualBindEventTo = element
+  }
+
+  const { attr, eventName } = def
 
   if (!element.getAttribute?.(attr)) {
     return;
@@ -303,31 +342,6 @@ function bindLiveEvent(
     f(event)
   })
 }
-
-interface AttrDef { attr: string; eventName: string; bindEventTo?: typeof window }
-
-const elementLocalAttrs: AttrDef[] = [
-  { attr: "axm-click", eventName: "click" },
-  { attr: "axm-input", eventName: "input" },
-  { attr: "axm-blur", eventName: "blur" },
-  { attr: "axm-focus", eventName: "focus" },
-  { attr: "axm-change", eventName: "change" },
-  { attr: "axm-submit", eventName: "submit" },
-  { attr: "axm-keydown", eventName: "keydown" },
-  { attr: "axm-keyup", eventName: "keyup" },
-  { attr: "axm-mouseenter", eventName: "mouseenter" },
-  { attr: "axm-mouseover", eventName: "mouseover" },
-  { attr: "axm-mouseleave", eventName: "mouseleave" },
-  { attr: "axm-mouseout", eventName: "mouseout" },
-  { attr: "axm-mousemove", eventName: "mousemove" },
-]
-
-const windowAttrs: AttrDef[] = [
-  { attr: "axm-window-keydown", eventName: "keydown", bindEventTo: window },
-  { attr: "axm-window-keyup", eventName: "keyup", bindEventTo: window },
-  { attr: "axm-window-focus", eventName: "focus", bindEventTo: window },
-  { attr: "axm-window-blur", eventName: "blur", bindEventTo: window },
-]
 
 interface FormData {
   [index: string]: any;
@@ -410,37 +424,6 @@ function numberAttr(element: Element, attr: string): number | null {
     }
   }
   return null
-}
-
-type Fn<
-  In extends unknown[],
-> = (...args: In) => void;
-
-function debounce<In extends unknown[]>(f: Fn<In>, delayMs: number): Fn<In> {
-  var timeout: number
-  return (...args) => {
-    if (timeout) {
-      clearTimeout(timeout)
-    }
-
-    timeout = setTimeout(() => {
-      f(...args)
-    }, delayMs)
-  }
-}
-
-function throttle<In extends unknown[]>(f: Fn<In>, delayMs: number): Fn<In> {
-  var timeout: number | null
-  return (...args) => {
-    if (timeout) {
-      return
-    } else {
-      f(...args)
-      timeout = setTimeout(() => {
-        timeout = null
-      }, delayMs)
-    }
-  }
 }
 
 const fixed = "f";
@@ -543,6 +526,11 @@ function patchViewState(state: ViewState, diff: ViewStateDiff) {
   }
 }
 
+interface JsCommandData {
+  delay_ms: number | null,
+  kind: JsCommandKind,
+}
+
 type JsCommandKind =
   { AddClass: { selector: string, klass: string } }
   | { RemoveClass: { selector: string, klass: string } }
@@ -603,5 +591,36 @@ function handleJsCommand(cmd: JsCommandData) {
     setTimeout(run, cmd.delay_ms)
   } else {
     run()
+  }
+}
+
+type Fn<
+  In extends unknown[],
+> = (...args: In) => void;
+
+function debounce<In extends unknown[]>(f: Fn<In>, delayMs: number): Fn<In> {
+  var timeout: number
+  return (...args) => {
+    if (timeout) {
+      clearTimeout(timeout)
+    }
+
+    timeout = setTimeout(() => {
+      f(...args)
+    }, delayMs)
+  }
+}
+
+function throttle<In extends unknown[]>(f: Fn<In>, delayMs: number): Fn<In> {
+  var timeout: number | null
+  return (...args) => {
+    if (timeout) {
+      return
+    } else {
+      f(...args)
+      timeout = setTimeout(() => {
+        timeout = null
+      }, delayMs)
+    }
   }
 }
