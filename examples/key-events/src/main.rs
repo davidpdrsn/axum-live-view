@@ -77,7 +77,7 @@ impl LiveView for View {
                 <div>
                     "Keydown"
                     <br />
-                    <input type="text" axm-window-keydown={ Msg::Key("keydown".to_owned()) } />
+                    <input type="text" axm-keydown={ Msg::Key("keydown".to_owned()) } />
                 </div>
 
                 <div>
