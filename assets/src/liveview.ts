@@ -16,7 +16,11 @@ interface ConnectState {
 }
 
 interface ViewStates {
-  [index: string]: any;
+  [index: string]: ViewState;
+}
+
+interface ViewState {
+  [index: string | number]: string | string[] | ViewState;
 }
 
 export function connectAndRun(options: LiveViewOptions) {
@@ -60,7 +64,7 @@ function onOpen(socket: WebSocket, connectState: ConnectState, options: LiveView
 }
 
 function onMessage(socket: WebSocket, event: MessageEvent, connectState: ConnectState, options: LiveViewOptions, viewStates: ViewStates) {
-  type Msg = [string, string, JSON] | [string]
+  type Msg = [string, string, ViewState]
 
   const payload: Msg = JSON.parse(event.data)
 
@@ -69,23 +73,25 @@ function onMessage(socket: WebSocket, event: MessageEvent, connectState: Connect
 
     if (topic === "r") {
       // rendered
-      const diff = data
-      const element = document.querySelector(`[data-liveview-id="${liveviewId}"]`)
+      // const diff = data
+      // const element = document.querySelector(`[data-liveview-id="${liveviewId}"]`)
 
-      patchViewState(viewStates[liveviewId], diff)
+      // patchViewState(viewStates[liveviewId], diff)
 
       // const html = buildHtmlFromState(this.viewStates[liveviewId])
       // this.updateDom(element, html)
 
     } else if (topic === "i") {
-      // // initial-render
-      // const element = document.querySelector(`[data-liveview-id="${liveviewId}"]`)
-      // const html = buildHtmlFromState(data)
-      // this.updateDom(element, html)
-      // this.viewStates[liveviewId] = data
+      // initial-render
+      const element = document.querySelector(`[data-liveview-id="${liveviewId}"]`)
+      if (!element) throw "Element not found"
+      const html = buildHtmlFromState(data)
+      updateDom(socket, element, html)
+      viewStates[liveviewId] = data
 
     } else if (topic === "j") {
       // // js-command
+      // const _: void = data
       // this.handleJsCommand(data)
 
     } else if (topic === "liveview-gone") {
@@ -99,14 +105,14 @@ function onMessage(socket: WebSocket, event: MessageEvent, connectState: Connect
       console.error("unknown topic", topic, data)
     }
 
-  } else if (payload.length === 1) {
-    // const [topic] = payload
-    // if (topic === "h") {
-    //   // heartbeat
-    //   this.socket.send(JSON.stringify({ "h": "ok" }))
-    // } else {
-    //   console.error("unknown topic", topic)
-    // }
+  // } else if (payload.length === 1) {
+  //   const [topic] = payload
+  //   if (topic === "h") {
+  //     // heartbeat
+  //     this.socket.send(JSON.stringify({ "h": "ok" }))
+  //   } else {
+  //     console.error("unknown topic", topic)
+  //   }
 
   } else {
     console.error("unknown socket message", event.data)
@@ -424,39 +430,108 @@ function throttle<In extends unknown[]>(f: Fn<In>, delayMs: number): Fn<In> {
 
 const fixed = "f";
 
-function patchViewState(state: any, diff: any) {
-  if (typeof state !== 'object') {
-    throw "Cannot merge non-object"
-  }
+function buildHtmlFromState(state: ViewState): string {
+    var combined = ""
 
-  function deepMerge(state: any, diff: any) {
-    for (const [key, val] of Object.entries(diff)) {
-      if (val !== null && typeof val === `object` && val.length === undefined) {
-        if (state[key] === undefined) {
-          state[key] = {}
-        }
-        if (typeof state[key] === 'string') {
-          state[key] = val
-        } else {
-          patchViewState(state[key], val)
-        }
-      } else {
-        state[key] = val
+    const f = state[fixed]
+    if (!Array.isArray(f)) {
+      throw "fixed is not an array"
+    }
+
+    f.forEach((value, i) => {
+      combined = combined.concat(value)
+      const variable = state[i]
+
+      if (typeof variable === "undefined") {
+        return
       }
-    }
 
-    return state
-  }
+      if (typeof variable === "string") {
+        combined = combined.concat(variable)
 
-  deepMerge(state, diff)
+      } else if (Array.isArray(variable)) {
+        console.log(variable)
+        throw "wat"
 
-  for (const [key, val] of Object.entries(diff)) {
-    if (val === null) {
-      delete state[key]
-    }
-  }
+      } else {
+        combined = combined.concat(buildHtmlFromState(variable))
+      }
+    })
 
-  // if (state[fixed].length == Object.keys(state).length - 1) {
-  //   delete state[state[fixed].length - 1]
-  // }
+    return combined
 }
+
+function updateDom(socket: WebSocket, element: Element, html: string) {
+    morphdom(element, html, {
+        onNodeAdded: (node) => {
+          if (node instanceof Element) {
+            addEventListeners(socket, node)
+          }
+          return node
+        },
+        onBeforeElUpdated: (fromEl, toEl) => {
+          const tag = toEl.tagName
+
+          if (fromEl instanceof HTMLInputElement && toEl instanceof HTMLInputElement) {
+            if (toEl.getAttribute("type") === "radio" || toEl.getAttribute("type") === "checkbox") {
+              toEl.checked = fromEl.checked;
+            } else {
+              toEl.value = fromEl.value;
+            }
+          }
+
+          if (fromEl instanceof HTMLTextAreaElement && toEl instanceof HTMLTextAreaElement) {
+            toEl.value = fromEl.value;
+          }
+
+          if (fromEl instanceof HTMLOptionElement && toEl instanceof HTMLOptionElement) {
+            if (toEl.closest("select")?.hasAttribute("multiple")) {
+              toEl.selected = fromEl.selected
+            }
+          }
+
+          if (fromEl instanceof HTMLSelectElement && toEl instanceof HTMLSelectElement && !toEl.hasAttribute("multiple")) {
+            toEl.value = fromEl.value
+          }
+
+          return true
+        },
+    })
+}
+
+// function patchViewState(state: any, diff: any) {
+//   if (typeof state !== 'object') {
+//     throw "Cannot merge non-object"
+//   }
+
+//   function deepMerge(state: any, diff: any) {
+//     for (const [key, val] of Object.entries(diff)) {
+//       if (val !== null && typeof val === `object` && val.length === undefined) {
+//         if (state[key] === undefined) {
+//           state[key] = {}
+//         }
+//         if (typeof state[key] === 'string') {
+//           state[key] = val
+//         } else {
+//           patchViewState(state[key], val)
+//         }
+//       } else {
+//         state[key] = val
+//       }
+//     }
+
+//     return state
+//   }
+
+//   deepMerge(state, diff)
+
+//   for (const [key, val] of Object.entries(diff)) {
+//     if (val === null) {
+//       delete state[key]
+//     }
+//   }
+
+//   // if (state[fixed].length == Object.keys(state).length - 1) {
+//   //   delete state[state[fixed].length - 1]
+//   // }
+// }
