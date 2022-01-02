@@ -1,9 +1,16 @@
-use axum::{async_trait, response::IntoResponse, routing::get, Router};
+use axum::{
+    async_trait,
+    http::StatusCode,
+    response::IntoResponse,
+    routing::{get, get_service},
+    Router,
+};
 use axum_liveview::{
     html, liveview::Updated, AssociatedData, EmbedLiveView, Html, LiveView, Subscriptions,
 };
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
-use std::{collections::HashMap, net::SocketAddr};
+use std::{collections::HashMap, env, net::SocketAddr, path::PathBuf};
+use tower_http::services::ServeFile;
 
 #[tokio::main]
 async fn main() {
@@ -13,12 +20,19 @@ async fn main() {
 
     let app = Router::new()
         .route("/", get(root))
+        .route(
+            "/bundle.js",
+            get_service(ServeFile::new(
+                PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap()).join("dist/bundle.js"),
+            ))
+            .handle_error(|_| async { StatusCode::INTERNAL_SERVER_ERROR }),
+        )
         .merge(axum_liveview::routes())
         .layer(axum_liveview::layer(pubsub));
 
     let addr = SocketAddr::from(([0, 0, 0, 0], 4000));
     axum::Server::bind(&addr)
-        .serve(app.into_make_service_with_connect_info::<SocketAddr, _>())
+        .serve(app.into_make_service())
         .await
         .unwrap();
 }
@@ -30,16 +44,10 @@ async fn root(embed_liveview: EmbedLiveView) -> impl IntoResponse {
         <!DOCTYPE html>
         <html>
             <head>
-                { axum_liveview::assets() }
+                <script src="/bundle.js"></script>
             </head>
             <body>
                 { embed_liveview.embed(form) }
-                <script>
-                    r#"
-                        const liveView = new LiveView({ host: 'localhost', port: 4000 })
-                        liveView.connect()
-                    "#
-                </script>
             </body>
         </html>
     }
@@ -91,7 +99,7 @@ impl LiveView for FormView {
 
     fn render(&self) -> Html<Self::Message> {
         html! {
-            <form axm-change={ Msg::Validate } axm-submit={ Msg::Submit } axm-throttle="1000">
+            <form axm-change={ Msg::Validate } axm-submit={ Msg::Submit }>
                 <label>
                     <div>"Text input"</div>
                     <input type="text" name="input" axm-input={ Msg::TextInputChanged } axm-debounce="1000" />
@@ -269,7 +277,7 @@ struct FormValues {
 
 fn transcode<A, B>(from: &A) -> B
 where
-    A: Serialize,
+    A: Serialize + std::fmt::Debug,
     B: DeserializeOwned,
 {
     serde_json::from_value(serde_json::json!(from)).unwrap()

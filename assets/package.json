@@ -1,0 +1,30 @@
+{
+  "name": "axum-liveview",
+  "version": "0.1.0",
+  "description": "axum-liveview JavaScript client",
+  "main": "dist/src/liveview.js",
+  "typings": "dist/src/liveview.d.ts",
+  "devDependencies": {
+    "typescript": "^4.5.4"
+  },
+  "dependencies": {
+    "morphdom": "^2.6.1"
+  },
+  "scripts": {
+    "build": "tsc",
+    "clean": "rm -rf ./dist"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/davidpdrsn/axum-liveview.git"
+  },
+  "files": [
+    "dist"
+  ],
+  "author": "David Pedersen, @davidpdrsn",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/davidpdrsn/axum-liveview/issues"
+  },
+  "homepage": "https://github.com/davidpdrsn/axum-liveview"
+}

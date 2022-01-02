@@ -1,10 +1,14 @@
 use axum::{
-    async_trait, extract::Extension, response::IntoResponse, routing::get, AddExtensionLayer, Json,
-    Router,
+    async_trait,
+    extract::Extension,
+    http::StatusCode,
+    response::IntoResponse,
+    routing::{get, get_service},
+    AddExtensionLayer, Json, Router,
 };
 use axum_liveview::{
     associated_data::FormEventValue,
-    html,
+    html, js,
     liveview::Updated,
     pubsub::{InProcess, Topic},
     AssociatedData, EmbedLiveView, Html, LiveView, PubSub, Subscriptions,
@@ -12,10 +16,13 @@ use axum_liveview::{
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use std::{
+    env,
     net::SocketAddr,
+    path::PathBuf,
     sync::{Arc, Mutex},
 };
 use tower::ServiceBuilder;
+use tower_http::services::ServeFile;
 
 #[tokio::main]
 async fn main() {
@@ -39,6 +46,13 @@ async fn main() {
 
     let app = Router::new()
         .route("/", get(root))
+        .route(
+            "/bundle.js",
+            get_service(ServeFile::new(
+                PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap()).join("dist/bundle.js"),
+            ))
+            .handle_error(|_| async { StatusCode::INTERNAL_SERVER_ERROR }),
+        )
         .merge(axum_liveview::routes())
         .layer(
             ServiceBuilder::new()
@@ -73,17 +87,11 @@ async fn root(
         <!DOCTYPE html>
         <html>
             <head>
-                { axum_liveview::assets() }
+                <script src="/bundle.js"></script>
             </head>
             <body>
                 { embed_liveview.embed(list).unit() }
                 { embed_liveview.embed(form).unit() }
-                <script>
-                    r#"
-                        const liveView = new LiveView({ host: 'localhost', port: 4000 })
-                        liveView.connect()
-                    "#
-                </script>
             </body>
         </html>
     }
@@ -144,6 +152,8 @@ where
     fn init(&self, _subscriptions: &mut Subscriptions<Self>) {}
 
     async fn update(mut self, msg: FormMsg, data: AssociatedData) -> Updated<Self> {
+        let mut js_commands = Vec::new();
+
         match msg {
             FormMsg::Submit => {
                 let new_msg = serde_json::json!(data.as_form().unwrap());
@@ -151,8 +161,8 @@ where
 
                 let _ = self.pubsub.broadcast(&NewMessageTopic, Json(new_msg)).await;
 
-                // TODO(david): clear the input as well
                 self.message.clear();
+                js_commands.push(js::clear_value("#text-input"));
             }
             FormMsg::MessageChange => match data.as_form().unwrap() {
                 FormEventValue::String(value) => {
@@ -178,7 +188,7 @@ where
             },
         }
 
-        Updated::new(self)
+        Updated::new(self).with_all(js_commands)
     }
 
     fn render(&self) -> Html<Self::Message> {
@@ -193,6 +203,7 @@ where
 
                 <div>
                     <input
+                        id="text-input"
                         type="text"
                         name="message"
                         placeholder="Message..."

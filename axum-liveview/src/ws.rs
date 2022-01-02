@@ -65,7 +65,7 @@ where
 
                 if heartbeat_inflight { continue }
 
-                if send_heartbeat(&mut socket).await.is_ok() {
+                if send_message_to_socket(&mut socket, None, HEARTBEAT_TOPIC, None::<bool>).await.is_ok() {
                     heartbeat_inflight = true;
                     heartbeat_sent_at = Instant::now();
                     heartbeat_bounce.as_mut().reset(Instant::now() + HEARTBEAT_BOUNCE);
@@ -88,9 +88,9 @@ where
                     Ok(Some(HandledMessagedResult::Mounted(liveview_id, initial_render_html))) => {
                         let _ = send_message_to_socket(
                             &mut socket,
-                            liveview_id,
+                            Some(liveview_id),
                             INITIAL_RENDER_TOPIC,
-                            initial_render_html,
+                            Some(initial_render_html),
                         )
                         .await;
                     },
@@ -107,16 +107,16 @@ where
                         tracing::warn!("no response from `initial-render` message sent to liveview");
                         let _ = send_message_to_socket(
                             &mut socket,
-                            liveview_id,
+                            Some(liveview_id),
                             LIVEVIEW_GONE_TOPIC,
-                            json!(null),
+                            None::<bool>,
                         )
                         .await;
                         state.diff_streams.remove(&liveview_id);
                     }
                     Ok(None) => {},
                     Err(err) => {
-                        tracing::error!(%err, "error handling message from socket");
+                        tracing::error!(?err, "error handling message from socket");
                     },
                 }
             }
@@ -126,18 +126,18 @@ where
                 if let Some(diff) = diff {
                     let _ = send_message_to_socket(
                         &mut socket,
-                        liveview_id,
+                        Some(liveview_id),
                         RENDERED_TOPIC,
-                        diff,
+                        Some(diff),
                     ).await;
                 }
 
                 if !js_commands.is_empty() {
                     let _ = send_message_to_socket(
                         &mut socket,
-                        liveview_id,
+                        Some(liveview_id),
                         JS_COMMANDS_TOPIC,
-                        js_commands,
+                        Some(js_commands),
                     ).await;
                 }
             }
@@ -159,29 +159,26 @@ where
     tracing::trace!("WebSocket task ending");
 }
 
-async fn send_heartbeat(socket: &mut WebSocket) -> Result<(), axum::Error> {
-    let msg = json!(["h"]);
-    let msg = serde_json::to_string(&msg).unwrap();
-    tracing::trace!("sending heartbeat");
-    socket.send(ws::Message::Text(msg)).await?;
-    Ok(())
-}
-
+const HEARTBEAT_TOPIC: &str = "h";
 const INITIAL_RENDER_TOPIC: &str = "i";
-const LIVEVIEW_GONE_TOPIC: &str = "liveview-gone";
 const RENDERED_TOPIC: &str = "r";
 const JS_COMMANDS_TOPIC: &str = "j";
+const LIVEVIEW_GONE_TOPIC: &str = "liveview-gone";
 
 async fn send_message_to_socket<T>(
     socket: &mut WebSocket,
-    liveview_id: LiveViewId,
+    liveview_id: Option<LiveViewId>,
     topic: &'static str,
-    msg: T,
+    msg: Option<T>,
 ) -> Result<(), axum::Error>
 where
     T: serde::Serialize,
 {
-    let msg = json!([liveview_id, topic, msg]);
+    let msg = json!({
+        "i": liveview_id,
+        "t": topic,
+        "d": msg,
+    });
     let msg = serde_json::to_string(&msg).unwrap();
     tracing::trace!(%msg, "sending message to websocket");
 
@@ -222,7 +219,8 @@ where
     };
 
     let liveview_id = msg.liveview_id;
-    let msg = EventFromBrowser::try_from(msg).context("Parsing into `EventFromBrowser`")?;
+    let msg = EventFromBrowser::try_from(msg.clone())
+        .with_context(|| format!("Parsing into `EventFromBrowser`. msg={:?}", msg))?;
 
     tracing::trace!(?msg, "received message from websocket");
 
@@ -341,7 +339,7 @@ struct HeartbeatResponse {
     h: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 struct RawMessage {
     liveview_id: LiveViewId,
     topic: String,
@@ -476,7 +474,7 @@ pub(crate) struct KeyEventFields {
     pub(crate) ctrl: bool,
     #[serde(rename = "s")]
     pub(crate) shift: bool,
-    #[serde(rename = "m")]
+    #[serde(rename = "me")]
     pub(crate) meta: bool,
 }
 

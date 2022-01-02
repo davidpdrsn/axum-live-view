@@ -74,6 +74,7 @@ impl From<crate::ws::AssociatedDataKind> for AssociatedDataKind {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+#[serde(untagged)]
 pub enum FormEventValue {
     String(String),
     Strings(Vec<String>),

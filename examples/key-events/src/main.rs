@@ -1,11 +1,16 @@
-#![allow(unused_variables)]
-
-use axum::{async_trait, response::IntoResponse, routing::get, Router};
+use axum::{
+    async_trait,
+    http::StatusCode,
+    response::IntoResponse,
+    routing::{get, get_service},
+    Router,
+};
 use axum_liveview::{
     html, liveview::Updated, AssociatedData, EmbedLiveView, Html, LiveView, Subscriptions,
 };
 use serde::{Deserialize, Serialize};
-use std::net::SocketAddr;
+use std::{env, net::SocketAddr, path::PathBuf};
+use tower_http::services::ServeFile;
 
 #[tokio::main]
 async fn main() {
@@ -15,33 +20,34 @@ async fn main() {
 
     let app = Router::new()
         .route("/", get(root))
+        .route(
+            "/bundle.js",
+            get_service(ServeFile::new(
+                PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap()).join("dist/bundle.js"),
+            ))
+            .handle_error(|_| async { StatusCode::INTERNAL_SERVER_ERROR }),
+        )
         .merge(axum_liveview::routes())
         .layer(axum_liveview::layer(pubsub));
 
     let addr = SocketAddr::from(([0, 0, 0, 0], 4000));
     axum::Server::bind(&addr)
-        .serve(app.into_make_service_with_connect_info::<SocketAddr, _>())
+        .serve(app.into_make_service())
         .await
         .unwrap();
 }
 
 async fn root(embed_liveview: EmbedLiveView) -> impl IntoResponse {
-    let form = View::default();
+    let counter = View::default();
 
     html! {
         <!DOCTYPE html>
         <html>
             <head>
-                { axum_liveview::assets() }
+                <script src="/bundle.js"></script>
             </head>
             <body>
-                { embed_liveview.embed(form) }
-                <script>
-                    r#"
-                        const liveView = new LiveView({ host: 'localhost', port: 4000 })
-                        liveView.connect()
-                    "#
-                </script>
+                { embed_liveview.embed(counter) }
             </body>
         </html>
     }
@@ -57,9 +63,9 @@ struct View {
 impl LiveView for View {
     type Message = Msg;
 
-    fn init(&self, subscriptions: &mut Subscriptions<Self>) {}
+    fn init(&self, _subscriptions: &mut Subscriptions<Self>) {}
 
-    async fn update(mut self, msg: Msg, data: AssociatedData) -> Updated<Self> {
+    async fn update(mut self, msg: Msg, _data: AssociatedData) -> Updated<Self> {
         self.count += 1;
         self.prev = Some(msg);
         Updated::new(self)
@@ -71,7 +77,7 @@ impl LiveView for View {
                 <div>
                     "Keydown"
                     <br />
-                    <input type="text" axm-window-keydown={ Msg::Key("keydown".to_owned()) } />
+                    <input type="text" axm-keydown={ Msg::Key("keydown".to_owned()) } />
                 </div>
 
                 <div>

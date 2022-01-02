@@ -1,0 +1,9 @@
+{
+  "dependencies": {
+    "axum-liveview": "file:../../assets"
+  },
+  "private": true,
+  "devDependencies": {
+    "webpack-cli": "^4.9.1"
+  }
+}
