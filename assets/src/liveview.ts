@@ -4,27 +4,134 @@ export interface LiveViewOptions {
   host: string;
   port: number;
   onSocketOpen?: () => void;
-  onSocketMessage?: () => void;
+  // onSocketMessage?: () => void;
   onSocketClose?: () => void;
   onSocketError?: () => void;
+  onClosedForGood?: () => void;
+}
+
+interface ConnectState {
+  firstConnect: boolean;
+  closedForGood: boolean;
+}
+
+interface ViewStates {
+  [index: string]: any;
 }
 
 export function connectAndRun(options: LiveViewOptions) {
+  var connectState = {
+    firstConnect: true,
+    closedForGood: false,
+  }
+
+  doConnectAndRun(options, connectState)
+}
+
+function doConnectAndRun(options: LiveViewOptions, connectState: ConnectState) {
   const socket = new WebSocket(`ws://${options.host}:${options.port}/live`)
 
-  var firstConnect = true
+  const viewStates = {}
 
   socket.addEventListener("open", () => {
-    onOpen(socket)
+    onOpen(socket, connectState, options)
+  })
 
-    if (firstConnect) {
-      bindInitialEvents(socket)
-    }
+  socket.addEventListener("message", (event) => {
+    onMessage(socket, event, connectState, options, viewStates)
+  })
+
+  socket.addEventListener("close", () => {
+    onClose(socket, connectState, options)
+  })
+
+  socket.addEventListener("error", () => {
+    onError(socket, connectState, options)
   })
 }
 
-function onOpen(socket: WebSocket) {
+function onOpen(socket: WebSocket, connectState: ConnectState, options: LiveViewOptions) {
+  options.onSocketOpen?.()
   mountComponents(socket)
+
+  if (connectState.firstConnect) {
+    bindInitialEvents(socket)
+  }
+}
+
+function onMessage(socket: WebSocket, event: MessageEvent, connectState: ConnectState, options: LiveViewOptions, viewStates: ViewStates) {
+  type Msg = [string, string, JSON] | [string]
+
+  const payload: Msg = JSON.parse(event.data)
+
+  if (payload.length === 3) {
+    const [liveviewId, topic, data] = payload
+
+    if (topic === "r") {
+      // rendered
+      const diff = data
+      const element = document.querySelector(`[data-liveview-id="${liveviewId}"]`)
+
+      patchViewState(viewStates[liveviewId], diff)
+
+      // const html = buildHtmlFromState(this.viewStates[liveviewId])
+      // this.updateDom(element, html)
+
+    } else if (topic === "i") {
+      // // initial-render
+      // const element = document.querySelector(`[data-liveview-id="${liveviewId}"]`)
+      // const html = buildHtmlFromState(data)
+      // this.updateDom(element, html)
+      // this.viewStates[liveviewId] = data
+
+    } else if (topic === "j") {
+      // // js-command
+      // this.handleJsCommand(data)
+
+    } else if (topic === "liveview-gone") {
+      // console.error(
+      //   `Something went wrong on the server and liveview ${liveviewId} is gone`
+      // )
+      // this.socket.close()
+      // this.closedForGood = true
+
+    } else {
+      console.error("unknown topic", topic, data)
+    }
+
+  } else if (payload.length === 1) {
+    // const [topic] = payload
+    // if (topic === "h") {
+    //   // heartbeat
+    //   this.socket.send(JSON.stringify({ "h": "ok" }))
+    // } else {
+    //   console.error("unknown topic", topic)
+    // }
+
+  } else {
+    console.error("unknown socket message", event.data)
+  }
+}
+
+function onClose(socket: WebSocket, connectState: ConnectState, options: LiveViewOptions) {
+  options.onSocketClose?.()
+  reconnect(socket, connectState, options)
+}
+
+function onError(socket: WebSocket, connectState: ConnectState, options: LiveViewOptions) {
+  options.onSocketError?.()
+}
+
+function reconnect(socket: WebSocket, connectState: ConnectState, options: LiveViewOptions) {
+  if (connectState.closedForGood) {
+    options.onClosedForGood?.()
+    return;
+  }
+
+  connectState.firstConnect = false
+  setTimeout(() => {
+    doConnectAndRun(options, connectState)
+  }, 1000)
 }
 
 function socketSend(socket: WebSocket, liveviewId: string, topic: string, data: object) {
@@ -273,6 +380,17 @@ function inputValue(element: Element): InputValue | null {
   }
 }
 
+function numberAttr(element: Element, attr: string): number | null {
+  const value = element.getAttribute(attr)
+  if (value) {
+    const number = parseInt(value, 10)
+    if (number) {
+      return number
+    }
+  }
+  return null
+}
+
 type Fn<
   In extends unknown[],
 > = (...args: In) => void;
@@ -304,13 +422,41 @@ function throttle<In extends unknown[]>(f: Fn<In>, delayMs: number): Fn<In> {
   }
 }
 
-function numberAttr(element: Element, attr: string): number | null {
-  const value = element.getAttribute(attr)
-  if (value) {
-    const number = parseInt(value, 10)
-    if (number) {
-      return number
+const fixed = "f";
+
+function patchViewState(state: any, diff: any) {
+  if (typeof state !== 'object') {
+    throw "Cannot merge non-object"
+  }
+
+  function deepMerge(state: any, diff: any) {
+    for (const [key, val] of Object.entries(diff)) {
+      if (val !== null && typeof val === `object` && val.length === undefined) {
+        if (state[key] === undefined) {
+          state[key] = {}
+        }
+        if (typeof state[key] === 'string') {
+          state[key] = val
+        } else {
+          patchViewState(state[key], val)
+        }
+      } else {
+        state[key] = val
+      }
+    }
+
+    return state
+  }
+
+  deepMerge(state, diff)
+
+  for (const [key, val] of Object.entries(diff)) {
+    if (val === null) {
+      delete state[key]
     }
   }
-  return null
+
+  // if (state[fixed].length == Object.keys(state).length - 1) {
+  //   delete state[state[fixed].length - 1]
+  // }
 }
