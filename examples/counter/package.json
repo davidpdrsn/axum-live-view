@@ -1,6 +1,6 @@
 {
   "dependencies": {
-    "axum-liveview": "file:/Users/davidpdrsn/dev/major/axum-liveview/assets"
+    "axum-liveview": "file:../../assets"
   },
   "private": true,
   "devDependencies": {

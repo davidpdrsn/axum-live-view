@@ -37,7 +37,7 @@ jobs:
     - uses: actions/setup-node@v2
       with:
         node-version: '16'
-    - run: cargo xtask examples build
+    - run: cargo xtask ts install && cargo xtask examples build
 
   check-docs:
     runs-on: ubuntu-latest
