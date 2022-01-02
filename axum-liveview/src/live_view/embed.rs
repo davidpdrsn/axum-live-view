@@ -1,5 +1,8 @@
 use super::{wrap_in_liveview_container, LiveView, LiveViewId};
-use crate::{html::Html, pubsub::PubSubBackend, PubSub};
+use crate::{
+    html::Html,
+    pubsub::{PubSub, PubSubBackend},
+};
 use axum::{
     async_trait,
     extract::{Extension, FromRequest, RequestParts},

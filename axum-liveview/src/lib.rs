@@ -44,25 +44,18 @@ use axum::Router;
 #[macro_use]
 mod macros;
 
-pub mod associated_data;
+#[doc(hidden)]
 pub mod html;
-pub mod js;
-pub mod liveview;
+
+pub mod js_command;
+pub mod live_view;
 pub mod middleware;
 pub mod pubsub;
 
-mod subscriptions;
 mod topics;
 mod ws;
 
-pub use self::{
-    associated_data::AssociatedData,
-    html::Html,
-    liveview::{embed::EmbedLiveView, LiveView},
-    middleware::LiveViewLayer,
-    pubsub::PubSub,
-    subscriptions::Subscriptions,
-};
+pub use self::html::Html;
 pub use axum_liveview_macros::html;
 
 pub fn routes<B>() -> Router<B>

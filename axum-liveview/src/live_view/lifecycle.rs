@@ -1,9 +1,9 @@
-use super::{wrap_in_liveview_container, LiveView, LiveViewId, Updated};
+use super::{wrap_in_liveview_container, LiveView, LiveViewId, Subscriptions, Updated};
 use crate::{
     html::Html,
-    js::JsCommand,
+    js_command::JsCommand,
+    pubsub::PubSub,
     topics::{self, RenderedMessage},
-    PubSub, Subscriptions,
 };
 use anyhow::Context;
 use async_stream::stream;

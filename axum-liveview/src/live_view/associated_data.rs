@@ -1,50 +1,37 @@
+use crate::ws;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-#[derive(Debug)]
-pub struct AssociatedData {
-    kind: AssociatedDataKind,
+#[derive(Debug, Clone)]
+pub struct EventData {
+    kind: Option<EventDataKind>,
 }
 
-impl AssociatedData {
-    pub(crate) fn new(kind: crate::ws::AssociatedDataKind) -> Self {
-        Self { kind: kind.into() }
-    }
-
-    pub fn as_click(&self) -> Option<()> {
-        if let AssociatedDataKind::Click = &self.kind {
-            Some(())
-        } else {
-            None
+impl EventData {
+    pub(crate) fn new(kind: Option<ws::AssociatedDataKind>) -> Self {
+        Self {
+            kind: kind.map(Into::into),
         }
     }
 
-    pub fn as_window_focus_blur(&self) -> Option<()> {
-        if let AssociatedDataKind::WindowFocusBlur = &self.kind {
-            Some(())
-        } else {
-            None
-        }
-    }
-
-    pub fn as_mouse(&self) -> Option<&MouseEventValue> {
-        if let AssociatedDataKind::Mouse(kind) = &self.kind {
+    pub fn as_mouse(&self) -> Option<&MouseEventData> {
+        if let Some(EventDataKind::Mouse(kind)) = &self.kind {
             Some(kind)
         } else {
             None
         }
     }
 
-    pub fn as_form(&self) -> Option<&FormEventValue> {
-        if let AssociatedDataKind::Form(kind) = &self.kind {
+    pub fn as_form(&self) -> Option<&FormEventData> {
+        if let Some(EventDataKind::Form(kind)) = &self.kind {
             Some(kind)
         } else {
             None
         }
     }
 
-    pub fn as_key(&self) -> Option<&KeyEventValue> {
-        if let AssociatedDataKind::Key(kind) = &self.kind {
+    pub fn as_key(&self) -> Option<&KeyEventData> {
+        if let Some(EventDataKind::Key(kind)) = &self.kind {
             Some(kind)
         } else {
             None
@@ -52,51 +39,47 @@ impl AssociatedData {
     }
 }
 
-#[derive(Debug)]
-enum AssociatedDataKind {
-    Click,
-    Form(FormEventValue),
-    Key(KeyEventValue),
-    WindowFocusBlur,
-    Mouse(MouseEventValue),
+#[derive(Debug, Clone)]
+enum EventDataKind {
+    Form(FormEventData),
+    Key(KeyEventData),
+    Mouse(MouseEventData),
 }
 
-impl From<crate::ws::AssociatedDataKind> for AssociatedDataKind {
-    fn from(kind: crate::ws::AssociatedDataKind) -> Self {
+impl From<ws::AssociatedDataKind> for EventDataKind {
+    fn from(kind: ws::AssociatedDataKind) -> Self {
         match kind {
-            crate::ws::AssociatedDataKind::Click => Self::Click,
-            crate::ws::AssociatedDataKind::Form(form_kind) => Self::Form(form_kind.into()),
-            crate::ws::AssociatedDataKind::Key(key_kind) => Self::Key(key_kind.into()),
-            crate::ws::AssociatedDataKind::WindowFocusBlur => Self::WindowFocusBlur,
-            crate::ws::AssociatedDataKind::Mouse(mouse_kind) => Self::Mouse(mouse_kind.into()),
+            ws::AssociatedDataKind::Form(form_kind) => Self::Form(form_kind.into()),
+            ws::AssociatedDataKind::Key(key_kind) => Self::Key(key_kind.into()),
+            ws::AssociatedDataKind::Mouse(mouse_kind) => Self::Mouse(mouse_kind.into()),
         }
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
-pub enum FormEventValue {
+pub enum FormEventData {
     String(String),
     Strings(Vec<String>),
     Bool(bool),
-    Map(HashMap<String, FormEventValue>),
+    Map(HashMap<String, FormEventData>),
 }
 
-impl From<crate::ws::FormEventValue> for FormEventValue {
-    fn from(value: crate::ws::FormEventValue) -> Self {
+impl From<ws::FormEventValue> for FormEventData {
+    fn from(value: ws::FormEventValue) -> Self {
         match value {
-            crate::ws::FormEventValue::String(inner) => Self::String(inner),
-            crate::ws::FormEventValue::Strings(inner) => Self::Strings(inner),
-            crate::ws::FormEventValue::Bool(inner) => Self::Bool(inner),
-            crate::ws::FormEventValue::Map(inner) => {
+            ws::FormEventValue::String(inner) => Self::String(inner),
+            ws::FormEventValue::Strings(inner) => Self::Strings(inner),
+            ws::FormEventValue::Bool(inner) => Self::Bool(inner),
+            ws::FormEventValue::Map(inner) => {
                 Self::Map(inner.into_iter().map(|(k, v)| (k, v.into())).collect())
             }
         }
     }
 }
 
-#[derive(Debug)]
-pub struct KeyEventValue {
+#[derive(Debug, Clone)]
+pub struct KeyEventData {
     key: String,
     code: String,
     alt: bool,
@@ -105,13 +88,13 @@ pub struct KeyEventValue {
     meta: bool,
 }
 
-impl KeyEventValue {
+impl KeyEventData {
     pub fn key(&self) -> &str {
-        self.key.as_ref()
+        &self.key
     }
 
     pub fn code(&self) -> &str {
-        self.code.as_ref()
+        &self.code
     }
 
     pub fn alt(&self) -> bool {
@@ -131,16 +114,16 @@ impl KeyEventValue {
     }
 }
 
-impl From<crate::ws::KeyEventFields> for KeyEventValue {
+impl From<ws::KeyEventFields> for KeyEventData {
     fn from(
-        crate::ws::KeyEventFields {
+        ws::KeyEventFields {
             key,
             code,
             alt,
             ctrl,
             shift,
             meta,
-        }: crate::ws::KeyEventFields,
+        }: ws::KeyEventFields,
     ) -> Self {
         Self {
             key,
@@ -153,8 +136,8 @@ impl From<crate::ws::KeyEventFields> for KeyEventValue {
     }
 }
 
-#[derive(Debug)]
-pub struct MouseEventValue {
+#[derive(Debug, Clone)]
+pub struct MouseEventData {
     client_x: f64,
     client_y: f64,
     page_x: f64,
@@ -167,9 +150,9 @@ pub struct MouseEventValue {
     screen_y: f64,
 }
 
-impl From<crate::ws::MouseEventFields> for MouseEventValue {
+impl From<ws::MouseEventFields> for MouseEventData {
     fn from(
-        crate::ws::MouseEventFields {
+        ws::MouseEventFields {
             client_x,
             client_y,
             page_x,
@@ -180,7 +163,7 @@ impl From<crate::ws::MouseEventFields> for MouseEventValue {
             movement_y,
             screen_x,
             screen_y,
-        }: crate::ws::MouseEventFields,
+        }: ws::MouseEventFields,
     ) -> Self {
         Self {
             client_x,
@@ -197,7 +180,7 @@ impl From<crate::ws::MouseEventFields> for MouseEventValue {
     }
 }
 
-impl MouseEventValue {
+impl MouseEventData {
     pub fn client_x(&self) -> f64 {
         self.client_x
     }

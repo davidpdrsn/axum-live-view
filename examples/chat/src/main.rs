@@ -7,11 +7,11 @@ use axum::{
     AddExtensionLayer, Json, Router,
 };
 use axum_liveview::{
-    associated_data::FormEventValue,
-    html, js,
-    liveview::Updated,
-    pubsub::{InProcess, Topic},
-    AssociatedData, EmbedLiveView, Html, LiveView, PubSub, Subscriptions,
+    html, js_command,
+    live_view::{EmbedLiveView, EventData, FormEventData, LiveView, Subscriptions, Updated},
+    middleware::LiveViewLayer,
+    pubsub::{InProcess, PubSub, Topic},
+    Html,
 };
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
@@ -56,7 +56,7 @@ async fn main() {
         .merge(axum_liveview::routes())
         .layer(
             ServiceBuilder::new()
-                .layer(axum_liveview::LiveViewLayer::new(pubsub.clone()))
+                .layer(LiveViewLayer::new(pubsub.clone()))
                 .layer(AddExtensionLayer::new(pubsub))
                 .layer(AddExtensionLayer::new(messages)),
         );
@@ -111,7 +111,7 @@ impl LiveView for MessagesList {
         });
     }
 
-    async fn update(mut self, _msg: (), _data: AssociatedData) -> Updated<Self> {
+    async fn update(mut self, _msg: (), _data: EventData) -> Updated<Self> {
         Updated::new(self)
     }
 
@@ -151,7 +151,7 @@ where
 
     fn init(&self, _subscriptions: &mut Subscriptions<Self>) {}
 
-    async fn update(mut self, msg: FormMsg, data: AssociatedData) -> Updated<Self> {
+    async fn update(mut self, msg: FormMsg, data: EventData) -> Updated<Self> {
         let mut js_commands = Vec::new();
 
         match msg {
@@ -162,10 +162,10 @@ where
                 let _ = self.pubsub.broadcast(&NewMessageTopic, Json(new_msg)).await;
 
                 self.message.clear();
-                js_commands.push(js::clear_value("#text-input"));
+                js_commands.push(js_command::clear_value("#text-input"));
             }
             FormMsg::MessageChange => match data.as_form().unwrap() {
-                FormEventValue::String(value) => {
+                FormEventData::String(value) => {
                     self.message = value.to_owned();
                 }
                 other => {
@@ -176,7 +176,7 @@ where
                 }
             },
             FormMsg::NameChange => match data.as_form().unwrap() {
-                FormEventValue::String(value) => {
+                FormEventData::String(value) => {
                     self.name = value.to_owned();
                 }
                 other => {

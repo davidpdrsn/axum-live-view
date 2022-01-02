@@ -1,6 +1,6 @@
 use crate::{
     html,
-    liveview::{embed::EmbedLiveView, LiveViewId},
+    live_view::{EmbedLiveView, LiveViewId},
     pubsub::PubSub,
     topics::{self, RenderedMessage},
 };
@@ -283,68 +283,64 @@ where
             )));
         }
 
-        EventFromBrowser::Click(ClickEvent { msg }) => {
-            let topic = topics::update(liveview_id);
-            let msg = WithAssociatedData {
-                msg,
-                data: AssociatedDataKind::Click,
-            };
-            pubsub
-                .broadcast(&topic, Json(msg))
-                .await
-                .context("broadcasting click event")?;
-        }
-
-        EventFromBrowser::WindowFocusBlur(WindowFocusBlurEvent { msg }) => {
-            let topic = topics::update(liveview_id);
-            let msg = WithAssociatedData {
-                msg,
-                data: AssociatedDataKind::WindowFocusBlur,
-            };
-            pubsub
-                .broadcast(&topic, Json(msg))
-                .await
-                .context("broadcasting window focus/blur event")?;
+        EventFromBrowser::Click(WithoutValue { msg })
+        | EventFromBrowser::WindowFocus(WithoutValue { msg })
+        | EventFromBrowser::WindowBlur(WithoutValue { msg }) => {
+            send_update(liveview_id, msg, None, pubsub).await?;
         }
 
         EventFromBrowser::MouseEvent(MouseEvent { msg, fields }) => {
-            let topic = topics::update(liveview_id);
-            let msg = WithAssociatedData {
+            send_update(
+                liveview_id,
                 msg,
-                data: AssociatedDataKind::Mouse(fields),
-            };
-            pubsub
-                .broadcast(&topic, Json(msg))
-                .await
-                .context("broadcasting mouse event")?;
+                Some(AssociatedDataKind::Mouse(fields)),
+                pubsub,
+            )
+            .await?;
         }
 
         EventFromBrowser::FormEvent(FormEvent { msg, value }) => {
-            let topic = topics::update(liveview_id);
-            let msg = WithAssociatedData {
+            send_update(
+                liveview_id,
                 msg,
-                data: AssociatedDataKind::Form(value),
-            };
-            pubsub
-                .broadcast(&topic, Json(msg))
-                .await
-                .context("broadcasting form event")?;
+                Some(AssociatedDataKind::Form(value)),
+                pubsub,
+            )
+            .await?;
         }
 
         EventFromBrowser::KeyEvent(KeyEvent { msg, fields }) => {
-            let topic = topics::update(liveview_id);
-            let msg = WithAssociatedData {
+            send_update(
+                liveview_id,
                 msg,
-                data: AssociatedDataKind::Key(fields),
-            };
-            pubsub
-                .broadcast(&topic, Json(msg))
-                .await
-                .context("broadcasting key event")?;
+                Some(AssociatedDataKind::Key(fields)),
+                pubsub,
+            )
+            .await?;
         }
     }
 
     Ok(None)
+}
+
+async fn send_update<P>(
+    liveview_id: LiveViewId,
+    msg: Value,
+    data: Option<AssociatedDataKind>,
+    pubsub: &P,
+) -> anyhow::Result<()>
+where
+    P: PubSub,
+{
+    let topic = topics::update(liveview_id);
+    let msg = WithAssociatedData { msg, data };
+
+    pubsub
+        .broadcast(&topic, Json(msg))
+        .await
+        .context("broadcasting key event")?;
+
+    Ok(())
 }
 
 #[derive(Debug, Deserialize)]
@@ -386,9 +382,9 @@ impl TryFrom<RawMessage> for EventFromBrowser {
             other => match Axm::from_str(other)? {
                 Axm::Click => Ok(EventFromBrowser::Click(from_value(data)?)),
 
-                Axm::WindowFocus | Axm::WindowBlur => {
-                    Ok(EventFromBrowser::WindowFocusBlur(from_value(data)?))
-                }
+                Axm::WindowFocus => Ok(EventFromBrowser::WindowFocus(from_value(data)?)),
+
+                Axm::WindowBlur => Ok(EventFromBrowser::WindowBlur(from_value(data)?)),
 
                 Axm::Input | Axm::Change | Axm::Focus | Axm::Blur | Axm::Submit => {
                     Ok(EventFromBrowser::FormEvent(from_value(data)?))
@@ -405,7 +401,10 @@ impl TryFrom<RawMessage> for EventFromBrowser {
                 | Axm::Mousemove => Ok(EventFromBrowser::MouseEvent(from_value(data)?)),
 
                 Axm::Throttle | Axm::Debounce => {
-                    anyhow::bail!("{:?} is not a valid event type", topic)
+                    anyhow::bail!(
+                        "{:?} events should never be sent to the WebSocket, they're browser only",
+                        topic
+                    )
                 }
             },
         }
@@ -415,21 +414,16 @@ impl TryFrom<RawMessage> for EventFromBrowser {
 #[derive(Debug)]
 enum EventFromBrowser {
     Mount,
-    Click(ClickEvent),
-    WindowFocusBlur(WindowFocusBlurEvent),
+    Click(WithoutValue),
+    WindowFocus(WithoutValue),
+    WindowBlur(WithoutValue),
     FormEvent(FormEvent),
     KeyEvent(KeyEvent),
     MouseEvent(MouseEvent),
 }
 
 #[derive(Debug, Deserialize)]
-struct ClickEvent {
-    #[serde(rename = "m")]
-    msg: Value,
-}
-
-#[derive(Debug, Deserialize)]
-struct WindowFocusBlurEvent {
+struct WithoutValue {
     #[serde(rename = "m")]
     msg: Value,
 }
@@ -461,13 +455,11 @@ struct KeyEvent {
 #[derive(Serialize, Deserialize, Debug)]
 pub(crate) struct WithAssociatedData<T> {
     pub(crate) msg: T,
-    pub(crate) data: AssociatedDataKind,
+    pub(crate) data: Option<AssociatedDataKind>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 pub(crate) enum AssociatedDataKind {
-    Click,
-    WindowFocusBlur,
     Form(FormEventValue),
     Key(KeyEventFields),
     Mouse(MouseEventFields),

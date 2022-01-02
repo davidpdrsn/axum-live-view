@@ -6,7 +6,10 @@ use axum::{
     Router,
 };
 use axum_liveview::{
-    html, liveview::Updated, AssociatedData, EmbedLiveView, Html, LiveView, Subscriptions,
+    html,
+    live_view::{EmbedLiveView, EventData, LiveView, Subscriptions, Updated},
+    middleware::LiveViewLayer,
+    Html,
 };
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::{collections::HashMap, env, net::SocketAddr, path::PathBuf};
@@ -28,7 +31,7 @@ async fn main() {
             .handle_error(|_| async { StatusCode::INTERNAL_SERVER_ERROR }),
         )
         .merge(axum_liveview::routes())
-        .layer(axum_liveview::LiveViewLayer::new(pubsub));
+        .layer(LiveViewLayer::new(pubsub));
 
     let addr = SocketAddr::from(([0, 0, 0, 0], 4000));
     axum::Server::bind(&addr)
@@ -67,7 +70,7 @@ impl LiveView for FormView {
 
     fn init(&self, _subscriptions: &mut Subscriptions<Self>) {}
 
-    async fn update(mut self, msg: Msg, data: AssociatedData) -> Updated<Self> {
+    async fn update(mut self, msg: Msg, data: EventData) -> Updated<Self> {
         match msg {
             Msg::Validate => {
                 let values: FormValues = transcode(&data.as_form().unwrap());
