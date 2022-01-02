@@ -30,7 +30,7 @@
     rust_2018_idioms,
     future_incompatible,
     nonstandard_style,
-    // missing_debug_implementations,
+    missing_debug_implementations,
     // missing_docs
 )]
 #![deny(unreachable_pub, private_in_public)]
@@ -39,39 +39,24 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![cfg_attr(test, allow(clippy::float_cmp))]
 
-use axum::{
-    response::{Headers, IntoResponse},
-    routing::get,
-    Router,
-};
-
 #[macro_use]
 mod macros;
 
-pub mod associated_data;
+#[doc(hidden)]
 pub mod html;
-pub mod js;
-pub mod liveview;
+
+pub mod js_command;
+pub mod live_view;
 pub mod middleware;
 pub mod pubsub;
 
-mod subscriptions;
 mod topics;
 mod ws;
 
 pub use self::{
-    associated_data::AssociatedData,
     html::Html,
-    liveview::{embed::EmbedLiveView, LiveView},
-    middleware::layer,
-    pubsub::PubSub,
-    subscriptions::Subscriptions,
+    live_view::{EmbedLiveView, EventData, LiveView, Updated},
+    middleware::LiveViewLayer,
+    ws::routes,
 };
-pub use axum_liveview_macros::html;
-
-pub fn routes<B>() -> Router<B>
-where
-    B: Send + 'static,
-{
-    Router::new().merge(ws::routes())
-}
+pub use axum_live_view_macros::html;

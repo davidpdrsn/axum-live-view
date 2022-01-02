@@ -5,8 +5,11 @@ use axum::{
     routing::{get, get_service},
     Router,
 };
-use axum_liveview::{
-    html, liveview::Updated, AssociatedData, EmbedLiveView, Html, LiveView, Subscriptions,
+use axum_live_view::{
+    html,
+    live_view::{EmbedLiveView, EventData, LiveView, Subscriptions, Updated},
+    middleware::LiveViewLayer,
+    Html,
 };
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::{collections::HashMap, env, net::SocketAddr, path::PathBuf};
@@ -16,7 +19,7 @@ use tower_http::services::ServeFile;
 async fn main() {
     tracing_subscriber::fmt::init();
 
-    let pubsub = axum_liveview::pubsub::InProcess::new();
+    let pubsub = axum_live_view::pubsub::InProcess::new();
 
     let app = Router::new()
         .route("/", get(root))
@@ -27,8 +30,8 @@ async fn main() {
             ))
             .handle_error(|_| async { StatusCode::INTERNAL_SERVER_ERROR }),
         )
-        .merge(axum_liveview::routes())
-        .layer(axum_liveview::layer(pubsub));
+        .merge(axum_live_view::routes())
+        .layer(LiveViewLayer::new(pubsub));
 
     let addr = SocketAddr::from(([0, 0, 0, 0], 4000));
     axum::Server::bind(&addr)
@@ -67,7 +70,7 @@ impl LiveView for FormView {
 
     fn init(&self, _subscriptions: &mut Subscriptions<Self>) {}
 
-    async fn update(mut self, msg: Msg, data: AssociatedData) -> Updated<Self> {
+    async fn update(mut self, msg: Msg, data: EventData) -> Updated<Self> {
         match msg {
             Msg::Validate => {
                 let values: FormValues = transcode(&data.as_form().unwrap());

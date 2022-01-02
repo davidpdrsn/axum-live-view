@@ -1,30 +1,33 @@
 use crate::{
+    live_view::EmbedLiveView,
     pubsub::{self, PubSub},
-    EmbedLiveView,
 };
 use axum::http::{Request, Response};
 use std::task::{Context, Poll};
 use tower_service::Service;
 
-pub fn layer<P>(pubsub: P) -> Layer<P>
-where
-    P: PubSub,
-{
-    Layer { pubsub }
-}
-
-pub struct Layer<P> {
+#[derive(Debug, Clone)]
+pub struct LiveViewLayer<P> {
     pubsub: P,
 }
 
-impl<S, P> tower_layer::Layer<S> for Layer<P>
+impl<P> LiveViewLayer<P> {
+    pub fn new(pubsub: P) -> LiveViewLayer<P>
+    where
+        P: PubSub,
+    {
+        LiveViewLayer { pubsub }
+    }
+}
+
+impl<S, P> tower_layer::Layer<S> for LiveViewLayer<P>
 where
     P: PubSub + Clone,
 {
-    type Service = Middleware<S, P>;
+    type Service = LiveViewMiddleware<S, P>;
 
     fn layer(&self, inner: S) -> Self::Service {
-        Middleware {
+        LiveViewMiddleware {
             inner,
             pubsub: self.pubsub.clone(),
         }
@@ -32,12 +35,12 @@ where
 }
 
 #[derive(Clone, Debug)]
-pub struct Middleware<S, P> {
+pub struct LiveViewMiddleware<S, P> {
     inner: S,
     pubsub: P,
 }
 
-impl<S, P, ReqBody, ResBody> Service<Request<ReqBody>> for Middleware<S, P>
+impl<S, P, ReqBody, ResBody> Service<Request<ReqBody>> for LiveViewMiddleware<S, P>
 where
     P: PubSub + Clone,
     S: Service<Request<ReqBody>, Response = Response<ResBody>>,

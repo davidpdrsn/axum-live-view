@@ -84,6 +84,7 @@ where
     }
 }
 
+#[derive(Debug, Clone, Copy, Default)]
 pub struct Bincode<T>(pub T);
 
 impl<T> Encode for Bincode<T>

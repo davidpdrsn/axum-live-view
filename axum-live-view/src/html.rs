@@ -247,7 +247,7 @@ pub(crate) struct Diff(Value);
 mod tests {
     #[allow(unused_imports)]
     use super::*;
-    use crate as axum_liveview;
+    use crate as axum_live_view;
     use crate::html;
 
     #[test]

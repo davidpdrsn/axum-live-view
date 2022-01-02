@@ -17,28 +17,28 @@ This is what using axum-liveview looks like.
 
 ```rust
 use axum::{async_trait, response::IntoResponse, routing::get, Router};
-use axum_liveview::{html, AssociatedData, EmbedLiveView, Html, LiveView};
+use axum_live_view::{html, AssociatedData, EmbedLiveView, Html, LiveView};
 use serde::{Deserialize, Serialize};
 
 #[tokio::main]
 async fn main() {
     // liveviews must send and receive messages both from the browser and from
-    // other parts of your application. `axum_liveview::pubsub` is how that is
+    // other parts of your application. `axum_live_view::pubsub` is how that is
     // done.
     //
     // It allows you publish messages to topics and subscribe to a stream
     // of messages in a particular topic.
     //
     // `InProcess` is a pubsub implementation that uses `tokio::sync::broadcast`.
-    let pubsub = axum_liveview::pubsub::InProcess::new();
+    let pubsub = axum_live_view::pubsub::InProcess::new();
 
     // A normal axum router.
     let app = Router::new()
         .route("/", get(root))
         // liveview has a few routes of its own that you have to include.
-        .merge(axum_liveview::routes())
+        .merge(axum_live_view::routes())
         // liveview also has a middleware that you must include.
-        .layer(axum_liveview::layer(pubsub));
+        .layer(axum_live_view::layer(pubsub));
 
     // We run the app just like any other axum app
     axum::Server::bind(&"0.0.0.0:3000".parse().unwrap())
@@ -61,7 +61,7 @@ async fn root(
         <html>
             <head>
                 // axum-liveview comes with some assets that you must load.
-                { axum_liveview::assets() }
+                { axum_live_view::assets() }
             </head>
             <body>
                 // Embed our liveview into the HTML template. This will render the

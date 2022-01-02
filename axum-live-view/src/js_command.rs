@@ -2,7 +2,7 @@ use axum::http::Uri;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct JsCommand {
     pub(crate) kind: JsCommandKind,
     pub(crate) delay_ms: Option<u64>,
@@ -15,7 +15,7 @@ impl JsCommand {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) enum JsCommandKind {
     NavigateTo { uri: String },
     AddClass { selector: String, klass: String },

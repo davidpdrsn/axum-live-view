@@ -1,12 +1,20 @@
-use crate::{html::Html, js::JsCommand, AssociatedData, Subscriptions};
+use crate::{html::Html, js_command::JsCommand};
 use axum::async_trait;
-use axum_liveview_macros::html;
+use axum_live_view_macros::html;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::fmt;
 use uuid::Uuid;
 
+mod associated_data;
 pub(crate) mod embed;
 mod lifecycle;
+mod subscriptions;
+
+pub use self::{
+    associated_data::{EventData, FormEventData, KeyEventData, MouseEventData},
+    embed::EmbedLiveView,
+    subscriptions::Subscriptions,
+};
 
 #[async_trait]
 pub trait LiveView: Sized + Send + Sync + 'static {
@@ -14,7 +22,7 @@ pub trait LiveView: Sized + Send + Sync + 'static {
 
     fn init(&self, _subscriptions: &mut Subscriptions<Self>) {}
 
-    async fn update(self, msg: Self::Message, data: AssociatedData) -> Updated<Self>;
+    async fn update(self, msg: Self::Message, data: EventData) -> Updated<Self>;
 
     fn render(&self) -> Html<Self::Message>;
 }
@@ -36,7 +44,7 @@ impl fmt::Display for LiveViewId {
 }
 
 pub(super) fn wrap_in_liveview_container<T>(liveview_id: LiveViewId, markup: Html<T>) -> Html<T> {
-    use crate as axum_liveview;
+    use crate as axum_live_view;
 
     html! {
         <div class="liveview-container" data-liveview-id={ liveview_id.to_string() }>
@@ -45,6 +53,7 @@ pub(super) fn wrap_in_liveview_container<T>(liveview_id: LiveViewId, markup: Htm
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct Updated<T> {
     liveview: T,
     js_commands: Vec<JsCommand>,

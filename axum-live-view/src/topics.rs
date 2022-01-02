@@ -1,13 +1,13 @@
 use crate::{
     html,
-    js::JsCommand,
-    liveview::LiveViewId,
+    js_command::JsCommand,
+    live_view::LiveViewId,
     pubsub::{Decode, Encode, Topic},
     ws::WithAssociatedData,
 };
 use axum::Json;
-use serde::{de::DeserializeOwned, Serialize};
-use std::marker::PhantomData;
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use std::{fmt, marker::PhantomData};
 
 pub(crate) fn mounted(liveview_id: LiveViewId) -> impl Topic<Message = ()> {
     liveview_local(liveview_id, "mounted")
@@ -19,9 +19,14 @@ pub(crate) fn initial_render(
     liveview_local(liveview_id, "initial-render")
 }
 
-pub(crate) fn rendered(
-    liveview_id: LiveViewId,
-) -> impl Topic<Message = Json<(Option<html::Diff>, Vec<JsCommand>)>> {
+#[derive(Debug, Serialize, Deserialize)]
+pub(crate) enum RenderedMessage {
+    Diff(html::Diff),
+    DiffWithCommands(html::Diff, Vec<JsCommand>),
+    Commands(Vec<JsCommand>),
+}
+
+pub(crate) fn rendered(liveview_id: LiveViewId) -> impl Topic<Message = Json<RenderedMessage>> {
     liveview_local(liveview_id, "rendered")
 }
 
@@ -46,6 +51,17 @@ where
 pub(crate) struct FixedTopic<M> {
     topic: String,
     _marker: PhantomData<fn() -> M>,
+}
+
+impl<M> fmt::Debug for FixedTopic<M> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Self { topic, _marker } = self;
+
+        f.debug_struct("FixedTopic")
+            .field("topic", &topic)
+            .field("_marker", &_marker)
+            .finish()
+    }
 }
 
 impl<M> FixedTopic<M> {

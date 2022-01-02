@@ -1,5 +1,10 @@
-use super::{wrap_in_liveview_container, LiveView, LiveViewId, Updated};
-use crate::{html::Html, js::JsCommand, topics, PubSub, Subscriptions};
+use super::{wrap_in_liveview_container, LiveView, LiveViewId, Subscriptions, Updated};
+use crate::{
+    html::Html,
+    js_command::JsCommand,
+    pubsub::PubSub,
+    topics::{self, RenderedMessage},
+};
 use anyhow::Context;
 use async_stream::stream;
 use axum::Json;
@@ -197,17 +202,32 @@ where
                         markup = new_markup;
                     }
 
-                    if let Some(diff) = diff {
-                        let _ = pubsub
-                            .broadcast(
-                                &topics::rendered(liveview_id),
-                                Json((Some(diff), js_commands)),
-                            )
-                            .await;
-                    } else if !js_commands.is_empty() {
-                        let _ = pubsub
-                            .broadcast(&topics::rendered(liveview_id), Json((None, js_commands)))
-                            .await;
+                    match diff {
+                        Some(diff) if js_commands.is_empty() => {
+                            let _ = pubsub
+                                .broadcast(
+                                    &topics::rendered(liveview_id),
+                                    Json(RenderedMessage::Diff(diff)),
+                                )
+                                .await;
+                        }
+                        Some(diff) => {
+                            let _ = pubsub
+                                .broadcast(
+                                    &topics::rendered(liveview_id),
+                                    Json(RenderedMessage::DiffWithCommands(diff, js_commands)),
+                                )
+                                .await;
+                        }
+                        None if !js_commands.is_empty() => {
+                            let _ = pubsub
+                                .broadcast(
+                                    &topics::rendered(liveview_id),
+                                    Json(RenderedMessage::Commands(js_commands)),
+                                )
+                                .await;
+                        }
+                        None => {}
                     }
                 }
 

@@ -1,4 +1,4 @@
-import * as LiveView from "axum-liveview"
+import * as LiveView from "axum-live-view"
 
 LiveView.connectAndRun({
   host: "localhost",
