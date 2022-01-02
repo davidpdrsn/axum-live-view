@@ -8,7 +8,7 @@ use axum::{
     Router,
 };
 use axum_liveview::{
-    html, liveview::Updated, AssociatedData, EmbedLiveView, Html, LiveView, Subscriptions,
+    html, js, liveview::Updated, AssociatedData, EmbedLiveView, Html, LiveView, Subscriptions,
 };
 use serde::{Deserialize, Serialize};
 use std::{env, net::SocketAddr, path::PathBuf};

@@ -20,7 +20,7 @@ interface ViewStates {
 }
 
 interface ViewState {
-  [index: string | number]: string | string[] | ViewState;
+  [index: string | number]: string | string[] | null | ViewState;
 }
 
 export function connectAndRun(options: LiveViewOptions) {
@@ -63,59 +63,67 @@ function onOpen(socket: WebSocket, connectState: ConnectState, options: LiveView
   }
 }
 
-function onMessage(socket: WebSocket, event: MessageEvent, connectState: ConnectState, options: LiveViewOptions, viewStates: ViewStates) {
-  type Msg = [string, string, ViewState]
+interface HealthPing { t: "h" }
+interface InitialRender { t: "i", i: string, d: ViewState }
+interface Rendered { t: "r", i: string, d: ViewState }
+interface JsCommand { t: "j", i: string, d: JsCommandData[] }
+interface LiveViewGone { t: "liveview-gone", i: string }
 
+type Msg = HealthPing | InitialRender | Rendered | JsCommand | LiveViewGone
+
+interface JsCommandData { delay_ms: number | null, kind: JsCommandKind }
+
+function onMessage(socket: WebSocket, event: MessageEvent, connectState: ConnectState, options: LiveViewOptions, viewStates: ViewStates) {
   const payload: Msg = JSON.parse(event.data)
 
-  if (payload.length === 3) {
-    const [liveviewId, topic, data] = payload
+  if (payload.t === "h") {
+    socket.send(JSON.stringify({ "h": "ok" }))
 
-    if (topic === "r") {
-      // rendered
-      // const diff = data
-      // const element = document.querySelector(`[data-liveview-id="${liveviewId}"]`)
+  } else if (payload.t === "i") {
+    // initial-render
 
-      // patchViewState(viewStates[liveviewId], diff)
+    const liveviewId = payload.i
+    const data = payload.d
+    const element = document.querySelector(`[data-liveview-id="${liveviewId}"]`)
+    if (!element) { throw "Element not found" }
+    const html = buildHtmlFromState(data)
+    updateDom(socket, element, html)
+    viewStates[liveviewId] = data
 
-      // const html = buildHtmlFromState(this.viewStates[liveviewId])
-      // this.updateDom(element, html)
+  } else if (payload.t === "r") {
+    // rendered
+    const liveviewId = payload.i
+    const diff = payload.d
+    const element = document.querySelector(`[data-liveview-id="${liveviewId}"]`)
+    if (!element) { throw "Element not found" }
 
-    } else if (topic === "i") {
-      // initial-render
-      const element = document.querySelector(`[data-liveview-id="${liveviewId}"]`)
-      if (!element) throw "Element not found"
-      const html = buildHtmlFromState(data)
-      updateDom(socket, element, html)
-      viewStates[liveviewId] = data
+    const state = viewStates[liveviewId]
+    if (!state) { throw "No liveview state found" }
+    patchViewState(state, diff)
 
-    } else if (topic === "j") {
-      // // js-command
-      // const _: void = data
-      // this.handleJsCommand(data)
+    var newState = viewStates[liveviewId]
+    if (!newState) { throw "state not found after merging" }
+    const html = buildHtmlFromState(newState)
+    updateDom(socket, element, html)
 
-    } else if (topic === "liveview-gone") {
-      // console.error(
-      //   `Something went wrong on the server and liveview ${liveviewId} is gone`
-      // )
-      // this.socket.close()
-      // this.closedForGood = true
+  } else if (payload.t === "j") {
+    // js-command
+    payload.d.forEach((cmd) => {
+      handleJsCommand(cmd)
+    })
+    // handleJsCommand(data)
 
-    } else {
-      console.error("unknown topic", topic, data)
-    }
-
-  // } else if (payload.length === 1) {
-  //   const [topic] = payload
-  //   if (topic === "h") {
-  //     // heartbeat
-  //     this.socket.send(JSON.stringify({ "h": "ok" }))
-  //   } else {
-  //     console.error("unknown topic", topic)
-  //   }
+  } else if (payload.t === "liveview-gone") {
+    // liveview-gone
+    const liveviewId = payload.i
+    console.error(
+      `Something went wrong on the server and liveview ${liveviewId} is gone`
+    )
+    socket.close()
+    connectState.closedForGood = true
 
   } else {
-    console.error("unknown socket message", event.data)
+    const _: never = payload
   }
 }
 
@@ -442,7 +450,7 @@ function buildHtmlFromState(state: ViewState): string {
       combined = combined.concat(value)
       const variable = state[i]
 
-      if (typeof variable === "undefined") {
+      if (variable === undefined || variable === null) {
         return
       }
 
@@ -450,7 +458,6 @@ function buildHtmlFromState(state: ViewState): string {
         combined = combined.concat(variable)
 
       } else if (Array.isArray(variable)) {
-        console.log(variable)
         throw "wat"
 
       } else {
@@ -499,39 +506,85 @@ function updateDom(socket: WebSocket, element: Element, html: string) {
     })
 }
 
-// function patchViewState(state: any, diff: any) {
-//   if (typeof state !== 'object') {
-//     throw "Cannot merge non-object"
-//   }
+function patchViewState(state: ViewState, diff: ViewState) {
+  for (const [key, val] of Object.entries(diff)) {
+    if (typeof val === "string" || Array.isArray(val)) {
+      state[key] = val
 
-//   function deepMerge(state: any, diff: any) {
-//     for (const [key, val] of Object.entries(diff)) {
-//       if (val !== null && typeof val === `object` && val.length === undefined) {
-//         if (state[key] === undefined) {
-//           state[key] = {}
-//         }
-//         if (typeof state[key] === 'string') {
-//           state[key] = val
-//         } else {
-//           patchViewState(state[key], val)
-//         }
-//       } else {
-//         state[key] = val
-//       }
-//     }
+    } else if (val === null) {
+      delete state[key]
 
-//     return state
-//   }
+    } else if (typeof val === "object") {
+      const nestedState = state[key]
+      if (typeof nestedState === "object" && !Array.isArray(nestedState) && nestedState !== null) {
+        patchViewState(nestedState, val)
+      }
 
-//   deepMerge(state, diff)
+    } else {
+      const _: never = val
+    }
+  }
+}
 
-//   for (const [key, val] of Object.entries(diff)) {
-//     if (val === null) {
-//       delete state[key]
-//     }
-//   }
+type JsCommandKind =
+  { AddClass: { selector: string, klass: string } }
+  | { RemoveClass: { selector: string, klass: string } }
+  | { ToggleClass: { selector: string, klass: string } }
+  | { NavigateTo: { uri: string } }
+  | { ClearValue: { selector: string } }
+  | { SetTitle: { title: string } }
+  | { HistoryPushState: { uri: string } }
 
-//   // if (state[fixed].length == Object.keys(state).length - 1) {
-//   //   delete state[state[fixed].length - 1]
-//   // }
-// }
+function handleJsCommand(cmd: JsCommandData) {
+  const run = () => {
+    if ("AddClass" in cmd.kind) {
+      const { selector, klass } = cmd.kind.AddClass
+      document.querySelectorAll(selector).forEach((element) => {
+        element.classList.add(klass)
+      })
+
+    } else if ("RemoveClass" in cmd.kind) {
+      const { selector, klass } = cmd.kind.RemoveClass
+      document.querySelectorAll(selector).forEach((element) => {
+        element.classList.remove(klass)
+      })
+
+    } else if ("ToggleClass" in cmd.kind) {
+      const { selector, klass } = cmd.kind.ToggleClass
+      document.querySelectorAll(selector).forEach((element) => {
+        element.classList.toggle(klass)
+      })
+
+    } else if ("NavigateTo" in cmd.kind) {
+      const { uri } = cmd.kind.NavigateTo
+      if (uri.startsWith("http")) {
+        window.location.href = uri
+      } else {
+        window.location.pathname = uri
+      }
+
+    } else if ("ClearValue" in cmd.kind) {
+      const { selector } = cmd.kind.ClearValue
+      document.querySelectorAll(selector).forEach((element) => {
+        if (element instanceof HTMLInputElement || element instanceof HTMLSelectElement || element instanceof HTMLTextAreaElement) {
+          element.value = ""
+        }
+      })
+
+    } else if ("SetTitle" in cmd.kind) {
+      document.title = cmd.kind.SetTitle.title
+
+    } else if ("HistoryPushState" in cmd.kind) {
+      window.history.pushState({}, "", cmd.kind.HistoryPushState.uri);
+
+    } else {
+      const _: never = cmd.kind
+    }
+  }
+
+  if (cmd.delay_ms) {
+    setTimeout(run, cmd.delay_ms)
+  } else {
+    run()
+  }
+}
