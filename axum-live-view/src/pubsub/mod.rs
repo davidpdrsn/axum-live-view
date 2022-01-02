@@ -12,7 +12,7 @@ mod encode_decode;
 mod in_process;
 
 pub use self::{
-    encode_decode::{Bincode, Decode, Encode},
+    encode_decode::{Decode, Encode},
     in_process::InProcess,
 };
 

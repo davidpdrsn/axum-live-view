@@ -9,7 +9,6 @@ use axum::{
 use axum_live_view::{
     html, js_command,
     live_view::{EmbedLiveView, EventData, FormEventData, LiveView, Subscriptions, Updated},
-    middleware::LiveViewLayer,
     pubsub::{InProcess, PubSub, Topic},
     Html,
 };
@@ -29,6 +28,7 @@ async fn main() {
     tracing_subscriber::fmt::init();
 
     let pubsub = InProcess::new();
+    let (live_view_routes, live_view_layer) = axum_live_view::router_parts(pubsub.clone());
 
     let messages: Messages = Default::default();
 
@@ -53,10 +53,10 @@ async fn main() {
             ))
             .handle_error(|_| async { StatusCode::INTERNAL_SERVER_ERROR }),
         )
-        .merge(axum_live_view::routes::<InProcess, _>())
+        .merge(live_view_routes)
         .layer(
             ServiceBuilder::new()
-                .layer(LiveViewLayer::new(pubsub.clone()))
+                .layer(live_view_layer)
                 .layer(AddExtensionLayer::new(pubsub))
                 .layer(AddExtensionLayer::new(messages)),
         );

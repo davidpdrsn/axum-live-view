@@ -1,6 +1,6 @@
-# axum-liveview
+# axum-live-view
 
-axum-liveview allows you to build rich, real-time experiences with
+axum-live-view allows you to build rich, real-time experiences with
 server-rendered HTML. This is done entirely in Rust - no JavaScript or WASM
 needed.
 
@@ -13,11 +13,11 @@ change and you shouldn't use this for anything serious.
 
 # Example usage
 
-This is what using axum-liveview looks like.
+This is what using axum-live-view looks like.
 
 ```rust
 use axum::{async_trait, response::IntoResponse, routing::get, Router};
-use axum_live_view::{html, AssociatedData, EmbedLiveView, Html, LiveView};
+use axum_live_view::{html, EventData, EmbedLiveView, Html, LiveView, LiveViewLayer, pubsub::InProcess, Updated};
 use serde::{Deserialize, Serialize};
 
 #[tokio::main]
@@ -30,15 +30,16 @@ async fn main() {
     // of messages in a particular topic.
     //
     // `InProcess` is a pubsub implementation that uses `tokio::sync::broadcast`.
-    let pubsub = axum_live_view::pubsub::InProcess::new();
+    let pubsub = InProcess::new();
+
+    // liveview has a few routes and a middleware of its own that you have to include.
+    let (live_view_routes, live_view_layer) = axum_live_view::router_parts(pubsub);
 
     // A normal axum router.
     let app = Router::new()
         .route("/", get(root))
-        // liveview has a few routes of its own that you have to include.
-        .merge(axum_live_view::routes())
-        // liveview also has a middleware that you must include.
-        .layer(axum_live_view::layer(pubsub));
+        .merge(live_view_routes)
+        .layer(live_view_layer);
 
     // We run the app just like any other axum app
     axum::Server::bind(&"0.0.0.0:3000".parse().unwrap())
@@ -51,7 +52,7 @@ async fn main() {
 async fn root(
     // `EmbedLiveView` is an extractor that is hooked up to the liveview setup
     // and enables you to embed liveviews into HTML templates.
-    embed_liveview: EmbedLiveView,
+    embed_liveview: EmbedLiveView<InProcess>,
 ) -> impl IntoResponse {
     // `Counter` is our liveview and we initialize it with the default values.
     let counter = Counter::default();
@@ -60,8 +61,11 @@ async fn root(
         <!DOCTYPE html>
         <html>
             <head>
-                // axum-liveview comes with some assets that you must load.
-                { axum_live_view::assets() }
+                // axum-live-view comes with some assets that you must bundle and load.
+                // Your JavaScript should contain something along the lines of
+                //
+                //     const liveView = new LiveView({ host: 'localhost', port: 3000 })
+                //     liveView.connect()
             </head>
             <body>
                 // Embed our liveview into the HTML template. This will render the
@@ -72,15 +76,6 @@ async fn root(
                 // and sending the changes down to the client via a WebSocket
                 // connection.
                 { embed_liveview.embed(counter) }
-
-                // This is all the JavaScript you need to write to initialize
-                // the liveview connection and handle updates.
-                <script>
-                    r#"
-                        const liveView = new LiveView({ host: 'localhost', port: 3000 })
-                        liveView.connect()
-                    "#
-                </script>
             </body>
         </html>
     }
@@ -101,10 +96,10 @@ impl LiveView for Counter {
 
     // Update the view based on which message it receives.
     //
-    // `AssociatedData` contains data from the event that happened in the
+    // `EventData` contains data from the event that happened in the
     // browser. This might be values of input fields or which key was pressed in
     // a keyboard event.
-    async fn update(mut self, msg: Msg, data: AssociatedData) -> Self {
+    async fn update(mut self, msg: Msg, data: EventData) -> Updated<Self> {
         match msg {
             Msg::Increment => {
                 self.count += 1;
@@ -116,7 +111,7 @@ impl LiveView for Counter {
             }
         }
 
-        self
+        Updated::new(self)
     }
 
     // Render the liveview into an HTML template. This function is called during
