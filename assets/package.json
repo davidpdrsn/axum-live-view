@@ -2,8 +2,8 @@
   "name": "axum-live-view",
   "version": "0.1.0",
   "description": "axum-live-view JavaScript client",
-  "main": "dist/src/liveview.js",
-  "typings": "dist/src/liveview.d.ts",
+  "main": "dist/src/live_view.js",
+  "typings": "dist/src/live_view.d.ts",
   "devDependencies": {
     "typescript": "^4.5.4"
   },
