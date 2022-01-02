@@ -51,12 +51,22 @@ pub mod middleware;
 pub mod pubsub;
 
 mod topics;
+mod util;
 mod ws;
 
 pub use self::{
     html::Html,
     live_view::{EmbedLiveView, EventData, LiveView, Updated},
     middleware::LiveViewLayer,
-    ws::routes,
 };
 pub use axum_live_view_macros::html;
+
+pub fn router_parts<P, B>(pubsub: P) -> (axum::Router<B>, LiveViewLayer<P>)
+where
+    P: pubsub::PubSub + Clone,
+    B: Send + 'static,
+{
+    let routes = ws::routes::<P, B>();
+    let layer = LiveViewLayer::new(pubsub);
+    (routes, layer)
+}

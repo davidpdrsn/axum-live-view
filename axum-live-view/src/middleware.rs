@@ -9,7 +9,7 @@ pub struct LiveViewLayer<P> {
 }
 
 impl<P> LiveViewLayer<P> {
-    pub fn new(pubsub: P) -> LiveViewLayer<P>
+    pub(crate) fn new(pubsub: P) -> LiveViewLayer<P>
     where
         P: PubSub,
     {

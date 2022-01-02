@@ -109,33 +109,6 @@ where
     }
 }
 
-#[derive(Debug, Clone, Copy, Default)]
-pub struct Bincode<T>(pub T);
-
-impl<T> Encode for Bincode<T>
-where
-    T: Serialize,
-{
-    type Error = bincode::Error;
-
-    fn encode(&self) -> Result<Bytes, Self::Error> {
-        let bytes = bincode::serialize(&self.0)?;
-        let bytes = Bytes::copy_from_slice(&bytes);
-        Ok(bytes)
-    }
-}
-
-impl<T> Decode for Bincode<T>
-where
-    T: DeserializeOwned,
-{
-    type Error = bincode::Error;
-
-    fn decode(msg: Bytes) -> Result<Self, Self::Error> {
-        Ok(Self(bincode::deserialize(&msg)?))
-    }
-}
-
 impl<T> Encode for Option<T>
 where
     T: Encode,

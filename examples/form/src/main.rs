@@ -8,7 +8,6 @@ use axum::{
 use axum_live_view::{
     html,
     live_view::{EmbedLiveView, EventData, LiveView, Subscriptions, Updated},
-    middleware::LiveViewLayer,
     pubsub::InProcess,
     Html,
 };
@@ -21,6 +20,7 @@ async fn main() {
     tracing_subscriber::fmt::init();
 
     let pubsub = axum_live_view::pubsub::InProcess::new();
+    let (live_view_routes, live_view_layer) = axum_live_view::router_parts(pubsub);
 
     let app = Router::new()
         .route("/", get(root))
@@ -31,8 +31,8 @@ async fn main() {
             ))
             .handle_error(|_| async { StatusCode::INTERNAL_SERVER_ERROR }),
         )
-        .merge(axum_live_view::routes::<InProcess, _>())
-        .layer(LiveViewLayer::new(pubsub));
+        .merge(live_view_routes)
+        .layer(live_view_layer);
 
     let addr = SocketAddr::from(([0, 0, 0, 0], 4000));
     axum::Server::bind(&addr)

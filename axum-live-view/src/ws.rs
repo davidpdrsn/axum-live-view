@@ -14,14 +14,14 @@ use axum::{
 use futures_util::{sink::SinkExt, stream::BoxStream, Sink, Stream, StreamExt};
 use serde::{Deserialize, Serialize};
 use serde_json::{from_value, json, Value};
-use std::{collections::HashMap, time::Duration};
+use std::{collections::HashMap, convert::TryFrom, time::Duration};
 use tokio::time::{timeout, Instant};
 use tokio_stream::StreamMap;
 
-pub fn routes<P, B>() -> Router<B>
+pub(crate) fn routes<P, B>() -> Router<B>
 where
-    B: Send + 'static,
     P: PubSub + Clone,
+    B: Send + 'static,
 {
     Router::new().route("/live", get(ws::<P>))
 }

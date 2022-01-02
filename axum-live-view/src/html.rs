@@ -211,16 +211,14 @@ impl<T> Html<T> {
     where
         T: Serialize,
     {
-        use itertools::Itertools;
+        let a = self.fixed.into_iter();
+        let b = self.dynamic.into_iter().map(|dynamic| match dynamic {
+            DynamicFragment::Message(msg) => serde_json::to_string(&msg).unwrap(),
+            DynamicFragment::Html(inner) => inner.render(),
+            DynamicFragment::String(s) => s,
+        });
 
-        self.fixed
-            .into_iter()
-            .interleave(self.dynamic.into_iter().map(|dynamic| match dynamic {
-                DynamicFragment::Message(msg) => serde_json::to_string(&msg).unwrap(),
-                DynamicFragment::Html(inner) => inner.render(),
-                DynamicFragment::String(s) => s,
-            }))
-            .collect::<String>()
+        crate::util::interleave::interleave(a, b).collect::<String>()
     }
 }
 
