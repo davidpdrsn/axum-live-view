@@ -6,7 +6,7 @@ use crate::{
     ws::WithAssociatedData,
 };
 use axum::Json;
-use serde::{de::DeserializeOwned, Serialize};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::marker::PhantomData;
 
 pub(crate) fn mounted(liveview_id: LiveViewId) -> impl Topic<Message = ()> {
@@ -19,9 +19,14 @@ pub(crate) fn initial_render(
     liveview_local(liveview_id, "initial-render")
 }
 
-pub(crate) fn rendered(
-    liveview_id: LiveViewId,
-) -> impl Topic<Message = Json<(Option<html::Diff>, Vec<JsCommand>)>> {
+#[derive(Debug, Serialize, Deserialize)]
+pub(crate) enum RenderedMessage {
+    Diff(html::Diff),
+    DiffWithCommands(html::Diff, Vec<JsCommand>),
+    Commands(Vec<JsCommand>),
+}
+
+pub(crate) fn rendered(liveview_id: LiveViewId) -> impl Topic<Message = Json<RenderedMessage>> {
     liveview_local(liveview_id, "rendered")
 }
 

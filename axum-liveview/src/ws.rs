@@ -1,18 +1,17 @@
 use crate::{
-    html::{self, Diff},
-    js::JsCommand,
+    html,
     liveview::{embed::EmbedLiveView, LiveViewId},
     pubsub::PubSub,
-    topics,
+    topics::{self, RenderedMessage},
 };
 use anyhow::Context;
 use axum::{
-    extract::ws::{self, WebSocket, WebSocketUpgrade},
+    extract::ws::{self, WebSocketUpgrade},
     response::IntoResponse,
     routing::get,
     Json, Router,
 };
-use futures_util::{stream::BoxStream, StreamExt};
+use futures_util::{sink::SinkExt, stream::BoxStream, Sink, Stream, StreamExt};
 use serde::{Deserialize, Serialize};
 use serde_json::{from_value, json, Value};
 use std::{collections::HashMap, time::Duration};
@@ -27,16 +26,21 @@ where
 }
 
 async fn ws(upgrade: WebSocketUpgrade, embed_liveview: EmbedLiveView) -> impl IntoResponse {
-    upgrade.on_upgrade(move |socket| handle_socket(socket, embed_liveview.pubsub))
+    upgrade.on_upgrade(move |socket| {
+        let (write, read) = socket.split();
+        handle_socket(read, write, embed_liveview.pubsub)
+    })
 }
 
 #[derive(Default)]
 struct SocketState {
-    diff_streams: StreamMap<LiveViewId, BoxStream<'static, (Option<Diff>, Vec<JsCommand>)>>,
+    diff_streams: StreamMap<LiveViewId, BoxStream<'static, RenderedMessage>>,
 }
 
-async fn handle_socket<P>(mut socket: WebSocket, pubsub: P)
+async fn handle_socket<R, W, P>(mut read: R, mut write: W, pubsub: P)
 where
+    R: Stream<Item = Result<ws::Message, axum::Error>> + Unpin,
+    W: Sink<ws::Message> + Unpin,
     P: PubSub,
 {
     let mut state = SocketState::default();
@@ -65,7 +69,7 @@ where
 
                 if heartbeat_inflight { continue }
 
-                if send_message_to_socket(&mut socket, None, HEARTBEAT_TOPIC, None::<bool>).await.is_ok() {
+                if send_message_to_socket(&mut write, None, HEARTBEAT_TOPIC, None::<bool>).await.is_ok() {
                     heartbeat_inflight = true;
                     heartbeat_sent_at = Instant::now();
                     heartbeat_bounce.as_mut().reset(Instant::now() + HEARTBEAT_BOUNCE);
@@ -82,12 +86,12 @@ where
                 failed_heartbeats += 1;
             }
 
-            Some(Ok(msg)) = socket.recv() => {
+            Some(Ok(msg)) = read.next() => {
                 // TODO(david): extract to function
                 match handle_message_from_socket(msg, &pubsub, &mut state).await {
                     Ok(Some(HandledMessagedResult::Mounted(liveview_id, initial_render_html))) => {
                         let _ = send_message_to_socket(
-                            &mut socket,
+                            &mut write,
                             Some(liveview_id),
                             INITIAL_RENDER_TOPIC,
                             Some(initial_render_html),
@@ -106,7 +110,7 @@ where
                     Ok(Some(HandledMessagedResult::InitialRenderError(liveview_id))) => {
                         tracing::warn!("no response from `initial-render` message sent to liveview");
                         let _ = send_message_to_socket(
-                            &mut socket,
+                            &mut write,
                             Some(liveview_id),
                             LIVEVIEW_GONE_TOPIC,
                             None::<bool>,
@@ -121,24 +125,39 @@ where
                 }
             }
 
-            Some((liveview_id, (diff, js_commands))) = state.diff_streams.next() => {
-                // TODO(david): extract to function
-                if let Some(diff) = diff {
-                    let _ = send_message_to_socket(
-                        &mut socket,
-                        Some(liveview_id),
-                        RENDERED_TOPIC,
-                        Some(diff),
-                    ).await;
-                }
+            Some((liveview_id, msg)) = state.diff_streams.next() => {
+                match msg {
+                    RenderedMessage::Diff(diff) => {
+                        let _ = send_message_to_socket(
+                            &mut write,
+                            Some(liveview_id),
+                            RENDERED_TOPIC,
+                            Some(diff),
+                        ).await;
+                    }
+                    RenderedMessage::DiffWithCommands(diff, js_commands) => {
+                        let _ = send_message_to_socket(
+                            &mut write,
+                            Some(liveview_id),
+                            RENDERED_TOPIC,
+                            Some(diff),
+                        ).await;
 
-                if !js_commands.is_empty() {
-                    let _ = send_message_to_socket(
-                        &mut socket,
-                        Some(liveview_id),
-                        JS_COMMANDS_TOPIC,
-                        Some(js_commands),
-                    ).await;
+                        let _ = send_message_to_socket(
+                            &mut write,
+                            Some(liveview_id),
+                            JS_COMMANDS_TOPIC,
+                            Some(js_commands),
+                        ).await;
+                    }
+                    RenderedMessage::Commands(js_commands) => {
+                        let _ = send_message_to_socket(
+                            &mut write,
+                            Some(liveview_id),
+                            JS_COMMANDS_TOPIC,
+                            Some(js_commands),
+                        ).await;
+                    }
                 }
             }
         }
@@ -165,13 +184,14 @@ const RENDERED_TOPIC: &str = "r";
 const JS_COMMANDS_TOPIC: &str = "j";
 const LIVEVIEW_GONE_TOPIC: &str = "liveview-gone";
 
-async fn send_message_to_socket<T>(
-    socket: &mut WebSocket,
+async fn send_message_to_socket<W, T>(
+    write: &mut W,
     liveview_id: Option<LiveViewId>,
     topic: &'static str,
     msg: Option<T>,
-) -> Result<(), axum::Error>
+) -> Result<(), W::Error>
 where
+    W: Sink<ws::Message> + Unpin,
     T: serde::Serialize,
 {
     let msg = json!({
@@ -182,7 +202,7 @@ where
     let msg = serde_json::to_string(&msg).unwrap();
     tracing::trace!(%msg, "sending message to websocket");
 
-    socket.send(ws::Message::Text(msg)).await
+    write.send(ws::Message::Text(msg)).await
 }
 
 enum HandledMessagedResult {

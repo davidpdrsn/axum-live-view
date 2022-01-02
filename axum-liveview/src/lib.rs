@@ -39,11 +39,7 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![cfg_attr(test, allow(clippy::float_cmp))]
 
-use axum::{
-    response::{Headers, IntoResponse},
-    routing::get,
-    Router,
-};
+use axum::Router;
 
 #[macro_use]
 mod macros;
