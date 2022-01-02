@@ -172,7 +172,6 @@ fn examples_build(opt: ExamplesBuild) -> Result {
                     let mut install_cmd = Command::new("npm");
                     install_cmd.arg("install");
                     install_cmd.current_dir(&dir);
-                    install_cmd.stdout(std::process::Stdio::null());
                     run_cmd(install_cmd)?;
                 }
 
@@ -180,7 +179,6 @@ fn examples_build(opt: ExamplesBuild) -> Result {
                 let mut cmd = Command::new("npx");
                 cmd.arg("webpack");
                 cmd.current_dir(&dir);
-                cmd.stdout(std::process::Stdio::null());
                 run_cmd(cmd)?;
             }
 
