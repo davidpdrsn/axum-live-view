@@ -9,14 +9,14 @@ use axum::Json;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::{fmt, marker::PhantomData};
 
-pub(crate) fn mounted(liveview_id: LiveViewId) -> impl Topic<Message = ()> {
-    liveview_local(liveview_id, "mounted")
+pub(crate) fn mounted(live_view_id: LiveViewId) -> impl Topic<Message = ()> {
+    live_view_local(live_view_id, "mounted")
 }
 
 pub(crate) fn initial_render(
-    liveview_id: LiveViewId,
+    live_view_id: LiveViewId,
 ) -> impl Topic<Message = Json<html::Serialized>> {
-    liveview_local(liveview_id, "initial-render")
+    live_view_local(live_view_id, "initial-render")
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -26,26 +26,26 @@ pub(crate) enum RenderedMessage {
     Commands(Vec<JsCommand>),
 }
 
-pub(crate) fn rendered(liveview_id: LiveViewId) -> impl Topic<Message = Json<RenderedMessage>> {
-    liveview_local(liveview_id, "rendered")
+pub(crate) fn rendered(live_view_id: LiveViewId) -> impl Topic<Message = Json<RenderedMessage>> {
+    live_view_local(live_view_id, "rendered")
 }
 
-pub(crate) fn socket_disconnected(liveview_id: LiveViewId) -> impl Topic<Message = ()> {
-    liveview_local(liveview_id, "socket-disconnected")
+pub(crate) fn socket_disconnected(live_view_id: LiveViewId) -> impl Topic<Message = ()> {
+    live_view_local(live_view_id, "socket-disconnected")
 }
 
-pub(crate) fn update<M>(liveview_id: LiveViewId) -> FixedTopic<Json<WithAssociatedData<M>>>
+pub(crate) fn update<M>(live_view_id: LiveViewId) -> FixedTopic<Json<WithAssociatedData<M>>>
 where
     M: Serialize + DeserializeOwned + Send + 'static,
 {
-    liveview_local(liveview_id, "update")
+    live_view_local(live_view_id, "update")
 }
 
-fn liveview_local<M>(liveview_id: LiveViewId, topic: &str) -> FixedTopic<M>
+fn live_view_local<M>(live_view_id: LiveViewId, topic: &str) -> FixedTopic<M>
 where
     M: Encode + Decode + Send + 'static,
 {
-    FixedTopic::new(format!("liveview/{}/{}", liveview_id, topic))
+    FixedTopic::new(format!("live_view/{}/{}", live_view_id, topic))
 }
 
 pub(crate) struct FixedTopic<M> {

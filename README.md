@@ -22,7 +22,7 @@ use serde::{Deserialize, Serialize};
 
 #[tokio::main]
 async fn main() {
-    // liveviews must send and receive messages both from the browser and from
+    // Live views must send and receive messages both from the browser and from
     // other parts of your application. `axum_live_view::pubsub` is how that is
     // done.
     //
@@ -32,7 +32,7 @@ async fn main() {
     // `InProcess` is a pubsub implementation that uses `tokio::sync::broadcast`.
     let pubsub = InProcess::new();
 
-    // liveview has a few routes and a middleware of its own that you have to include.
+    // axum-live-view has a few routes and a middleware of its own that you have to include.
     let (live_view_routes, live_view_layer) = axum_live_view::router_parts(pubsub);
 
     // A normal axum router.
@@ -50,11 +50,11 @@ async fn main() {
 
 // Our handler function for `GET /`
 async fn root(
-    // `EmbedLiveView` is an extractor that is hooked up to the liveview setup
-    // and enables you to embed liveviews into HTML templates.
-    embed_liveview: EmbedLiveView<InProcess>,
+    // `EmbedLiveView` is an extractor that is hooked up to the live view setup
+    // and enables you to embed live views into HTML templates.
+    embed_live_view: EmbedLiveView<InProcess>,
 ) -> impl IntoResponse {
-    // `Counter` is our liveview and we initialize it with the default values.
+    // `Counter` is our live view and we initialize it with the default values.
     let counter = Counter::default();
 
     html! {
@@ -68,20 +68,20 @@ async fn root(
                 //     liveView.connect()
             </head>
             <body>
-                // Embed our liveview into the HTML template. This will render the
+                // Embed our live view into the HTML template. This will render the
                 // view and include the HTML in the response, leading to good SEO
                 // and fast first paint.
                 //
                 // It will also start a stateful async task for updating the view
                 // and sending the changes down to the client via a WebSocket
                 // connection.
-                { embed_liveview.embed(counter) }
+                { embed_live_view.embed(counter) }
             </body>
         </html>
     }
 }
 
-// Our liveview is just a regular Rust struct...
+// Our live view is just a regular Rust struct...
 #[derive(Default)]
 struct Counter {
     count: u64,
@@ -114,7 +114,7 @@ impl LiveView for Counter {
         Updated::new(self)
     }
 
-    // Render the liveview into an HTML template. This function is called during
+    // Render the live view into an HTML template. This function is called during
     // the initial render in `LiveViewManager::embed` and for each subsequent
     // update.
     //
@@ -134,7 +134,7 @@ impl LiveView for Counter {
             <div>
                 // Elements with the `axm-click` attribute will send a message
                 // on the corresponding pubsub topic which will call a callback,
-                // update the liveview state, and call `render` again.
+                // update the live view state, and call `render` again.
                 <button axm-click={ Msg::Increment }>"+"</button>
                 <button axm-click={ Msg::Decrement }>"-"</button>
             </div>

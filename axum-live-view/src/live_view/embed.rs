@@ -1,4 +1,4 @@
-use super::{wrap_in_liveview_container, LiveView, LiveViewId};
+use super::{wrap_in_live_view_container, LiveView, LiveViewId};
 use crate::{
     html::Html,
     pubsub::{Logging, PubSub},
@@ -23,19 +23,19 @@ impl<P> EmbedLiveView<P> {
         }
     }
 
-    pub fn embed<T>(&self, liveview: T) -> Html<T::Message>
+    pub fn embed<T>(&self, live_view: T) -> Html<T::Message>
     where
         T: LiveView,
         P: PubSub + Clone,
     {
-        let initial_markup = liveview.render();
-        let liveview_id = LiveViewId::new();
-        tokio::spawn(super::lifecycle::run_liveview(
-            liveview_id,
-            liveview,
+        let initial_markup = live_view.render();
+        let live_view_id = LiveViewId::new();
+        tokio::spawn(super::lifecycle::run_live_view(
+            live_view_id,
+            live_view,
             self.pubsub.clone(),
         ));
-        wrap_in_liveview_container(liveview_id, initial_markup)
+        wrap_in_live_view_container(live_view_id, initial_markup)
     }
 }
 

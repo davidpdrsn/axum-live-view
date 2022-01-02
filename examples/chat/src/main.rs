@@ -71,7 +71,7 @@ async fn main() {
 type Messages = Arc<Mutex<Vec<Message>>>;
 
 async fn root(
-    embed_liveview: EmbedLiveView<InProcess>,
+    embed_live_view: EmbedLiveView<InProcess>,
     Extension(pubsub): Extension<InProcess>,
     Extension(messages): Extension<Messages>,
 ) -> impl IntoResponse {
@@ -90,8 +90,8 @@ async fn root(
                 <script src="/bundle.js"></script>
             </head>
             <body>
-                { embed_liveview.embed(list).unit() }
-                { embed_liveview.embed(form).unit() }
+                { embed_live_view.embed(list).unit() }
+                { embed_live_view.embed(form).unit() }
             </body>
         </html>
     }

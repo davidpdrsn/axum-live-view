@@ -48,13 +48,13 @@ impl<T> Subscriptions<T>
 where
     T: LiveView,
 {
-    pub(crate) fn new(liveview_id: LiveViewId) -> Self {
+    pub(crate) fn new(live_view_id: LiveViewId) -> Self {
         let callback = |this: T, Json(msg): Json<WithAssociatedData<T::Message>>| {
             let WithAssociatedData { msg, data } = msg;
             let data = EventData::new(data);
             this.update(msg, data)
         };
-        let update_topic = topics::update::<T::Message>(liveview_id);
+        let update_topic = topics::update::<T::Message>(live_view_id);
         let callback = make_callback(&update_topic, callback);
 
         Self {
