@@ -1,7 +1,7 @@
 use crate::{
     html,
     live_view::{EmbedLiveView, LiveViewId},
-    pubsub::PubSub,
+    pubsub::{PubSub, PubSubError},
     topics::{self, RenderedMessage},
 };
 use anyhow::Context;
@@ -18,14 +18,18 @@ use std::{collections::HashMap, time::Duration};
 use tokio::time::{timeout, Instant};
 use tokio_stream::StreamMap;
 
-pub fn routes<B>() -> Router<B>
+pub fn routes<P, B>() -> Router<B>
 where
     B: Send + 'static,
+    P: PubSub + Clone,
 {
-    Router::new().route("/live", get(ws))
+    Router::new().route("/live", get(ws::<P>))
 }
 
-async fn ws(upgrade: WebSocketUpgrade, embed_liveview: EmbedLiveView) -> impl IntoResponse {
+async fn ws<P>(upgrade: WebSocketUpgrade, embed_liveview: EmbedLiveView<P>) -> impl IntoResponse
+where
+    P: PubSub + Clone,
+{
     upgrade.on_upgrade(move |socket| {
         let (write, read) = socket.split();
         handle_socket(read, write, embed_liveview.pubsub)
@@ -249,11 +253,13 @@ where
             let mut initial_render_stream = pubsub
                 .subscribe(&topics::initial_render(liveview_id))
                 .await
+                .map_err(PubSubError::boxed)
                 .context("creating initial-render stream")?;
 
             pubsub
                 .broadcast(&topics::mounted(liveview_id), ())
                 .await
+                .map_err(PubSubError::boxed)
                 .context("broadcasting mounted")?;
 
             let Json(initial_render_html) =
@@ -271,6 +277,7 @@ where
             let diff_stream = pubsub
                 .subscribe(&topics::rendered(liveview_id))
                 .await
+                .map_err(PubSubError::boxed)
                 .context("creating rendered stream")?
                 .map(|Json(diff)| diff);
             state
@@ -338,6 +345,7 @@ where
     pubsub
         .broadcast(&topic, Json(msg))
         .await
+        .map_err(PubSubError::boxed)
         .context("broadcasting key event")?;
 
     Ok(())

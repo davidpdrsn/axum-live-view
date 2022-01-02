@@ -1,6 +1,6 @@
 use crate::{
     live_view::{EventData, LiveView, LiveViewId, Updated},
-    pubsub::{Decode, PubSub, Topic},
+    pubsub::{BoxErrorWrapper, Decode, PubSub, Topic},
     topics::{self, FixedTopic},
     ws::WithAssociatedData,
 };
@@ -90,11 +90,17 @@ where
 
         let mut stream_map = StreamMap::with_capacity(subscriptions.len() + 1);
 
-        let stream = pubsub.subscribe_raw(update_topic.topic()).await?;
+        let stream = pubsub
+            .subscribe_raw(update_topic.topic())
+            .await
+            .map_err(BoxErrorWrapper::new)?;
         stream_map.insert(update_callback, stream);
 
         for (topic, callback) in subscriptions {
-            let stream = pubsub.subscribe_raw(&topic).await?;
+            let stream = pubsub
+                .subscribe_raw(&topic)
+                .await
+                .map_err(BoxErrorWrapper::new)?;
             stream_map.insert(callback, stream);
         }
 

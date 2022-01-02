@@ -53,7 +53,7 @@ async fn main() {
             ))
             .handle_error(|_| async { StatusCode::INTERNAL_SERVER_ERROR }),
         )
-        .merge(axum_live_view::routes())
+        .merge(axum_live_view::routes::<InProcess, _>())
         .layer(
             ServiceBuilder::new()
                 .layer(LiveViewLayer::new(pubsub.clone()))
@@ -71,7 +71,7 @@ async fn main() {
 type Messages = Arc<Mutex<Vec<Message>>>;
 
 async fn root(
-    embed_liveview: EmbedLiveView,
+    embed_liveview: EmbedLiveView<InProcess>,
     Extension(pubsub): Extension<InProcess>,
     Extension(messages): Extension<Messages>,
 ) -> impl IntoResponse {

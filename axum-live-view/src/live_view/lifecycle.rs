@@ -2,7 +2,7 @@ use super::{wrap_in_liveview_container, LiveView, LiveViewId, Subscriptions, Upd
 use crate::{
     html::Html,
     js_command::JsCommand,
-    pubsub::PubSub,
+    pubsub::{PubSub, PubSubError},
     topics::{self, RenderedMessage},
 };
 use anyhow::Context;
@@ -54,6 +54,7 @@ where
     let mount_stream = pubsub
         .subscribe(&topics::mounted(liveview_id))
         .await
+        .map_err(PubSubError::boxed)
         .context("subscribing to mounted topic")?;
 
     let mut state = State::Initial {
@@ -128,6 +129,7 @@ where
                     Json(markup.serialize()),
                 )
                 .await
+                .map_err(PubSubError::boxed)
                 .context("failed to publish initial render markup")?;
 
             let markup_updates_stream =
@@ -139,6 +141,7 @@ where
             let disconnected_stream = pubsub
                 .subscribe(&topics::socket_disconnected(liveview_id))
                 .await
+                .map_err(PubSubError::boxed)
                 .context("failed to subscribe to socket disconnected")?
                 .map(|_| MessageForLiveView::WebSocketDisconnected);
 

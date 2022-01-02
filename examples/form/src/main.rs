@@ -9,6 +9,7 @@ use axum_live_view::{
     html,
     live_view::{EmbedLiveView, EventData, LiveView, Subscriptions, Updated},
     middleware::LiveViewLayer,
+    pubsub::InProcess,
     Html,
 };
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
@@ -30,7 +31,7 @@ async fn main() {
             ))
             .handle_error(|_| async { StatusCode::INTERNAL_SERVER_ERROR }),
         )
-        .merge(axum_live_view::routes())
+        .merge(axum_live_view::routes::<InProcess, _>())
         .layer(LiveViewLayer::new(pubsub));
 
     let addr = SocketAddr::from(([0, 0, 0, 0], 4000));
@@ -40,7 +41,7 @@ async fn main() {
         .unwrap();
 }
 
-async fn root(embed_liveview: EmbedLiveView) -> impl IntoResponse {
+async fn root(embed_liveview: EmbedLiveView<InProcess>) -> impl IntoResponse {
     let form = FormView::default();
 
     html! {
