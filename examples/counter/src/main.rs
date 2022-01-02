@@ -1,18 +1,16 @@
-#![allow(unused_imports)]
-
 use axum::{
     async_trait,
-    http::header::CONTENT_TYPE,
-    response::{Headers, IntoResponse},
-    routing::get,
+    http::StatusCode,
+    response::IntoResponse,
+    routing::{get, get_service},
     Router,
 };
 use axum_liveview::{
-    html, js, liveview::Updated, AssociatedData, EmbedLiveView, Html, LiveView, Subscriptions,
+    html, liveview::Updated, AssociatedData, EmbedLiveView, Html, LiveView, Subscriptions,
 };
 use serde::{Deserialize, Serialize};
 use std::{env, net::SocketAddr, path::PathBuf};
-use tokio::fs;
+use tower_http::services::ServeFile;
 
 #[tokio::main]
 async fn main() {
@@ -24,20 +22,17 @@ async fn main() {
         .route("/", get(root))
         .route(
             "/bundle.js",
-            get(|| async {
-                let path =
-                    PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap()).join("dist/bundle.js");
-                let js = fs::read_to_string(path).await.unwrap();
-
-                (Headers([(CONTENT_TYPE, "application/javascript")]), js)
-            }),
+            get_service(ServeFile::new(
+                PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap()).join("dist/bundle.js"),
+            ))
+            .handle_error(|_| async { StatusCode::INTERNAL_SERVER_ERROR }),
         )
         .merge(axum_liveview::routes())
         .layer(axum_liveview::layer(pubsub));
 
     let addr = SocketAddr::from(([0, 0, 0, 0], 4000));
     axum::Server::bind(&addr)
-        .serve(app.into_make_service_with_connect_info::<SocketAddr, _>())
+        .serve(app.into_make_service())
         .await
         .unwrap();
 }
@@ -50,13 +45,6 @@ async fn root(embed_liveview: EmbedLiveView) -> impl IntoResponse {
         <html>
             <head>
                 <script src="/bundle.js"></script>
-                <style>
-                    r#"
-                        .hide {
-                            display: none;
-                        }
-                    "#
-                </style>
             </head>
             <body>
                 { embed_liveview.embed(counter) }

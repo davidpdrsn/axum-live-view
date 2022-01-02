@@ -69,29 +69,9 @@ pub use self::{
 };
 pub use axum_liveview_macros::html;
 
-const APP_JS_PATH: &str = "/live/app.js";
-
 pub fn routes<B>() -> Router<B>
 where
     B: Send + 'static,
 {
-    Router::new()
-        .merge(ws::routes())
-        .route(APP_JS_PATH, get(js))
-}
-
-pub fn assets<T>() -> html::Html<T> {
-    use crate as axum_liveview;
-    html! {
-        // <script src={ APP_JS_PATH }></script>
-    }
-}
-
-async fn js() -> impl IntoResponse {
-    // const JS: &str = concat!(
-    //     // include_str!("js/morphdom.js"),
-    //     // include_str!("js/liveview.js"),
-    //     include_str!("/Users/davidpdrsn/dev/major/axum-liveview/assets/dist/bundle.js"),
-    // );
-    // (Headers([("content-type", "application/javascript")]), JS)
+    Router::new().merge(ws::routes())
 }

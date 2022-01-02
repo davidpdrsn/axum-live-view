@@ -116,7 +116,7 @@ where
                     }
                     Ok(None) => {},
                     Err(err) => {
-                        tracing::error!(%err, "error handling message from socket");
+                        tracing::error!(?err, "error handling message from socket");
                     },
                 }
             }
@@ -219,7 +219,8 @@ where
     };
 
     let liveview_id = msg.liveview_id;
-    let msg = EventFromBrowser::try_from(msg).context("Parsing into `EventFromBrowser`")?;
+    let msg = EventFromBrowser::try_from(msg.clone())
+        .with_context(|| format!("Parsing into `EventFromBrowser`. msg={:?}", msg))?;
 
     tracing::trace!(?msg, "received message from websocket");
 
@@ -338,7 +339,7 @@ struct HeartbeatResponse {
     h: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 struct RawMessage {
     liveview_id: LiveViewId,
     topic: String,
@@ -473,7 +474,7 @@ pub(crate) struct KeyEventFields {
     pub(crate) ctrl: bool,
     #[serde(rename = "s")]
     pub(crate) shift: bool,
-    #[serde(rename = "m")]
+    #[serde(rename = "me")]
     pub(crate) meta: bool,
 }
 

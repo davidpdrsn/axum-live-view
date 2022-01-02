@@ -116,12 +116,19 @@ struct ExamplesBuild {
     #[structopt(long)]
     skip_ts: bool,
 
+    #[structopt(long)]
+    skip_deps: bool,
+
     #[structopt()]
     which: Option<String>,
 }
 
 fn examples_build(opt: ExamplesBuild) -> Result {
-    let ExamplesBuild { which, skip_ts } = opt;
+    let ExamplesBuild {
+        which,
+        skip_ts,
+        skip_deps,
+    } = opt;
 
     if !skip_ts {
         println!("building typescript");
@@ -158,11 +165,19 @@ fn examples_build(opt: ExamplesBuild) -> Result {
                 });
 
             if contains_webpack_config {
-                println!("building {}", dir.display());
+                if !skip_deps {
+                    println!("installing dependencies {}", dir.display());
+                    let mut install_cmd = Command::new("npm");
+                    install_cmd.arg("install");
+                    install_cmd.current_dir(&dir);
+                    install_cmd.stdout(std::process::Stdio::null());
+                    run_cmd(install_cmd)?;
+                }
 
+                println!("building {}", dir.display());
                 let mut cmd = Command::new("npx");
                 cmd.arg("webpack");
-                cmd.current_dir(dir);
+                cmd.current_dir(&dir);
                 cmd.stdout(std::process::Stdio::null());
                 run_cmd(cmd)?;
             }

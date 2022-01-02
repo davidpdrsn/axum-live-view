@@ -20,7 +20,11 @@ interface ViewStates {
 }
 
 interface ViewState {
-  [index: string | number]: string | string[] | null | ViewState;
+  [index: string]: string | string[] | ViewState;
+}
+
+interface ViewStateDiff {
+  [index: string]: string | string[] | null | ViewStateDiff;
 }
 
 export function connectAndRun(options: LiveViewOptions) {
@@ -65,7 +69,7 @@ function onOpen(socket: WebSocket, connectState: ConnectState, options: LiveView
 
 interface HealthPing { t: "h" }
 interface InitialRender { t: "i", i: string, d: ViewState }
-interface Rendered { t: "r", i: string, d: ViewState }
+interface Rendered { t: "r", i: string, d: ViewStateDiff }
 interface JsCommand { t: "j", i: string, d: JsCommandData[] }
 interface LiveViewGone { t: "liveview-gone", i: string }
 
@@ -73,7 +77,13 @@ type Msg = HealthPing | InitialRender | Rendered | JsCommand | LiveViewGone
 
 interface JsCommandData { delay_ms: number | null, kind: JsCommandKind }
 
-function onMessage(socket: WebSocket, event: MessageEvent, connectState: ConnectState, options: LiveViewOptions, viewStates: ViewStates) {
+function onMessage(
+  socket: WebSocket,
+  event: MessageEvent,
+  connectState: ConnectState,
+  options: LiveViewOptions,
+  viewStates: ViewStates,
+) {
   const payload: Msg = JSON.parse(event.data)
 
   if (payload.t === "h") {
@@ -108,10 +118,7 @@ function onMessage(socket: WebSocket, event: MessageEvent, connectState: Connect
 
   } else if (payload.t === "j") {
     // js-command
-    payload.d.forEach((cmd) => {
-      handleJsCommand(cmd)
-    })
-    // handleJsCommand(data)
+    payload.d.forEach(handleJsCommand)
 
   } else if (payload.t === "liveview-gone") {
     // liveview-gone
@@ -178,7 +185,7 @@ function bindInitialEvents(socket: WebSocket) {
 
   for (let def of windowAttrs) {
     document.querySelectorAll(`[${def.attr}]`).forEach((el) => {
-        bindLiveEvent(socket, el, def)
+      bindLiveEvent(socket, el, def)
     })
   }
 }
@@ -242,7 +249,7 @@ function bindLiveEvent(
       data.v = serializeForm(element)
     } else {
       const value = inputValue(element)
-      if (value) {
+      if (value !== null) {
         data.v = value
       }
     }
@@ -506,7 +513,7 @@ function updateDom(socket: WebSocket, element: Element, html: string) {
     })
 }
 
-function patchViewState(state: ViewState, diff: ViewState) {
+function patchViewState(state: ViewState, diff: ViewStateDiff) {
   for (const [key, val] of Object.entries(diff)) {
     if (typeof val === "string" || Array.isArray(val)) {
       state[key] = val
@@ -516,8 +523,18 @@ function patchViewState(state: ViewState, diff: ViewState) {
 
     } else if (typeof val === "object") {
       const nestedState = state[key]
-      if (typeof nestedState === "object" && !Array.isArray(nestedState) && nestedState !== null) {
+
+      if (typeof nestedState === "object" && !Array.isArray(nestedState)) {
         patchViewState(nestedState, val)
+
+      } else if (typeof nestedState === "string" || nestedState === undefined) {
+        state[key] = <ViewState>val
+
+      } else if (Array.isArray(nestedState)) {
+        throw "can this be an array?"
+
+      } else {
+        const _: never = nestedState
       }
 
     } else {
