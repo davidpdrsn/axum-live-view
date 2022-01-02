@@ -121,4 +121,4 @@ jobs:
       - uses: EmbarkStudios/cargo-deny-action@v1
         with:
           command: check ${{ matrix.checks }}
-          arguments: --all-features --manifest-path axum-liveview/Cargo.toml
+          arguments: --all-features --manifest-path axum-live-view/Cargo.toml
