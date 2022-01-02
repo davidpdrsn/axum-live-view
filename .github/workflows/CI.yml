@@ -30,14 +30,14 @@ jobs:
         command: fmt
         args: --all -- --check
 
-  build-ts:
+  build-assets:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v2
     - uses: actions/setup-node@v2
       with:
         node-version: '16'
-    - run: cd assets && npm install && npx tsc
+    - run: cargo xtask examples build
 
   check-docs:
     runs-on: ubuntu-latest
