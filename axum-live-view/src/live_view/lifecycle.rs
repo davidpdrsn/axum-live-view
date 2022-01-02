@@ -1,4 +1,4 @@
-use super::{wrap_in_liveview_container, LiveView, LiveViewId, Subscriptions, Updated};
+use super::{wrap_in_live_view_container, LiveView, LiveViewId, Subscriptions, Updated};
 use crate::{
     html::Html,
     js_command::JsCommand,
@@ -18,13 +18,13 @@ where
     T: LiveView,
 {
     Initial {
-        liveview_id: LiveViewId,
-        liveview: T,
+        live_view_id: LiveViewId,
+        live_view: T,
         pubsub: P,
         mount_stream: BoxStream<'static, ()>,
     },
     Running {
-        liveview_id: LiveViewId,
+        live_view_id: LiveViewId,
         pubsub: P,
         mounted_streams_count: usize,
         markup: Html<T::Message>,
@@ -42,9 +42,9 @@ where
     WebSocketDisconnected,
 }
 
-pub(super) async fn run_liveview<T, P>(
-    liveview_id: LiveViewId,
-    liveview: T,
+pub(super) async fn run_live_view<T, P>(
+    live_view_id: LiveViewId,
+    live_view: T,
     pubsub: P,
 ) -> anyhow::Result<()>
 where
@@ -52,19 +52,19 @@ where
     P: PubSub + Clone,
 {
     let mount_stream = pubsub
-        .subscribe(&topics::mounted(liveview_id))
+        .subscribe(&topics::mounted(live_view_id))
         .await
         .map_err(PubSubError::boxed)
         .context("subscribing to mounted topic")?;
 
     let mut state = State::Initial {
-        liveview_id,
-        liveview,
+        live_view_id,
+        live_view,
         pubsub,
         mount_stream,
     };
 
-    tracing::trace!("liveview update loop running");
+    tracing::trace!("live_view update loop running");
 
     loop {
         state = next_state(state)
@@ -72,25 +72,25 @@ where
             .context("failed to compute next state")?;
 
         match state {
-            State::Initial { liveview_id, .. } => {
-                tracing::warn!(?liveview_id, "liveview going into `Initial` state")
+            State::Initial { live_view_id, .. } => {
+                tracing::warn!(?live_view_id, "live_view going into `Initial` state")
             }
             State::Running {
-                liveview_id,
+                live_view_id,
                 mounted_streams_count,
                 ..
             } => tracing::trace!(
-                ?liveview_id,
+                ?live_view_id,
                 ?mounted_streams_count,
-                "liveview going into `Running` state"
+                "live_view going into `Running` state"
             ),
             State::EveryoneDisconnected => {
-                tracing::trace!("liveview going into `EveryoneDisconnected` state");
+                tracing::trace!("live_view going into `EveryoneDisconnected` state");
             }
         }
 
         if matches!(state, State::EveryoneDisconnected) {
-            tracing::trace!(%liveview_id, "shutting down liveview task");
+            tracing::trace!(%live_view_id, "shutting down live_view task");
             break;
         }
     }
@@ -106,8 +106,8 @@ where
 {
     match state {
         State::Initial {
-            liveview_id,
-            liveview,
+            live_view_id,
+            live_view,
             pubsub,
             mut mount_stream,
         } => {
@@ -115,17 +115,17 @@ where
                 .await
                 .is_err()
             {
-                tracing::warn!("liveview mount timeout elapsed");
+                tracing::warn!("live_view mount timeout elapsed");
                 return Ok(State::EveryoneDisconnected);
             }
 
             let mount_stream = mount_stream.map(|_| MessageForLiveView::Mounted);
 
-            let markup = wrap_in_liveview_container(liveview_id, liveview.render());
+            let markup = wrap_in_live_view_container(live_view_id, live_view.render());
 
             pubsub
                 .broadcast(
-                    &topics::initial_render(liveview_id),
+                    &topics::initial_render(live_view_id),
                     Json(markup.serialize()),
                 )
                 .await
@@ -133,13 +133,13 @@ where
                 .context("failed to publish initial render markup")?;
 
             let markup_updates_stream =
-                markup_updates_stream(liveview, pubsub.clone(), liveview_id)
+                markup_updates_stream(live_view, pubsub.clone(), live_view_id)
                     .await
                     .context("failed to create markup updates stream")?
                     .map(|(markup, js_commands)| MessageForLiveView::Rendered(markup, js_commands));
 
             let disconnected_stream = pubsub
-                .subscribe(&topics::socket_disconnected(liveview_id))
+                .subscribe(&topics::socket_disconnected(live_view_id))
                 .await
                 .map_err(PubSubError::boxed)
                 .context("failed to subscribe to socket disconnected")?
@@ -152,7 +152,7 @@ where
             let stream = Box::pin(stream);
 
             Ok(State::Running {
-                liveview_id,
+                live_view_id,
                 pubsub,
                 mounted_streams_count: 1,
                 markup,
@@ -161,7 +161,7 @@ where
         }
 
         State::Running {
-            liveview_id,
+            live_view_id,
             pubsub,
             mut mounted_streams_count,
             mut markup,
@@ -174,28 +174,28 @@ where
             let msg = if let Some(msg) = stream.next().await {
                 msg
             } else {
-                tracing::error!("internal liveview streams all ended. This is a bug");
+                tracing::error!("internal live_view streams all ended. This is a bug");
                 return Ok(State::EveryoneDisconnected);
             };
 
             match msg {
                 MessageForLiveView::Mounted => {
-                    tracing::trace!(?liveview_id, "liveview mounted on another websocket");
+                    tracing::trace!(?live_view_id, "live_view mounted on another websocket");
 
                     mounted_streams_count += 1;
                     let _ = pubsub
                         .broadcast(
-                            &topics::initial_render(liveview_id),
+                            &topics::initial_render(live_view_id),
                             Json(markup.serialize()),
                         )
                         .await;
                 }
 
                 MessageForLiveView::Rendered(new_markup, js_commands) => {
-                    tracing::trace!(?liveview_id, "liveview re-rendered its markup");
+                    tracing::trace!(?live_view_id, "live_view re-rendered its markup");
 
                     let new_markup = new_markup
-                        .map(|new_markup| wrap_in_liveview_container(liveview_id, new_markup));
+                        .map(|new_markup| wrap_in_live_view_container(live_view_id, new_markup));
 
                     let diff = new_markup
                         .as_ref()
@@ -209,7 +209,7 @@ where
                         Some(diff) if js_commands.is_empty() => {
                             let _ = pubsub
                                 .broadcast(
-                                    &topics::rendered(liveview_id),
+                                    &topics::rendered(live_view_id),
                                     Json(RenderedMessage::Diff(diff)),
                                 )
                                 .await;
@@ -217,7 +217,7 @@ where
                         Some(diff) => {
                             let _ = pubsub
                                 .broadcast(
-                                    &topics::rendered(liveview_id),
+                                    &topics::rendered(live_view_id),
                                     Json(RenderedMessage::DiffWithCommands(diff, js_commands)),
                                 )
                                 .await;
@@ -225,7 +225,7 @@ where
                         None if !js_commands.is_empty() => {
                             let _ = pubsub
                                 .broadcast(
-                                    &topics::rendered(liveview_id),
+                                    &topics::rendered(live_view_id),
                                     Json(RenderedMessage::Commands(js_commands)),
                                 )
                                 .await;
@@ -235,13 +235,13 @@ where
                 }
 
                 MessageForLiveView::WebSocketDisconnected => {
-                    tracing::trace!(?liveview_id, "socket disconnected from liveview");
+                    tracing::trace!(?live_view_id, "socket disconnected from live_view");
                     mounted_streams_count -= 1;
                 }
             }
 
             Ok(State::Running {
-                liveview_id,
+                live_view_id,
                 pubsub,
                 mounted_streams_count,
                 markup,
@@ -254,32 +254,32 @@ where
 }
 
 async fn markup_updates_stream<T, P>(
-    mut liveview: T,
+    mut live_view: T,
     pubsub: P,
-    liveview_id: LiveViewId,
+    live_view_id: LiveViewId,
 ) -> anyhow::Result<BoxStream<'static, (Option<Html<T::Message>>, Vec<JsCommand>)>>
 where
     T: LiveView,
     P: PubSub,
 {
-    let mut subscriptions = Subscriptions::new(liveview_id);
-    liveview.init(&mut subscriptions);
+    let mut subscriptions = Subscriptions::new(live_view_id);
+    live_view.init(&mut subscriptions);
 
     let mut stream = subscriptions.into_stream(pubsub).await?;
 
     Ok(Box::pin(stream! {
         while let Some((callback, msg)) = stream.next().await {
             let Updated {
-                liveview: new_liveview,
+                live_view: new_live_view,
                 js_commands,
                 skip_render,
-            } = callback.call(liveview, msg).await;
-            liveview = new_liveview;
+            } = callback.call(live_view, msg).await;
+            live_view = new_live_view;
 
             if skip_render {
                 yield (None, js_commands);
             } else {
-                let markup = liveview.render();
+                let markup = live_view.render();
                 yield (Some(markup), js_commands);
             }
         }

@@ -71,7 +71,7 @@ interface HealthPing { t: "h" }
 interface InitialRender { t: "i", i: string, d: ViewState }
 interface Rendered { t: "r", i: string, d: ViewStateDiff }
 interface JsCommand { t: "j", i: string, d: JsCommandData[] }
-interface LiveViewGone { t: "liveview-gone", i: string }
+interface LiveViewGone { t: "liveView-gone", i: string }
 
 type Msg = HealthPing | InitialRender | Rendered | JsCommand | LiveViewGone
 
@@ -90,26 +90,26 @@ function onMessage(
   } else if (payload.t === "i") {
     // initial-render
 
-    const liveviewId = payload.i
+    const liveViewId = payload.i
     const data = payload.d
-    const element = document.querySelector(`[data-liveview-id="${liveviewId}"]`)
+    const element = document.querySelector(`[data-liveView-id="${liveViewId}"]`)
     if (!element) { throw "Element not found" }
     const html = buildHtmlFromState(data)
     updateDom(socket, element, html)
-    viewStates[liveviewId] = data
+    viewStates[liveViewId] = data
 
   } else if (payload.t === "r") {
     // rendered
-    const liveviewId = payload.i
+    const liveViewId = payload.i
     const diff = payload.d
-    const element = document.querySelector(`[data-liveview-id="${liveviewId}"]`)
+    const element = document.querySelector(`[data-liveView-id="${liveViewId}"]`)
     if (!element) { throw "Element not found" }
 
-    const state = viewStates[liveviewId]
-    if (!state) { throw "No liveview state found" }
+    const state = viewStates[liveViewId]
+    if (!state) { throw "No liveView state found" }
     patchViewState(state, diff)
 
-    var newState = viewStates[liveviewId]
+    var newState = viewStates[liveViewId]
     if (!newState) { throw "state not found after merging" }
     const html = buildHtmlFromState(newState)
     updateDom(socket, element, html)
@@ -118,11 +118,11 @@ function onMessage(
     // js-command
     payload.d.forEach(handleJsCommand)
 
-  } else if (payload.t === "liveview-gone") {
-    // liveview-gone
-    const liveviewId = payload.i
+  } else if (payload.t === "liveView-gone") {
+    // liveView-gone
+    const liveViewId = payload.i
     console.error(
-      `Something went wrong on the server and liveview ${liveviewId} is gone`
+      `Something went wrong on the server and liveView ${liveViewId} is gone`
     )
     socket.close()
     connectState.closedForGood = true
@@ -153,19 +153,19 @@ function reconnect(socket: WebSocket, connectState: ConnectState, options: LiveV
   }, 1000)
 }
 
-function socketSend(socket: WebSocket, liveviewId: string, topic: string, data: object) {
-  let msg = [liveviewId, topic, data]
+function socketSend(socket: WebSocket, liveViewId: string, topic: string, data: object) {
+  let msg = [liveViewId, topic, data]
   socket.send(JSON.stringify(msg))
 }
 
 function mountComponents(socket: WebSocket) {
-  const liveviewIdAttr = "data-liveview-id"
+  const liveViewIdAttr = "data-liveView-id"
 
-  document.querySelectorAll(`[${liveviewIdAttr}]`).forEach((component) => {
-    const liveviewId = component.getAttribute(liveviewIdAttr)
+  document.querySelectorAll(`[${liveViewIdAttr}]`).forEach((component) => {
+    const liveViewId = component.getAttribute(liveViewIdAttr)
 
-    if (liveviewId) {
-      socketSend(socket, liveviewId, "axum/mount-liveview", {})
+    if (liveViewId) {
+      socketSend(socket, liveViewId, "axum/mount-liveView", {})
     }
   })
 }
@@ -271,8 +271,8 @@ function bindLiveEvent(
   }
 
   var f = (event: Event) => {
-    let liveviewId = element.closest("[data-liveview-id]")?.getAttribute("data-liveview-id")
-    if (!liveviewId) return
+    let liveViewId = element.closest("[data-liveView-id]")?.getAttribute("data-liveView-id")
+    if (!liveViewId) return
     let msg = element.getAttribute(attr)
     if (!msg) return
 
@@ -322,7 +322,7 @@ function bindLiveEvent(
       data.me = event.metaKey
     }
 
-    socketSend(socket, liveviewId, `axum/${attr}`, data)
+    socketSend(socket, liveViewId, `axum/${attr}`, data)
   }
 
   var delayMs = numberAttr(element, "axm-debounce")

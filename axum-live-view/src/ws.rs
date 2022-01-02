@@ -26,13 +26,13 @@ where
     Router::new().route("/live", get(ws::<P>))
 }
 
-async fn ws<P>(upgrade: WebSocketUpgrade, embed_liveview: EmbedLiveView<P>) -> impl IntoResponse
+async fn ws<P>(upgrade: WebSocketUpgrade, embed_live_view: EmbedLiveView<P>) -> impl IntoResponse
 where
     P: PubSub + Clone,
 {
     upgrade.on_upgrade(move |socket| {
         let (write, read) = socket.split();
-        handle_socket(read, write, embed_liveview.pubsub)
+        handle_socket(read, write, embed_live_view.pubsub)
     })
 }
 
@@ -93,10 +93,10 @@ where
             Some(Ok(msg)) = read.next() => {
                 // TODO(david): extract to function
                 match handle_message_from_socket(msg, &pubsub, &mut state).await {
-                    Ok(Some(HandledMessagedResult::Mounted(liveview_id, initial_render_html))) => {
+                    Ok(Some(HandledMessagedResult::Mounted(live_view_id, initial_render_html))) => {
                         let _ = send_message_to_socket(
                             &mut write,
-                            Some(liveview_id),
+                            Some(live_view_id),
                             INITIAL_RENDER_TOPIC,
                             Some(initial_render_html),
                         )
@@ -111,16 +111,16 @@ where
                         heartbeat_bounce.as_mut().reset(Instant::now() + A_VERY_LONG_TIME);
                         failed_heartbeats = 0;
                     }
-                    Ok(Some(HandledMessagedResult::InitialRenderError(liveview_id))) => {
-                        tracing::warn!("no response from `initial-render` message sent to liveview");
+                    Ok(Some(HandledMessagedResult::InitialRenderError(live_view_id))) => {
+                        tracing::warn!("no response from `initial-render` message sent to live_view");
                         let _ = send_message_to_socket(
                             &mut write,
-                            Some(liveview_id),
+                            Some(live_view_id),
                             LIVEVIEW_GONE_TOPIC,
                             None::<bool>,
                         )
                         .await;
-                        state.diff_streams.remove(&liveview_id);
+                        state.diff_streams.remove(&live_view_id);
                     }
                     Ok(None) => {},
                     Err(err) => {
@@ -129,12 +129,12 @@ where
                 }
             }
 
-            Some((liveview_id, msg)) = state.diff_streams.next() => {
+            Some((live_view_id, msg)) = state.diff_streams.next() => {
                 match msg {
                     RenderedMessage::Diff(diff) => {
                         let _ = send_message_to_socket(
                             &mut write,
-                            Some(liveview_id),
+                            Some(live_view_id),
                             RENDERED_TOPIC,
                             Some(diff),
                         ).await;
@@ -142,14 +142,14 @@ where
                     RenderedMessage::DiffWithCommands(diff, js_commands) => {
                         let _ = send_message_to_socket(
                             &mut write,
-                            Some(liveview_id),
+                            Some(live_view_id),
                             RENDERED_TOPIC,
                             Some(diff),
                         ).await;
 
                         let _ = send_message_to_socket(
                             &mut write,
-                            Some(liveview_id),
+                            Some(live_view_id),
                             JS_COMMANDS_TOPIC,
                             Some(js_commands),
                         ).await;
@@ -157,7 +157,7 @@ where
                     RenderedMessage::Commands(js_commands) => {
                         let _ = send_message_to_socket(
                             &mut write,
-                            Some(liveview_id),
+                            Some(live_view_id),
                             JS_COMMANDS_TOPIC,
                             Some(js_commands),
                         ).await;
@@ -167,15 +167,15 @@ where
         }
     }
 
-    let liveview_ids = state
+    let live_view_ids = state
         .diff_streams
         .iter()
         .map(|(id, _)| *id)
         .collect::<Vec<_>>();
 
-    for liveview_id in liveview_ids {
+    for live_view_id in live_view_ids {
         let _ = pubsub
-            .broadcast(&topics::socket_disconnected(liveview_id), ())
+            .broadcast(&topics::socket_disconnected(live_view_id), ())
             .await;
     }
 
@@ -186,11 +186,11 @@ const HEARTBEAT_TOPIC: &str = "h";
 const INITIAL_RENDER_TOPIC: &str = "i";
 const RENDERED_TOPIC: &str = "r";
 const JS_COMMANDS_TOPIC: &str = "j";
-const LIVEVIEW_GONE_TOPIC: &str = "liveview-gone";
+const LIVEVIEW_GONE_TOPIC: &str = "live_view-gone";
 
 async fn send_message_to_socket<W, T>(
     write: &mut W,
-    liveview_id: Option<LiveViewId>,
+    live_view_id: Option<LiveViewId>,
     topic: &'static str,
     msg: Option<T>,
 ) -> Result<(), W::Error>
@@ -199,7 +199,7 @@ where
     T: serde::Serialize,
 {
     let msg = json!({
-        "i": liveview_id,
+        "i": live_view_id,
         "t": topic,
         "d": msg,
     });
@@ -242,7 +242,7 @@ where
         RawMessageOrHeartbeat::RawMessage(msg) => msg,
     };
 
-    let liveview_id = msg.liveview_id;
+    let live_view_id = msg.live_view_id;
     let msg = EventFromBrowser::try_from(msg.clone())
         .with_context(|| format!("Parsing into `EventFromBrowser`. msg={:?}", msg))?;
 
@@ -251,13 +251,13 @@ where
     match msg {
         EventFromBrowser::Mount => {
             let mut initial_render_stream = pubsub
-                .subscribe(&topics::initial_render(liveview_id))
+                .subscribe(&topics::initial_render(live_view_id))
                 .await
                 .map_err(PubSubError::boxed)
                 .context("creating initial-render stream")?;
 
             pubsub
-                .broadcast(&topics::mounted(liveview_id), ())
+                .broadcast(&topics::mounted(live_view_id), ())
                 .await
                 .map_err(PubSubError::boxed)
                 .context("broadcasting mounted")?;
@@ -266,26 +266,30 @@ where
                 match timeout(Duration::from_secs(5), initial_render_stream.next()).await {
                     Ok(Some(initial_render_html)) => initial_render_html,
                     Ok(None) => {
-                        return Ok(Some(HandledMessagedResult::InitialRenderError(liveview_id)));
+                        return Ok(Some(HandledMessagedResult::InitialRenderError(
+                            live_view_id,
+                        )));
                     }
                     Err(err) => {
                         tracing::warn!(?err, "error from initial render stream");
-                        return Ok(Some(HandledMessagedResult::InitialRenderError(liveview_id)));
+                        return Ok(Some(HandledMessagedResult::InitialRenderError(
+                            live_view_id,
+                        )));
                     }
                 };
 
             let diff_stream = pubsub
-                .subscribe(&topics::rendered(liveview_id))
+                .subscribe(&topics::rendered(live_view_id))
                 .await
                 .map_err(PubSubError::boxed)
                 .context("creating rendered stream")?
                 .map(|Json(diff)| diff);
             state
                 .diff_streams
-                .insert(liveview_id, Box::pin(diff_stream));
+                .insert(live_view_id, Box::pin(diff_stream));
 
             return Ok(Some(HandledMessagedResult::Mounted(
-                liveview_id,
+                live_view_id,
                 initial_render_html,
             )));
         }
@@ -293,12 +297,12 @@ where
         EventFromBrowser::Click(WithoutValue { msg })
         | EventFromBrowser::WindowFocus(WithoutValue { msg })
         | EventFromBrowser::WindowBlur(WithoutValue { msg }) => {
-            send_update(liveview_id, msg, None, pubsub).await?;
+            send_update(live_view_id, msg, None, pubsub).await?;
         }
 
         EventFromBrowser::MouseEvent(MouseEvent { msg, fields }) => {
             send_update(
-                liveview_id,
+                live_view_id,
                 msg,
                 Some(AssociatedDataKind::Mouse(fields)),
                 pubsub,
@@ -308,7 +312,7 @@ where
 
         EventFromBrowser::FormEvent(FormEvent { msg, value }) => {
             send_update(
-                liveview_id,
+                live_view_id,
                 msg,
                 Some(AssociatedDataKind::Form(value)),
                 pubsub,
@@ -318,7 +322,7 @@ where
 
         EventFromBrowser::KeyEvent(KeyEvent { msg, fields }) => {
             send_update(
-                liveview_id,
+                live_view_id,
                 msg,
                 Some(AssociatedDataKind::Key(fields)),
                 pubsub,
@@ -331,7 +335,7 @@ where
 }
 
 async fn send_update<P>(
-    liveview_id: LiveViewId,
+    live_view_id: LiveViewId,
     msg: Value,
     data: Option<AssociatedDataKind>,
     pubsub: &P,
@@ -339,7 +343,7 @@ async fn send_update<P>(
 where
     P: PubSub,
 {
-    let topic = topics::update(liveview_id);
+    let topic = topics::update(live_view_id);
     let msg = WithAssociatedData { msg, data };
 
     pubsub
@@ -365,7 +369,7 @@ struct HeartbeatResponse {
 
 #[derive(Debug, Deserialize, Clone)]
 struct RawMessage {
-    liveview_id: LiveViewId,
+    live_view_id: LiveViewId,
     topic: String,
     data: Value,
 }
@@ -377,7 +381,7 @@ impl TryFrom<RawMessage> for EventFromBrowser {
         let RawMessage {
             topic,
             data,
-            liveview_id: _,
+            live_view_id: _,
         } = raw_message;
 
         let topic = topic
@@ -385,7 +389,7 @@ impl TryFrom<RawMessage> for EventFromBrowser {
             .with_context(|| format!("unknown message topic: {:?}", topic))?;
 
         match &*topic {
-            "mount-liveview" => Ok(EventFromBrowser::Mount),
+            "mount-live_view" => Ok(EventFromBrowser::Mount),
 
             other => match Axm::from_str(other)? {
                 Axm::Click => Ok(EventFromBrowser::Click(from_value(data)?)),

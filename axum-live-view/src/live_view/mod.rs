@@ -43,11 +43,11 @@ impl fmt::Display for LiveViewId {
     }
 }
 
-pub(super) fn wrap_in_liveview_container<T>(liveview_id: LiveViewId, markup: Html<T>) -> Html<T> {
+pub(super) fn wrap_in_live_view_container<T>(live_view_id: LiveViewId, markup: Html<T>) -> Html<T> {
     use crate as axum_live_view;
 
     html! {
-        <div class="liveview-container" data-liveview-id={ liveview_id.to_string() }>
+        <div class="live_view-container" data-live_view-id={ live_view_id.to_string() }>
             { markup }
         </div>
     }
@@ -55,15 +55,15 @@ pub(super) fn wrap_in_liveview_container<T>(liveview_id: LiveViewId, markup: Htm
 
 #[derive(Debug, Clone)]
 pub struct Updated<T> {
-    liveview: T,
+    live_view: T,
     js_commands: Vec<JsCommand>,
     skip_render: bool,
 }
 
 impl<T> Updated<T> {
-    pub fn new(liveview: T) -> Self {
+    pub fn new(live_view: T) -> Self {
         Self {
-            liveview,
+            live_view,
             js_commands: Default::default(),
             skip_render: false,
         }

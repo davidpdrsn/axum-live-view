@@ -41,7 +41,7 @@ async fn main() {
         .unwrap();
 }
 
-async fn root(embed_liveview: EmbedLiveView<InProcess>) -> impl IntoResponse {
+async fn root(embed_live_view: EmbedLiveView<InProcess>) -> impl IntoResponse {
     let form = FormView::default();
 
     html! {
@@ -51,7 +51,7 @@ async fn root(embed_liveview: EmbedLiveView<InProcess>) -> impl IntoResponse {
                 <script src="/bundle.js"></script>
             </head>
             <body>
-                { embed_liveview.embed(form) }
+                { embed_live_view.embed(form) }
             </body>
         </html>
     }
