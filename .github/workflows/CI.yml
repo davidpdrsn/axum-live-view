@@ -30,6 +30,15 @@ jobs:
         command: fmt
         args: --all -- --check
 
+  build-ts:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+    - uses: actions/setup-node@v2
+      with:
+        node-version: '16'
+    - run: cd assets && npm install && npx tsc
+
   check-docs:
     runs-on: ubuntu-latest
     steps:
