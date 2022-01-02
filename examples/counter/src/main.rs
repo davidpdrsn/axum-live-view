@@ -28,7 +28,7 @@ async fn main() {
             .handle_error(|_| async { StatusCode::INTERNAL_SERVER_ERROR }),
         )
         .merge(axum_liveview::routes())
-        .layer(axum_liveview::layer(pubsub));
+        .layer(axum_liveview::LiveViewLayer::new(pubsub));
 
     let addr = SocketAddr::from(([0, 0, 0, 0], 4000));
     axum::Server::bind(&addr)

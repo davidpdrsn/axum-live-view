@@ -7,7 +7,7 @@ use crate::{
 };
 use axum::Json;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
-use std::marker::PhantomData;
+use std::{fmt, marker::PhantomData};
 
 pub(crate) fn mounted(liveview_id: LiveViewId) -> impl Topic<Message = ()> {
     liveview_local(liveview_id, "mounted")
@@ -51,6 +51,17 @@ where
 pub(crate) struct FixedTopic<M> {
     topic: String,
     _marker: PhantomData<fn() -> M>,
+}
+
+impl<M> fmt::Debug for FixedTopic<M> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Self { topic, _marker } = self;
+
+        f.debug_struct("FixedTopic")
+            .field("topic", &topic)
+            .field("_marker", &_marker)
+            .finish()
+    }
 }
 
 impl<M> FixedTopic<M> {

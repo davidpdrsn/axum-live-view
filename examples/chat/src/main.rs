@@ -56,7 +56,7 @@ async fn main() {
         .merge(axum_liveview::routes())
         .layer(
             ServiceBuilder::new()
-                .layer(axum_liveview::layer(pubsub.clone()))
+                .layer(axum_liveview::LiveViewLayer::new(pubsub.clone()))
                 .layer(AddExtensionLayer::new(pubsub))
                 .layer(AddExtensionLayer::new(messages)),
         );

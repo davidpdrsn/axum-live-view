@@ -30,7 +30,7 @@
     rust_2018_idioms,
     future_incompatible,
     nonstandard_style,
-    // missing_debug_implementations,
+    missing_debug_implementations,
     // missing_docs
 )]
 #![deny(unreachable_pub, private_in_public)]
@@ -59,7 +59,7 @@ pub use self::{
     associated_data::AssociatedData,
     html::Html,
     liveview::{embed::EmbedLiveView, LiveView},
-    middleware::layer,
+    middleware::LiveViewLayer,
     pubsub::PubSub,
     subscriptions::Subscriptions,
 };

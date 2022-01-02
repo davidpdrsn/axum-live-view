@@ -1,6 +1,6 @@
 use super::*;
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct InProcess {
     tx: broadcast::Sender<(String, Bytes)>,
 }

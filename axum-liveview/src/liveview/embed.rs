@@ -4,11 +4,19 @@ use axum::{
     async_trait,
     extract::{Extension, FromRequest, RequestParts},
 };
-use std::sync::Arc;
+use std::{fmt, sync::Arc};
 
 #[derive(Clone)]
 pub struct EmbedLiveView {
     pub(crate) pubsub: Arc<dyn PubSubBackend>,
+}
+
+impl fmt::Debug for EmbedLiveView {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("EmbedLiveView")
+            .field("pubsub", &"...")
+            .finish()
+    }
 }
 
 impl EmbedLiveView {

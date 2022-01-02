@@ -45,6 +45,7 @@ pub(super) fn wrap_in_liveview_container<T>(liveview_id: LiveViewId, markup: Htm
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct Updated<T> {
     liveview: T,
     js_commands: Vec<JsCommand>,

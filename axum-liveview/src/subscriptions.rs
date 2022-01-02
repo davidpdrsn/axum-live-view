@@ -10,6 +10,7 @@ use futures_util::{future::BoxFuture, Stream};
 use std::sync::Arc;
 use std::{
     any::{type_name, TypeId},
+    fmt,
     future::{ready, Future},
     hash::Hash,
 };
@@ -22,6 +23,25 @@ where
     update_topic: FixedTopic<Json<WithAssociatedData<T::Message>>>,
     update_callback: AsyncCallback<T>,
     subscriptions: Vec<(String, AsyncCallback<T>)>,
+}
+
+impl<T> fmt::Debug for Subscriptions<T>
+where
+    T: LiveView,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Self {
+            update_topic,
+            update_callback,
+            subscriptions,
+        } = self;
+
+        f.debug_struct("Subscriptions")
+            .field("update_topic", &update_topic)
+            .field("update_callback", &update_callback)
+            .field("subscriptions", &subscriptions)
+            .finish()
+    }
 }
 
 impl<T> Subscriptions<T>
@@ -119,6 +139,22 @@ pub(crate) struct AsyncCallback<T> {
     type_id: TypeId,
     topic: Arc<str>,
     callback: Arc<dyn Fn(T, Bytes) -> BoxFuture<'static, Updated<T>> + Send + Sync + 'static>,
+}
+
+impl<T> fmt::Debug for AsyncCallback<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Self {
+            type_id,
+            topic,
+            callback: _,
+        } = self;
+
+        f.debug_struct("AsyncCallback")
+            .field("type_id", &type_id)
+            .field("topic", &topic)
+            .field("callback", &"...")
+            .finish()
+    }
 }
 
 impl<T> AsyncCallback<T> {
