@@ -8,9 +8,7 @@ use axum::{
 };
 use axum_live_view::{
     html, js_command,
-    live_view::{
-        EmbedLiveView, EventData, FormEventData, LiveView, Shared, Subscriptions, Updated,
-    },
+    live_view::{EmbedLiveView, EventData, FormEventData, LiveView, Subscriptions, Updated},
     pubsub::{InProcess, PubSub, Topic},
     Html,
 };

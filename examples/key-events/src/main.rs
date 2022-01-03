@@ -7,7 +7,7 @@ use axum::{
 };
 use axum_live_view::{
     html,
-    live_view::{EmbedLiveView, EventData, LiveView, Shared, Subscriptions, Updated},
+    live_view::{EmbedLiveView, EventData, LiveView, Subscriptions, Updated},
     pubsub::InProcess,
     Html,
 };

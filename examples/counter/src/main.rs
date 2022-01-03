@@ -5,9 +5,7 @@ use axum::{
     routing::{get, get_service},
     Router,
 };
-use axum_live_view::{
-    html, live_view::Shared, pubsub::InProcess, EmbedLiveView, EventData, Html, LiveView, Updated,
-};
+use axum_live_view::{html, pubsub::InProcess, EmbedLiveView, EventData, Html, LiveView, Updated};
 use serde::{Deserialize, Serialize};
 use std::{env, net::SocketAddr, path::PathBuf};
 use tower_http::services::ServeFile;
