@@ -131,28 +131,33 @@ impl<T> Html<T> {
             .filter_map(|(idx, (prev, current))| {
                 let value = match (prev, current) {
                     (Some(prev), Some(current)) => match (prev, current) {
-                        (DynamicFragment::Message(a), DynamicFragment::Message(b)) => {
+                        (DynamicFragment::Message(a), new @ DynamicFragment::Message(b)) => {
                             if a == b {
                                 None
                             } else {
-                                Some(json!(b))
+                                Some(new.serialize())
                             }
                         }
                         #[allow(clippy::needless_borrow)] // false positive
                         (DynamicFragment::Html(a), DynamicFragment::Html(b)) => {
                             a.diff(&b).map(|diff| json!(diff))
                         }
-                        (DynamicFragment::String(a), DynamicFragment::String(b)) => {
+                        (DynamicFragment::String(a), new @ DynamicFragment::String(b)) => {
                             if a == b {
                                 None
                             } else {
-                                Some(json!(b))
+                                Some(new.serialize())
                             }
                         }
 
-                        (_, DynamicFragment::Html(inner)) => Some(json!(inner.serialize())),
-                        (_, DynamicFragment::Message(inner)) => Some(json!(inner)),
-                        (_, DynamicFragment::String(inner)) => Some(json!(inner)),
+                        (
+                            _,
+                            new
+                            @
+                            (DynamicFragment::Html(_)
+                            | DynamicFragment::String(_)
+                            | DynamicFragment::Message(_)),
+                        ) => Some(new.serialize()),
                     },
                     (None, Some(current)) => Some(current.serialize()),
                     (Some(_prev), None) => {

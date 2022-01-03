@@ -109,9 +109,7 @@ function onMessage(
     if (!state) { throw "No liveView state found" }
     patchViewState(state, diff)
 
-    var newState = viewStates[liveViewId]
-    if (!newState) { throw "state not found after merging" }
-    const html = buildHtmlFromState(newState)
+    const html = buildHtmlFromState(state)
     updateDom(socket, element, html)
 
   } else if (payload.t === "j") {
