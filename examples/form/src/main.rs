@@ -7,7 +7,7 @@ use axum::{
 };
 use axum_live_view::{
     html,
-    live_view::{EmbedLiveView, EventData, LiveView, Subscriptions, Updated},
+    live_view::{EmbedLiveView, EventData, LiveView, Shared, Subscriptions, Updated},
     pubsub::InProcess,
     Html,
 };
@@ -51,13 +51,13 @@ async fn root(embed_live_view: EmbedLiveView<InProcess>) -> impl IntoResponse {
                 <script src="/bundle.js"></script>
             </head>
             <body>
-                { embed_live_view.embed(form) }
+                { embed_live_view.embed(Shared::new(form)).await }
             </body>
         </html>
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 struct FormView {
     text_input_value: String,
     textarea_value: String,
@@ -269,7 +269,7 @@ struct ChangedInput {
     input: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 struct FormValues {
     input: String,
     textarea: String,

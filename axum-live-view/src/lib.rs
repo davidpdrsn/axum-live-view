@@ -70,3 +70,10 @@ where
     let layer = LiveViewLayer::new(pubsub);
     (routes, layer)
 }
+
+fn spawn_unit<F>(future: F) -> tokio::task::JoinHandle<()>
+where
+    F: std::future::Future<Output = ()> + Send + 'static,
+{
+    tokio::spawn(future)
+}

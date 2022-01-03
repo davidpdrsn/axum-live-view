@@ -3,16 +3,9 @@ import morphdom from "morphdom"
 export interface LiveViewOptions {
   host: string;
   port: number;
-  onSocketOpen?: () => void;
-  // onSocketMessage?: () => void;
-  onSocketClose?: () => void;
-  onSocketError?: () => void;
-  onClosedForGood?: () => void;
 }
 
 interface ConnectState {
-  firstConnect: boolean;
-  closedForGood: boolean;
 }
 
 interface ViewStates {
@@ -29,51 +22,49 @@ interface ViewStateDiff {
 
 export function connectAndRun(options: LiveViewOptions) {
   var connectState = {
-    firstConnect: true,
-    closedForGood: false,
   }
 
   doConnectAndRun(options, connectState)
 }
 
 function doConnectAndRun(options: LiveViewOptions, connectState: ConnectState) {
+  console.log("connecting to socket")
   const socket = new WebSocket(`ws://${options.host}:${options.port}/live`)
+  console.log("connected to socket")
 
   const viewStates = {}
 
   socket.addEventListener("open", () => {
+    console.log("socket open")
     onOpen(socket, connectState, options)
   })
 
   socket.addEventListener("message", (event) => {
+    console.log("socket message")
     onMessage(socket, event, connectState, options, viewStates)
   })
 
   socket.addEventListener("close", () => {
+    console.log("socket close")
     onClose(socket, connectState, options)
   })
 
   socket.addEventListener("error", () => {
+    console.log("socket error")
     onError(socket, connectState, options)
   })
 }
 
 function onOpen(socket: WebSocket, connectState: ConnectState, options: LiveViewOptions) {
-  options.onSocketOpen?.()
   mountComponents(socket)
-
-  if (connectState.firstConnect) {
-    bindInitialEvents(socket)
-  }
+  bindInitialEvents(socket)
 }
 
-interface HealthPing { t: "h" }
 interface InitialRender { t: "i", i: string, d: ViewState }
 interface Rendered { t: "r", i: string, d: ViewStateDiff }
 interface JsCommand { t: "j", i: string, d: JsCommandData[] }
-interface LiveViewGone { t: "live-view-gone", i: string }
 
-type Msg = HealthPing | InitialRender | Rendered | JsCommand | LiveViewGone
+type Msg = InitialRender | Rendered | JsCommand
 
 function onMessage(
   socket: WebSocket,
@@ -84,10 +75,7 @@ function onMessage(
 ) {
   const payload: Msg = JSON.parse(event.data)
 
-  if (payload.t === "h") {
-    socket.send(JSON.stringify({ "h": "ok" }))
-
-  } else if (payload.t === "i") {
+  if (payload.t === "i") {
     // initial-render
 
     const liveViewId = payload.i
@@ -116,39 +104,16 @@ function onMessage(
     // js-command
     payload.d.forEach(handleJsCommand)
 
-  } else if (payload.t === "live-view-gone") {
-    // liveView-gone
-    const liveViewId = payload.i
-    console.error(
-      `Something went wrong on the server and liveView ${liveViewId} is gone`
-    )
-    socket.close()
-    connectState.closedForGood = true
-
   } else {
     const _: never = payload
   }
 }
 
 function onClose(socket: WebSocket, connectState: ConnectState, options: LiveViewOptions) {
-  options.onSocketClose?.()
-  reconnect(socket, connectState, options)
+  doConnectAndRun(options, connectState)
 }
 
 function onError(socket: WebSocket, connectState: ConnectState, options: LiveViewOptions) {
-  options.onSocketError?.()
-}
-
-function reconnect(socket: WebSocket, connectState: ConnectState, options: LiveViewOptions) {
-  if (connectState.closedForGood) {
-    options.onClosedForGood?.()
-    return;
-  }
-
-  connectState.firstConnect = false
-  setTimeout(() => {
-    doConnectAndRun(options, connectState)
-  }, 1000)
 }
 
 function socketSend(socket: WebSocket, liveViewId: string, topic: string, data: object) {

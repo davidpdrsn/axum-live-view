@@ -92,7 +92,7 @@ impl<T> PubSub for T where T: PubSubBackend {}
 
 #[derive(Debug, thiserror::Error)]
 #[error(transparent)]
-pub struct BoxErrorWrapper {
+pub(crate) struct BoxErrorWrapper {
     err: BoxError,
 }
 

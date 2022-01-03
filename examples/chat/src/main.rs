@@ -8,7 +8,9 @@ use axum::{
 };
 use axum_live_view::{
     html, js_command,
-    live_view::{EmbedLiveView, EventData, FormEventData, LiveView, Subscriptions, Updated},
+    live_view::{
+        EmbedLiveView, EventData, FormEventData, LiveView, Shared, Subscriptions, Updated,
+    },
     pubsub::{InProcess, PubSub, Topic},
     Html,
 };
@@ -90,13 +92,14 @@ async fn root(
                 <script src="/bundle.js"></script>
             </head>
             <body>
-                { embed_live_view.embed(list).unit() }
-                { embed_live_view.embed(form).unit() }
+                { embed_live_view.embed(Shared::new(list)).await.unit() }
+                { embed_live_view.embed(Shared::new(form)).await.unit() }
             </body>
         </html>
     }
 }
 
+#[derive(Clone)]
 struct MessagesList {
     messages: Arc<Mutex<Vec<Message>>>,
 }
@@ -136,6 +139,7 @@ impl LiveView for MessagesList {
     }
 }
 
+#[derive(Clone)]
 struct SendMessageForm<P> {
     pubsub: P,
     message: String,

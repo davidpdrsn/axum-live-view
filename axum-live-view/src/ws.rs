@@ -1,5 +1,4 @@
 use crate::{
-    html,
     live_view::{EmbedLiveView, LiveViewId},
     pubsub::{PubSub, PubSubError},
     topics::{self, RenderedMessage},
@@ -14,8 +13,7 @@ use axum::{
 use futures_util::{sink::SinkExt, stream::BoxStream, Sink, Stream, StreamExt};
 use serde::{Deserialize, Serialize};
 use serde_json::{from_value, json, Value};
-use std::{collections::HashMap, convert::TryFrom, time::Duration};
-use tokio::time::{timeout, Instant};
+use std::{collections::HashMap, convert::TryFrom};
 use tokio_stream::StreamMap;
 
 pub(crate) fn routes<P, B>() -> Router<B>
@@ -30,7 +28,9 @@ async fn ws<P>(upgrade: WebSocketUpgrade, embed_live_view: EmbedLiveView<P>) -> 
 where
     P: PubSub + Clone,
 {
+    tracing::info!("/live called");
     upgrade.on_upgrade(move |socket| {
+        tracing::info!("ws upgraded");
         let (write, read) = socket.split();
         handle_socket(read, write, embed_live_view.pubsub)
     })
@@ -45,87 +45,18 @@ async fn handle_socket<R, W, P>(mut read: R, mut write: W, pubsub: P)
 where
     R: Stream<Item = Result<ws::Message, axum::Error>> + Unpin,
     W: Sink<ws::Message> + Unpin,
+    W::Error: std::error::Error + Send + Sync + 'static,
     P: PubSub,
 {
     let mut state = SocketState::default();
 
-    const A_VERY_LONG_TIME: Duration = Duration::from_secs(60 * 60 * 24 * 365 * 10);
-    const HEARTBEAT_BOUNCE: Duration = Duration::from_secs(5);
-    const HEARTBEAT_FREQUENCY: Duration = Duration::from_secs(5);
-    const HEARTBEAT_MAX_FAILED_ATTEMPTS: usize = 5;
-
-    let mut heartbeat_interval = tokio::time::interval(HEARTBEAT_FREQUENCY);
-    let mut failed_heartbeats = 0;
-    let mut heartbeat_sent_at = Instant::now();
-    let mut heartbeat_inflight = false;
-
-    let heartbeat_bounce = tokio::time::sleep(A_VERY_LONG_TIME);
-    tokio::pin!(heartbeat_bounce);
-
     loop {
         tokio::select! {
-            _ = heartbeat_interval.tick() => {
-                // TODO(david): extract to function
-                if failed_heartbeats >= HEARTBEAT_MAX_FAILED_ATTEMPTS {
-                    tracing::debug!("failed too many heartbeats");
+            Some(msg) = read.next() => {
+                let result = handle_message_from_socket(msg, &pubsub, &mut state, &mut write).await;
+                if let Err(err) = result {
+                    tracing::error!(?err, "error handling message from socket");
                     break;
-                }
-
-                if heartbeat_inflight { continue }
-
-                if send_message_to_socket(&mut write, None, HEARTBEAT_TOPIC, None::<bool>).await.is_ok() {
-                    heartbeat_inflight = true;
-                    heartbeat_sent_at = Instant::now();
-                    heartbeat_bounce.as_mut().reset(Instant::now() + HEARTBEAT_BOUNCE);
-                } else {
-                    tracing::debug!("failed to send heartbeat");
-                    failed_heartbeats += 1;
-                }
-            }
-
-            _ = &mut heartbeat_bounce => {
-                heartbeat_inflight = false;
-                tracing::debug!("heartbeat didn't respond in the allocated time");
-                heartbeat_bounce.as_mut().reset(Instant::now() + A_VERY_LONG_TIME);
-                failed_heartbeats += 1;
-            }
-
-            Some(Ok(msg)) = read.next() => {
-                // TODO(david): extract to function
-                match handle_message_from_socket(msg, &pubsub, &mut state).await {
-                    Ok(Some(HandledMessagedResult::Mounted(live_view_id, initial_render_html))) => {
-                        let _ = send_message_to_socket(
-                            &mut write,
-                            Some(live_view_id),
-                            INITIAL_RENDER_TOPIC,
-                            Some(initial_render_html),
-                        )
-                        .await;
-                    },
-                    Ok(Some(HandledMessagedResult::HeartbeatResponse)) => {
-                        tracing::trace!(
-                            elapsed = ?heartbeat_sent_at.elapsed(),
-                            "heartbeat came back",
-                        );
-                        heartbeat_inflight = false;
-                        heartbeat_bounce.as_mut().reset(Instant::now() + A_VERY_LONG_TIME);
-                        failed_heartbeats = 0;
-                    }
-                    Ok(Some(HandledMessagedResult::InitialRenderError(live_view_id))) => {
-                        tracing::warn!("no response from `initial-render` message sent to live_view");
-                        let _ = send_message_to_socket(
-                            &mut write,
-                            Some(live_view_id),
-                            LIVEVIEW_GONE_TOPIC,
-                            None::<bool>,
-                        )
-                        .await;
-                        state.diff_streams.remove(&live_view_id);
-                    }
-                    Ok(None) => {},
-                    Err(err) => {
-                        tracing::error!(?err, "error handling message from socket");
-                    },
                 }
             }
 
@@ -179,68 +110,31 @@ where
             .await;
     }
 
-    tracing::trace!("WebSocket task ending");
+    tracing::debug!("WebSocket task ending");
 }
 
-const HEARTBEAT_TOPIC: &str = "h";
-const INITIAL_RENDER_TOPIC: &str = "i";
-const RENDERED_TOPIC: &str = "r";
-const JS_COMMANDS_TOPIC: &str = "j";
-const LIVEVIEW_GONE_TOPIC: &str = "live-view-gone";
-
-async fn send_message_to_socket<W, T>(
-    write: &mut W,
-    live_view_id: Option<LiveViewId>,
-    topic: &'static str,
-    msg: Option<T>,
-) -> Result<(), W::Error>
-where
-    W: Sink<ws::Message> + Unpin,
-    T: serde::Serialize,
-{
-    let msg = json!({
-        "i": live_view_id,
-        "t": topic,
-        "d": msg,
-    });
-    let msg = serde_json::to_string(&msg).unwrap();
-    tracing::trace!(%msg, "sending message to websocket");
-
-    write.send(ws::Message::Text(msg)).await
-}
-
-enum HandledMessagedResult {
-    Mounted(LiveViewId, html::Serialized),
-    HeartbeatResponse,
-    InitialRenderError(LiveViewId),
-}
-
-async fn handle_message_from_socket<P>(
-    msg: ws::Message,
+async fn handle_message_from_socket<P, W>(
+    msg: Result<ws::Message, axum::Error>,
     pubsub: &P,
     state: &mut SocketState,
-) -> anyhow::Result<Option<HandledMessagedResult>>
+    write: &mut W,
+) -> anyhow::Result<()>
 where
     P: PubSub,
+    W: Sink<ws::Message> + Unpin,
+    W::Error: std::error::Error + Send + Sync + 'static,
 {
-    let text = if let ws::Message::Text(text) = msg {
-        text
-    } else {
-        return Ok(None);
-    };
-
-    let msg = serde_json::from_str::<RawMessageOrHeartbeat>(&text)
-        .with_context(|| format!("parsing into `RawMessageOrHeartbeat`. text = {:?}", text))?;
-
-    let msg = match msg {
-        RawMessageOrHeartbeat::HeartbeatResponse(heartbeat_response) => {
-            if heartbeat_response.h != "ok" {
-                tracing::debug!(?heartbeat_response, "invalid status in heartbeat response");
-            }
-            return Ok(Some(HandledMessagedResult::HeartbeatResponse));
+    let text = match msg {
+        Ok(ws::Message::Text(text)) => text,
+        Ok(other) => {
+            tracing::warn!(?other, "received unexpected message from socket");
+            return Ok(());
         }
-        RawMessageOrHeartbeat::RawMessage(msg) => msg,
+        Err(err) => return Err(err.into()),
     };
+
+    let msg = serde_json::from_str::<RawMessage>(&text)
+        .with_context(|| format!("parsing into `RawMessage`. text = {:?}", text))?;
 
     let live_view_id = msg.live_view_id;
     let msg = EventFromBrowser::try_from(msg.clone())
@@ -262,21 +156,11 @@ where
                 .map_err(PubSubError::boxed)
                 .context("broadcasting mounted")?;
 
-            let Json(initial_render_html) =
-                match timeout(Duration::from_secs(5), initial_render_stream.next()).await {
-                    Ok(Some(initial_render_html)) => initial_render_html,
-                    Ok(None) => {
-                        return Ok(Some(HandledMessagedResult::InitialRenderError(
-                            live_view_id,
-                        )));
-                    }
-                    Err(err) => {
-                        tracing::warn!(?err, "error from initial render stream");
-                        return Ok(Some(HandledMessagedResult::InitialRenderError(
-                            live_view_id,
-                        )));
-                    }
-                };
+            let Json(initial_render_html) = if let Some(msg) = initial_render_stream.next().await {
+                msg
+            } else {
+                anyhow::bail!("initial-render never responded")
+            };
 
             let diff_stream = pubsub
                 .subscribe(&topics::rendered(live_view_id))
@@ -288,10 +172,13 @@ where
                 .diff_streams
                 .insert(live_view_id, Box::pin(diff_stream));
 
-            return Ok(Some(HandledMessagedResult::Mounted(
-                live_view_id,
-                initial_render_html,
-            )));
+            send_message_to_socket(
+                write,
+                Some(live_view_id),
+                INITIAL_RENDER_TOPIC,
+                Some(initial_render_html),
+            )
+            .await?;
         }
 
         EventFromBrowser::Click(WithoutValue { msg })
@@ -331,7 +218,7 @@ where
         }
     }
 
-    Ok(None)
+    Ok(())
 }
 
 async fn send_update<P>(
@@ -353,18 +240,6 @@ where
         .context("broadcasting key event")?;
 
     Ok(())
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(untagged)]
-enum RawMessageOrHeartbeat {
-    HeartbeatResponse(HeartbeatResponse),
-    RawMessage(RawMessage),
-}
-
-#[derive(Debug, Deserialize)]
-struct HeartbeatResponse {
-    h: String,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -570,4 +445,30 @@ axm! {
         #[attr = "mousemove"]
         Mousemove,
     }
+}
+
+const INITIAL_RENDER_TOPIC: &str = "i";
+const RENDERED_TOPIC: &str = "r";
+const JS_COMMANDS_TOPIC: &str = "j";
+
+async fn send_message_to_socket<W, T>(
+    write: &mut W,
+    live_view_id: Option<LiveViewId>,
+    topic: &'static str,
+    msg: Option<T>,
+) -> anyhow::Result<()>
+where
+    W: Sink<ws::Message> + Unpin,
+    W::Error: std::error::Error + Send + Sync + 'static,
+    T: serde::Serialize,
+{
+    let msg = json!({
+        "i": live_view_id,
+        "t": topic,
+        "d": msg,
+    });
+    let msg = serde_json::to_string(&msg).unwrap();
+    tracing::trace!(%msg, "sending message to websocket");
+
+    Ok(write.send(ws::Message::Text(msg)).await?)
 }

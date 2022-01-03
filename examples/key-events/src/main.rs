@@ -7,7 +7,7 @@ use axum::{
 };
 use axum_live_view::{
     html,
-    live_view::{EmbedLiveView, EventData, LiveView, Subscriptions, Updated},
+    live_view::{EmbedLiveView, EventData, LiveView, Shared, Subscriptions, Updated},
     pubsub::InProcess,
     Html,
 };
@@ -49,15 +49,20 @@ async fn root(embed_live_view: EmbedLiveView<InProcess>) -> impl IntoResponse {
         <html>
             <head>
                 <script src="/bundle.js"></script>
+                <style>
+                    r#"
+                    body { background: black; color: white; }
+                    "#
+                </style>
             </head>
             <body>
-                { embed_live_view.embed(counter) }
+                { embed_live_view.embed(Shared::new(counter)).await }
             </body>
         </html>
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 struct View {
     count: u64,
     prev: Option<Msg>,
@@ -124,7 +129,7 @@ struct Data {
     id: String,
 }
 
-#[derive(Deserialize, Serialize, Debug, PartialEq)]
+#[derive(Deserialize, Serialize, Debug, PartialEq, Clone)]
 enum Msg {
     Key(String),
 }

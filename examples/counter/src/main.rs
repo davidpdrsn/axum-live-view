@@ -5,7 +5,9 @@ use axum::{
     routing::{get, get_service},
     Router,
 };
-use axum_live_view::{html, pubsub::InProcess, EmbedLiveView, EventData, Html, LiveView, Updated};
+use axum_live_view::{
+    html, live_view::Shared, pubsub::InProcess, EmbedLiveView, EventData, Html, LiveView, Updated,
+};
 use serde::{Deserialize, Serialize};
 use std::{env, net::SocketAddr, path::PathBuf};
 use tower_http::services::ServeFile;
@@ -44,15 +46,20 @@ async fn root(embed_live_view: EmbedLiveView<InProcess>) -> impl IntoResponse {
         <html>
             <head>
                 <script src="/bundle.js"></script>
+                <style>
+                    r#"
+                    body { background: black; color: white; }
+                    "#
+                </style>
             </head>
             <body>
-                { embed_live_view.embed(counter) }
+                { embed_live_view.embed(Shared::new(counter)).await }
             </body>
         </html>
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 struct Counter {
     count: u64,
 }

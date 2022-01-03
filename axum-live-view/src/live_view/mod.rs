@@ -17,6 +17,39 @@ pub use self::{
 };
 
 #[async_trait]
+pub trait MakeLiveView: Send + Sync + 'static {
+    type LiveView: LiveView;
+
+    async fn make_live_view(&self) -> Self::LiveView;
+}
+
+#[derive(Clone, Debug)]
+pub struct Shared<T> {
+    live_view: T,
+}
+
+impl<T> Shared<T> {
+    pub fn new(live_view: T) -> Self
+    where
+        T: LiveView + Clone,
+    {
+        Self { live_view }
+    }
+}
+
+#[async_trait]
+impl<T> MakeLiveView for Shared<T>
+where
+    T: LiveView + Clone,
+{
+    type LiveView = T;
+
+    async fn make_live_view(&self) -> Self::LiveView {
+        self.live_view.clone()
+    }
+}
+
+#[async_trait]
 pub trait LiveView: Sized + Send + Sync + 'static {
     type Message: Serialize + DeserializeOwned + PartialEq + Send + Sync + 'static;
 
