@@ -150,14 +150,7 @@ impl<T> Html<T> {
                             }
                         }
 
-                        (
-                            _,
-                            new
-                            @
-                            (DynamicFragment::Html(_)
-                            | DynamicFragment::String(_)
-                            | DynamicFragment::Message(_)),
-                        ) => Some(new.serialize()),
+                        (_, new) => Some(new.serialize()),
                     },
                     (None, Some(current)) => Some(current.serialize()),
                     (Some(_prev), None) => {
