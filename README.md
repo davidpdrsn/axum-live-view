@@ -17,7 +17,10 @@ This is what using axum-live-view looks like.
 
 ```rust
 use axum::{async_trait, response::IntoResponse, routing::get, Router};
-use axum_live_view::{html, EventData, EmbedLiveView, Html, LiveView, LiveViewLayer, pubsub::InProcess, Updated};
+use axum_live_view::{
+    html, EventData, EmbedLiveView, Html,
+    LiveView, LiveViewLayer, Updated, pubsub::InProcess,
+};
 use serde::{Deserialize, Serialize};
 
 #[tokio::main]
@@ -132,9 +135,9 @@ impl LiveView for Counter {
             </div>
 
             <div>
-                // Elements with the `axm-click` attribute will send a message
-                // on the corresponding pubsub topic which will call a callback,
-                // update the live view state, and call `render` again.
+                // Elements with the `axm-click` attribute will send an update message
+                // to the view which calls `update` after which the view is
+                // re-rendered.
                 <button axm-click={ Msg::Increment }>"+"</button>
                 <button axm-click={ Msg::Decrement }>"-"</button>
             </div>
