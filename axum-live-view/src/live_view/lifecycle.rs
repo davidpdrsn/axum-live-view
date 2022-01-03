@@ -337,12 +337,14 @@ where
         .context("subscribing to mounted topic")
 }
 
+const MOUNT_TIMEOUT: Duration = Duration::from_secs(60);
+
 async fn wait_for_mount(
     live_view_id: LiveViewId,
     mount_stream: &mut OwnedStream<()>,
 ) -> Result<(), ()> {
     tracing::trace!(?live_view_id, "waiting for live view to be mounted");
-    match timeout(Duration::from_secs(10), mount_stream.next()).await {
+    match timeout(MOUNT_TIMEOUT, mount_stream.next()).await {
         Ok(Some(())) => Ok(()),
         Ok(None) | Err(_) => {
             tracing::warn!("live view task mount timeout expired");

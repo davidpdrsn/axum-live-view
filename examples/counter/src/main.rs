@@ -53,7 +53,7 @@ async fn root(embed_live_view: EmbedLiveView<InProcess>) -> impl IntoResponse {
                 </style>
             </head>
             <body>
-                { embed_live_view.embed(Shared::new(counter)).await }
+                { embed_live_view.embed(counter) }
             </body>
         </html>
     }

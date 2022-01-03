@@ -51,7 +51,7 @@ async fn root(embed_live_view: EmbedLiveView<InProcess>) -> impl IntoResponse {
                 <script src="/bundle.js"></script>
             </head>
             <body>
-                { embed_live_view.embed(Shared::new(form)).await }
+                { embed_live_view.embed(form) }
             </body>
         </html>
     }

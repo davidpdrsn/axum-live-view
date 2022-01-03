@@ -92,8 +92,8 @@ async fn root(
                 <script src="/bundle.js"></script>
             </head>
             <body>
-                { embed_live_view.embed(Shared::new(list)).await.unit() }
-                { embed_live_view.embed(Shared::new(form)).await.unit() }
+                { embed_live_view.embed(list).unit() }
+                { embed_live_view.embed(form).unit() }
             </body>
         </html>
     }
