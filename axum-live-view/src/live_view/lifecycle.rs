@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use super::{
     wrap_in_live_view_container, LiveView, LiveViewId, MakeLiveView, Subscriptions, Updated,
 };
@@ -11,7 +13,11 @@ use anyhow::Context;
 use async_stream::stream;
 use axum::Json;
 use futures_util::stream::BoxStream;
+use tokio::time::timeout;
 use tokio_stream::StreamExt as _;
+
+type OwnedStream<T> = BoxStream<'static, T>;
+type MarkupUpdatesStream<M> = OwnedStream<(Option<Html<M>>, Vec<JsCommand>)>;
 
 enum State<T, P>
 where
@@ -26,20 +32,20 @@ where
         live_view_id: LiveViewId,
         live_view: T,
         pubsub: P,
-        mount_stream: BoxStream<'static, ()>,
+        mount_stream: OwnedStream<()>,
     },
     Running {
         live_view_id: LiveViewId,
         pubsub: P,
         markup: Html<T::Message>,
-        markup_updates_stream: BoxStream<'static, (Option<Html<T::Message>>, Vec<JsCommand>)>,
-        disconnected_stream: BoxStream<'static, ()>,
+        markup_updates_stream: MarkupUpdatesStream<T::Message>,
+        disconnected_stream: OwnedStream<()>,
     },
     WaitForReMount {
         live_view_id: LiveViewId,
-        markup_updates_stream: BoxStream<'static, (Option<Html<T::Message>>, Vec<JsCommand>)>,
+        markup_updates_stream: MarkupUpdatesStream<T::Message>,
         pubsub: P,
-        mount_stream: BoxStream<'static, ()>,
+        mount_stream: OwnedStream<()>,
         markup: Html<T::Message>,
     },
     Close {
@@ -109,7 +115,7 @@ where
                 tracing::trace!(?live_view_id, "live_view going into `WaitForReMount` state")
             }
             State::Close { live_view_id } => {
-                tracing::trace!(?live_view_id, "live_view going into `Close` state");
+                tracing::trace!(?live_view_id, "live_view task closing");
                 break;
             }
         }
@@ -118,7 +124,6 @@ where
     Ok(())
 }
 
-#[allow(unreachable_code)]
 async fn next_state<T, P>(state: State<T, P>) -> anyhow::Result<State<T, P>>
 where
     T: LiveView,
@@ -130,11 +135,7 @@ where
             live_view,
             pubsub,
         } => {
-            let mount_stream = pubsub
-                .subscribe(&topics::mounted(live_view_id))
-                .await
-                .map_err(PubSubError::boxed)
-                .context("subscribing to mounted topic")?;
+            let mount_stream = subscribe_to_mount(&pubsub, live_view_id).await?;
 
             Ok(State::WaitingForFirstMount {
                 live_view_id,
@@ -150,9 +151,12 @@ where
             pubsub,
             mut mount_stream,
         } => {
-            tracing::trace!("live view is waiting to be mounted");
-            mount_stream.next().await;
-            tracing::trace!("live view mounted");
+            if wait_for_mount(live_view_id, &mut mount_stream)
+                .await
+                .is_err()
+            {
+                return Ok(State::Close { live_view_id });
+            }
 
             let markup = wrap_in_live_view_container(live_view_id, live_view.render());
 
@@ -257,11 +261,7 @@ where
                 MessageForLiveView::WebSocketDisconnected => {
                     tracing::trace!(?live_view_id, "socket disconnected from live_view");
 
-                    let mount_stream = pubsub
-                        .subscribe(&topics::mounted(live_view_id))
-                        .await
-                        .map_err(PubSubError::boxed)
-                        .context("subscribing to mounted topic")?;
+                    let mount_stream = subscribe_to_mount(&pubsub, live_view_id).await?;
 
                     Ok(State::WaitForReMount {
                         live_view_id,
@@ -281,9 +281,12 @@ where
             markup,
             mut mount_stream,
         } => {
-            tracing::trace!("live view is waiting to be re-mounted");
-            mount_stream.next().await;
-            tracing::trace!("live view re-mounted");
+            if wait_for_mount(live_view_id, &mut mount_stream)
+                .await
+                .is_err()
+            {
+                return Ok(State::Close { live_view_id });
+            }
 
             pubsub
                 .broadcast(
@@ -311,6 +314,34 @@ where
         }
 
         State::Close { live_view_id } => Ok(State::Close { live_view_id }),
+    }
+}
+
+async fn subscribe_to_mount<P>(
+    pubsub: &P,
+    live_view_id: LiveViewId,
+) -> anyhow::Result<BoxStream<'static, ()>>
+where
+    P: PubSub,
+{
+    pubsub
+        .subscribe(&topics::mounted(live_view_id))
+        .await
+        .map_err(PubSubError::boxed)
+        .context("subscribing to mounted topic")
+}
+
+async fn wait_for_mount(
+    live_view_id: LiveViewId,
+    mount_stream: &mut OwnedStream<()>,
+) -> Result<(), ()> {
+    tracing::trace!(?live_view_id, "waiting for live view to be mounted");
+    match timeout(Duration::from_secs(10), mount_stream.next()).await {
+        Ok(Some(())) => Ok(()),
+        Ok(None) | Err(_) => {
+            tracing::warn!("live view task mount timeout expired");
+            Err(())
+        }
     }
 }
 

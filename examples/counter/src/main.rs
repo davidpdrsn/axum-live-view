@@ -78,6 +78,10 @@ impl LiveView for Counter {
             }
         }
 
+        if self.count >= 10 {
+            panic!();
+        }
+
         Updated::new(self)
     }
 
