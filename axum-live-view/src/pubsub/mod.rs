@@ -212,3 +212,10 @@ where
         }
     }
 }
+
+pub fn topic<M>(topic: impl Into<String>) -> impl Topic<Message = M>
+where
+    M: Encode + Decode + Send + 'static,
+{
+    crate::topics::FixedTopic::new(topic.into())
+}
