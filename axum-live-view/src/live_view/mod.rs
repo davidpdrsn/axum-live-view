@@ -88,7 +88,7 @@ pub(super) fn wrap_in_live_view_container<T>(live_view_id: LiveViewId, markup: H
 
 #[derive(Debug, Clone)]
 pub struct Updated<T> {
-    live_view: T,
+    live_view: Option<T>,
     js_commands: Vec<JsCommand>,
     skip_render: bool,
 }
@@ -96,7 +96,15 @@ pub struct Updated<T> {
 impl<T> Updated<T> {
     pub fn new(live_view: T) -> Self {
         Self {
-            live_view,
+            live_view: Some(live_view),
+            js_commands: Default::default(),
+            skip_render: false,
+        }
+    }
+
+    pub(crate) fn panicked() -> Self {
+        Self {
+            live_view: None,
             js_commands: Default::default(),
             skip_render: false,
         }

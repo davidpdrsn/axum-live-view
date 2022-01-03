@@ -165,7 +165,14 @@ impl<T> fmt::Debug for AsyncCallback<T> {
 
 impl<T> AsyncCallback<T> {
     pub(crate) async fn call(self, t: T, msg: Bytes) -> Updated<T> {
-        (self.callback)(t, msg).await
+        let f = (self.callback)(t, msg);
+        let f = std::panic::AssertUnwindSafe(f);
+        let f = futures_util::future::FutureExt::catch_unwind(f);
+
+        match f.await {
+            Ok(updated) => updated,
+            Err(_) => Updated::panicked(),
+        }
     }
 }
 
