@@ -44,6 +44,11 @@ async fn root(embed_live_view: EmbedLiveView<InProcess>) -> impl IntoResponse {
         <html>
             <head>
                 <script src="/bundle.js"></script>
+                <style>
+                    r#"
+                    body { background: black; color: white; }
+                    "#
+                </style>
             </head>
             <body>
                 { embed_live_view.embed(counter) }
@@ -52,7 +57,7 @@ async fn root(embed_live_view: EmbedLiveView<InProcess>) -> impl IntoResponse {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 struct Counter {
     count: u64,
 }
@@ -69,6 +74,10 @@ impl LiveView for Counter {
                     self.count -= 1;
                 }
             }
+        }
+
+        if self.count >= 10 {
+            panic!();
         }
 
         Updated::new(self)

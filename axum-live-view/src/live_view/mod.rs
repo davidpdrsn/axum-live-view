@@ -17,6 +17,39 @@ pub use self::{
 };
 
 #[async_trait]
+pub trait MakeLiveView: Send + Sync + 'static {
+    type LiveView: LiveView;
+
+    async fn make_live_view(&self) -> Self::LiveView;
+}
+
+#[derive(Clone, Debug)]
+pub struct Shared<T> {
+    live_view: T,
+}
+
+impl<T> Shared<T> {
+    pub fn new(live_view: T) -> Self
+    where
+        T: LiveView + Clone,
+    {
+        Self { live_view }
+    }
+}
+
+#[async_trait]
+impl<T> MakeLiveView for Shared<T>
+where
+    T: LiveView + Clone,
+{
+    type LiveView = T;
+
+    async fn make_live_view(&self) -> Self::LiveView {
+        self.live_view.clone()
+    }
+}
+
+#[async_trait]
 pub trait LiveView: Sized + Send + Sync + 'static {
     type Message: Serialize + DeserializeOwned + PartialEq + Send + Sync + 'static;
 
@@ -55,7 +88,7 @@ pub(super) fn wrap_in_live_view_container<T>(live_view_id: LiveViewId, markup: H
 
 #[derive(Debug, Clone)]
 pub struct Updated<T> {
-    live_view: T,
+    live_view: Option<T>,
     js_commands: Vec<JsCommand>,
     skip_render: bool,
 }
@@ -63,7 +96,15 @@ pub struct Updated<T> {
 impl<T> Updated<T> {
     pub fn new(live_view: T) -> Self {
         Self {
-            live_view,
+            live_view: Some(live_view),
+            js_commands: Default::default(),
+            skip_render: false,
+        }
+    }
+
+    pub(crate) fn panicked() -> Self {
+        Self {
+            live_view: None,
             js_commands: Default::default(),
             skip_render: false,
         }

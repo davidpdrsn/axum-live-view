@@ -97,6 +97,7 @@ async fn root(
     }
 }
 
+#[derive(Clone)]
 struct MessagesList {
     messages: Arc<Mutex<Vec<Message>>>,
 }
@@ -136,6 +137,7 @@ impl LiveView for MessagesList {
     }
 }
 
+#[derive(Clone)]
 struct SendMessageForm<P> {
     pubsub: P,
     message: String,

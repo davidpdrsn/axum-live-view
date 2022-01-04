@@ -213,7 +213,7 @@ fn examples_run(opt: ExamplesRun) -> Result {
     cmd.args(&["run", "-p", &format!("example-{}", which)]);
     cmd.env(
         "RUST_LOG",
-        format!("axum_live_view=debug,example_{}=trace", which),
+        format!("axum_live_view=trace,example_{}=trace", which),
     );
     cmd.status()?;
 

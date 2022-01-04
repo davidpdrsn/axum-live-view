@@ -57,7 +57,7 @@ async fn root(embed_live_view: EmbedLiveView<InProcess>) -> impl IntoResponse {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 struct FormView {
     text_input_value: String,
     textarea_value: String,
@@ -269,7 +269,7 @@ struct ChangedInput {
     input: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 struct FormValues {
     input: String,
     textarea: String,
