@@ -28,29 +28,23 @@ export function connectAndRun(options: LiveViewOptions) {
 }
 
 function doConnectAndRun(options: LiveViewOptions, connectState: ConnectState) {
-  console.log("connecting to socket")
   const socket = new WebSocket(`ws://${options.host}:${options.port}/live`)
-  console.log("connected to socket")
 
   const viewStates = {}
 
   socket.addEventListener("open", () => {
-    console.log("socket open")
     onOpen(socket, connectState, options)
   })
 
   socket.addEventListener("message", (event) => {
-    console.log("socket message")
     onMessage(socket, event, connectState, options, viewStates)
   })
 
   socket.addEventListener("close", () => {
-    console.log("socket close")
     onClose(socket, connectState, options)
   })
 
   socket.addEventListener("error", () => {
-    console.log("socket error")
     onError(socket, connectState, options)
   })
 }

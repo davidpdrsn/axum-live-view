@@ -28,9 +28,7 @@ async fn ws<P>(upgrade: WebSocketUpgrade, embed_live_view: EmbedLiveView<P>) -> 
 where
     P: PubSub + Clone,
 {
-    tracing::info!("/live called");
     upgrade.on_upgrade(move |socket| {
-        tracing::info!("ws upgraded");
         let (write, read) = socket.split();
         handle_socket(read, write, embed_live_view.pubsub)
     })
@@ -54,9 +52,16 @@ where
         tokio::select! {
             Some(msg) = read.next() => {
                 let result = handle_message_from_socket(msg, &pubsub, &mut state, &mut write).await;
-                if let Err(err) = result {
-                    tracing::error!(?err, "error handling message from socket");
-                    break;
+                match result {
+                    Ok(()) => {},
+                    Err(HowBadIsTheErrorReally::ItsFine(err)) => {
+                        tracing::trace!(%err, "error handling message from socket");
+                        break;
+                    }
+                    Err(HowBadIsTheErrorReally::ReallyBad(err)) => {
+                        tracing::error!(%err, "error handling message from socket");
+                        break;
+                    }
                 }
             }
 
@@ -110,7 +115,12 @@ where
             .await;
     }
 
-    tracing::debug!("WebSocket task ending");
+    tracing::trace!("WebSocket task ending");
+}
+
+enum HowBadIsTheErrorReally {
+    ItsFine(anyhow::Error),
+    ReallyBad(anyhow::Error),
 }
 
 async fn handle_message_from_socket<P, W>(
@@ -118,7 +128,7 @@ async fn handle_message_from_socket<P, W>(
     pubsub: &P,
     state: &mut SocketState,
     write: &mut W,
-) -> anyhow::Result<()>
+) -> Result<(), HowBadIsTheErrorReally>
 where
     P: PubSub,
     W: Sink<ws::Message> + Unpin,
@@ -130,15 +140,17 @@ where
             tracing::warn!(?other, "received unexpected message from socket");
             return Ok(());
         }
-        Err(err) => return Err(err.into()),
+        Err(err) => return Err(HowBadIsTheErrorReally::ItsFine(err.into())),
     };
 
     let msg = serde_json::from_str::<RawMessage>(&text)
-        .with_context(|| format!("parsing into `RawMessage`. text = {:?}", text))?;
+        .with_context(|| format!("parsing into `RawMessage`. text = {:?}", text))
+        .map_err(HowBadIsTheErrorReally::ReallyBad)?;
 
     let live_view_id = msg.live_view_id;
     let msg = EventFromBrowser::try_from(msg.clone())
-        .with_context(|| format!("Parsing into `EventFromBrowser`. msg={:?}", msg))?;
+        .with_context(|| format!("Parsing into `EventFromBrowser`. msg={:?}", msg))
+        .map_err(HowBadIsTheErrorReally::ReallyBad)?;
 
     tracing::trace!(?msg, "received message from websocket");
 
@@ -148,25 +160,30 @@ where
                 .subscribe(&topics::initial_render(live_view_id))
                 .await
                 .map_err(PubSubError::boxed)
-                .context("creating initial-render stream")?;
+                .context("creating initial-render stream")
+                .map_err(HowBadIsTheErrorReally::ReallyBad)?;
 
             pubsub
                 .broadcast(&topics::mounted(live_view_id), ())
                 .await
                 .map_err(PubSubError::boxed)
-                .context("broadcasting mounted")?;
+                .context("broadcasting mounted")
+                .map_err(HowBadIsTheErrorReally::ReallyBad)?;
 
             let Json(initial_render_html) = if let Some(msg) = initial_render_stream.next().await {
                 msg
             } else {
-                anyhow::bail!("initial-render never responded")
+                return Err(HowBadIsTheErrorReally::ReallyBad(anyhow::anyhow!(
+                    "initial-render never responded"
+                )));
             };
 
             let diff_stream = pubsub
                 .subscribe(&topics::rendered(live_view_id))
                 .await
                 .map_err(PubSubError::boxed)
-                .context("creating rendered stream")?
+                .context("creating rendered stream")
+                .map_err(HowBadIsTheErrorReally::ReallyBad)?
                 .map(|Json(diff)| diff);
             state
                 .diff_streams
@@ -178,13 +195,16 @@ where
                 INITIAL_RENDER_TOPIC,
                 Some(initial_render_html),
             )
-            .await?;
+            .await
+            .map_err(HowBadIsTheErrorReally::ReallyBad)?;
         }
 
         EventFromBrowser::Click(WithoutValue { msg })
         | EventFromBrowser::WindowFocus(WithoutValue { msg })
         | EventFromBrowser::WindowBlur(WithoutValue { msg }) => {
-            send_update(live_view_id, msg, None, pubsub).await?;
+            send_update(live_view_id, msg, None, pubsub)
+                .await
+                .map_err(HowBadIsTheErrorReally::ReallyBad)?;
         }
 
         EventFromBrowser::MouseEvent(MouseEvent { msg, fields }) => {
@@ -194,7 +214,8 @@ where
                 Some(AssociatedDataKind::Mouse(fields)),
                 pubsub,
             )
-            .await?;
+            .await
+            .map_err(HowBadIsTheErrorReally::ReallyBad)?;
         }
 
         EventFromBrowser::FormEvent(FormEvent { msg, value }) => {
@@ -204,7 +225,8 @@ where
                 Some(AssociatedDataKind::Form(value)),
                 pubsub,
             )
-            .await?;
+            .await
+            .map_err(HowBadIsTheErrorReally::ReallyBad)?;
         }
 
         EventFromBrowser::KeyEvent(KeyEvent { msg, fields }) => {
@@ -214,7 +236,8 @@ where
                 Some(AssociatedDataKind::Key(fields)),
                 pubsub,
             )
-            .await?;
+            .await
+            .map_err(HowBadIsTheErrorReally::ReallyBad)?;
         }
     }
 

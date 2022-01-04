@@ -63,7 +63,7 @@ pub(super) async fn run_live_view<M, P>(
     P: PubSub + Clone,
 {
     if let Err(err) = try_run_live_view(live_view_id, live_view, make_live_view, pubsub).await {
-        tracing::error!(?err, "live task finished with error");
+        tracing::error!(?err, "live view task finished with error");
     }
 }
 
@@ -82,12 +82,17 @@ where
         make_live_view,
     };
 
-    tracing::trace!("live_view update loop running");
+    tracing::trace!(?live_view_id, "live view update loop running");
 
     loop {
         state = next_state(state, live_view_id, &pubsub)
             .await
-            .context("failed to compute next state")?;
+            .with_context(|| {
+                format!(
+                    "failed to compute next state. live_view_id={:?}",
+                    live_view_id
+                )
+            })?;
 
         match state {
             State::Initial { .. } => {
@@ -318,7 +323,7 @@ async fn wait_for_mount(
     match timeout(MOUNT_TIMEOUT, mount_stream.next()).await {
         Ok(Some(())) => Ok(()),
         Ok(None) | Err(_) => {
-            tracing::debug!("live view task mount timeout expired");
+            tracing::trace!("live view task mount timeout expired");
             Err(())
         }
     }
