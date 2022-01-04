@@ -104,7 +104,9 @@ function onMessage(
 }
 
 function onClose(socket: WebSocket, connectState: ConnectState, options: LiveViewOptions) {
-  doConnectAndRun(options, connectState)
+  setTimeout(() => {
+    doConnectAndRun(options, connectState)
+  }, 500)
 }
 
 function onError(socket: WebSocket, connectState: ConnectState, options: LiveViewOptions) {
