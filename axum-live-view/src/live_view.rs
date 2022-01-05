@@ -1,12 +1,25 @@
 use crate::{event_data::EventData, html::Html, js_command::JsCommand};
-use axum::async_trait;
+use axum::{
+    async_trait,
+    http::{HeaderMap, Uri},
+};
 use serde::{de::DeserializeOwned, Serialize};
+use std::fmt;
 
 #[async_trait]
 pub trait LiveView: Sized + Send + Sync + 'static {
     type Message: Serialize + DeserializeOwned + PartialEq + Send + Sync + 'static;
+    type Error: fmt::Display;
 
-    async fn update(self, msg: Self::Message, data: EventData) -> Updated<Self>;
+    async fn mount(&mut self, _uri: Uri, _request_headers: &HeaderMap) -> Result<(), Self::Error> {
+        Ok(())
+    }
+
+    async fn update(
+        self,
+        msg: Self::Message,
+        data: EventData,
+    ) -> Result<Updated<Self>, Self::Error>;
 
     fn render(&self) -> Html<Self::Message>;
 }

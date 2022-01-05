@@ -7,9 +7,11 @@ use crate::{
 use async_trait::async_trait;
 use axum::{
     extract::{
+        rejection::HeadersAlreadyExtracted,
         ws::{self, WebSocketUpgrade},
         FromRequest, RequestParts,
     },
+    http::{HeaderMap, Uri},
     response::{IntoResponse, Response},
 };
 use futures_util::{
@@ -17,10 +19,7 @@ use futures_util::{
     stream::{Stream, StreamExt, TryStreamExt},
 };
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
-use std::{
-    convert::Infallible,
-    fmt::{self, Debug},
-};
+use std::fmt::{self, Debug};
 use tokio::sync::{mpsc, oneshot};
 use tokio_stream::wrappers::ReceiverStream;
 
@@ -35,6 +34,17 @@ where
 
         while let Some(request) = rx.recv().await {
             match request {
+                ViewRequest::Mount {
+                    uri,
+                    headers,
+                    reply_tx,
+                } => {
+                    if let Err(err) = view.mount(uri, &headers).await {
+                        tracing::error!("mount failed with error: {}", err);
+                        break;
+                    }
+                    let _ = reply_tx.send(());
+                }
                 ViewRequest::Render { reply_tx } => {
                     let _ = reply_tx.send(markup.serialize());
                 }
@@ -46,7 +56,13 @@ where
                     let Updated {
                         live_view: new_view,
                         js_commands,
-                    } = view.update(msg, event_data).await;
+                    } = match view.update(msg, event_data).await {
+                        Ok(updated) => updated,
+                        Err(err) => {
+                            tracing::error!("View failed with error: {}", err);
+                            break;
+                        }
+                    };
 
                     view = new_view;
 
@@ -83,6 +99,25 @@ impl<M> Clone for ViewTaskHandle<M> {
 }
 
 impl<M> ViewTaskHandle<M> {
+    async fn mount(&self, uri: Uri, headers: HeaderMap) -> anyhow::Result<()> {
+        let (reply_tx, reply_rx) = oneshot::channel();
+
+        let request = ViewRequest::Mount {
+            reply_tx,
+            uri,
+            headers,
+        };
+
+        self.tx
+            .send(request)
+            .await
+            .map_err(|_| anyhow::anyhow!("live view task ended unexpectedly"))?;
+
+        reply_rx
+            .await
+            .map_err(|_| anyhow::anyhow!("live view didn't response to mount request"))
+    }
+
     async fn render(&self) -> anyhow::Result<html::Serialized> {
         let (reply_tx, reply_rx) = oneshot::channel();
 
@@ -119,6 +154,11 @@ impl<M> ViewTaskHandle<M> {
 }
 
 enum ViewRequest<M> {
+    Mount {
+        uri: Uri,
+        headers: HeaderMap,
+        reply_tx: oneshot::Sender<()>,
+    },
     Render {
         reply_tx: oneshot::Sender<html::Serialized>,
     },
@@ -144,7 +184,7 @@ pub struct LiveViewUpgrade {
 #[derive(Debug)]
 enum LiveViewUpgradeInner {
     Http,
-    Ws(WebSocketUpgrade),
+    Ws(Box<(WebSocketUpgrade, Uri, HeaderMap)>),
 }
 
 #[async_trait]
@@ -152,14 +192,17 @@ impl<B> FromRequest<B> for LiveViewUpgrade
 where
     B: Send,
 {
-    type Rejection = Infallible;
+    type Rejection = LiveViewUpgradeRejection;
 
     async fn from_request(req: &mut RequestParts<B>) -> Result<Self, Self::Rejection> {
-        let ws = WebSocketUpgrade::from_request(req).await.ok();
+        if let Ok(ws) = WebSocketUpgrade::from_request(req).await {
+            let uri = req.uri().clone();
+            let headers = req.headers().cloned().ok_or_else(|| {
+                LiveViewUpgradeRejection::HeadersAlreadyExtracted(Default::default())
+            })?;
 
-        if let Some(ws) = ws {
             Ok(Self {
-                inner: LiveViewUpgradeInner::Ws(ws),
+                inner: LiveViewUpgradeInner::Ws(Box::new((ws, uri, headers))),
             })
         } else {
             Ok(Self {
@@ -169,18 +212,32 @@ where
     }
 }
 
+#[derive(Debug)]
+#[non_exhaustive]
+pub enum LiveViewUpgradeRejection {
+    HeadersAlreadyExtracted(HeadersAlreadyExtracted),
+}
+
+impl IntoResponse for LiveViewUpgradeRejection {
+    fn into_response(self) -> Response {
+        match self {
+            Self::HeadersAlreadyExtracted(inner) => inner.into_response(),
+        }
+    }
+}
+
 impl LiveViewUpgrade {
-    pub fn response<F, M>(self, render: F) -> Response
+    pub fn response<F, M>(self, gather_view: F) -> Response
     where
         F: FnOnce(EmbedLiveView<'_, M>) -> Html<M>,
         M: Serialize + DeserializeOwned + Send + 'static,
     {
-        let ws = match self.inner {
+        let (ws, uri, headers) = match self.inner {
             LiveViewUpgradeInner::Http => {
                 let embed = EmbedLiveView { handle: None };
-                return render(embed).into_response();
+                return gather_view(embed).into_response();
             }
-            LiveViewUpgradeInner::Ws(ws) => ws,
+            LiveViewUpgradeInner::Ws(data) => *data,
         };
 
         let mut handle = None;
@@ -190,7 +247,7 @@ impl LiveViewUpgrade {
             handle: Some((&mut handle, tx)),
         };
 
-        render(embed);
+        gather_view(embed);
 
         let handle = if let Some(handle) = handle {
             handle
@@ -218,7 +275,7 @@ impl LiveViewUpgrade {
                 });
             futures_util::pin_mut!(read);
 
-            if let Err(err) = process_view_messages(write, read, handle, rx).await {
+            if let Err(err) = process_view_messages(write, read, handle, rx, uri, headers).await {
                 tracing::error!(%err, "encountered while processing socket");
             }
         })
@@ -300,17 +357,13 @@ impl fmt::Display for ViewHandleSendError {
 
 impl std::error::Error for ViewHandleSendError {}
 
-#[allow(
-    unused_variables,
-    clippy::diverging_sub_expression,
-    unreachable_code,
-    clippy::todo
-)]
 async fn process_view_messages<W, R, RE, M>(
     mut write: W,
     read: R,
     view: ViewTaskHandle<M>,
     rx: mpsc::Receiver<M>,
+    uri: Uri,
+    headers: HeaderMap,
 ) -> anyhow::Result<()>
 where
     W: Sink<MessageToSocket> + Unpin,
@@ -319,7 +372,10 @@ where
     RE: Into<anyhow::Error>,
     M: DeserializeOwned,
 {
+    view.mount(uri, headers).await?;
+
     let markup = view.render().await?;
+
     write_message(&mut write, MessageToSocketData::InitialRender(markup)).await?;
 
     let rx_stream = ReceiverStream::new(rx).map(|msg| {

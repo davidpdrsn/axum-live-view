@@ -7,7 +7,7 @@ use axum::{
 };
 use axum_live_view::{html, EventData, Html, LiveView, LiveViewUpgrade, Updated};
 use serde::{Deserialize, Serialize};
-use std::{env, net::SocketAddr, path::PathBuf};
+use std::{convert::Infallible, env, net::SocketAddr, path::PathBuf};
 use tower_http::services::ServeFile;
 
 #[tokio::main]
@@ -55,11 +55,11 @@ struct Counter {
 #[async_trait]
 impl LiveView for Counter {
     type Message = Msg;
+    type Error = Infallible;
 
-    async fn update(mut self, msg: Msg, _data: EventData) -> Updated<Self> {
+    async fn update(mut self, msg: Msg, _data: EventData) -> Result<Updated<Self>, Self::Error> {
         match msg {
             Msg::Incr => self.count += 1,
-            Msg::IncrBy(n) => self.count += n,
             Msg::Decr => {
                 if self.count > 0 {
                     self.count -= 1;
@@ -67,8 +67,7 @@ impl LiveView for Counter {
             }
         }
 
-        let set_title = axum_live_view::js_command::set_title(format!("Count: {}", self.count));
-        Updated::new(self).with(set_title)
+        Ok(Updated::new(self))
     }
 
     fn render(&self) -> Html<Self::Message> {
@@ -77,12 +76,6 @@ impl LiveView for Counter {
                 <button axm-click={ Msg::Incr }>"+"</button>
                 <button axm-click={ Msg::Decr }>"-"</button>
             </div>
-
-            if self.count >= 3 {
-                <div>
-                    <button axm-click={ Msg::IncrBy(10) }>"+10"</button>
-                </div>
-            }
 
             <div>
                 "Counter value: "
@@ -96,5 +89,4 @@ impl LiveView for Counter {
 enum Msg {
     Incr,
     Decr,
-    IncrBy(u64),
 }
