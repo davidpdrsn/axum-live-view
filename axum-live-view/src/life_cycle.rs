@@ -1,5 +1,3 @@
-#![allow(dead_code, missing_debug_implementations)]
-
 use crate::{
     event_data::EventData,
     html::{self, Html},
@@ -16,30 +14,26 @@ use axum::{
 };
 use futures_util::{
     sink::{Sink, SinkExt},
-    stream::{BoxStream, Stream, StreamExt, TryStreamExt},
+    stream::{Stream, StreamExt, TryStreamExt},
 };
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
-use std::convert::Infallible;
+use std::{
+    convert::Infallible,
+    fmt::{self, Debug},
+};
 use tokio::sync::{mpsc, oneshot};
-use tokio_stream::{wrappers::ReceiverStream, StreamMap};
+use tokio_stream::wrappers::ReceiverStream;
 
-type OwnedStream<T> = BoxStream<'static, T>;
-
-fn spawn_view<L>(mut view: L) -> ViewHandle<L::Message>
+fn spawn_view<L>(mut view: L) -> ViewTaskHandle<L::Message>
 where
     L: LiveView,
 {
-    let (tx, rx) = mpsc::channel(1024);
+    let (tx, mut rx) = mpsc::channel(1024);
 
     crate::util::spawn_unit(async move {
         let mut markup = wrap_in_live_view_container(view.render());
 
-        let mut request_stream = StreamMap::<u32, _>::new();
-        request_stream.insert(0, Box::pin(ReceiverStream::new(rx)));
-
-        // TODO(david): setup subscriptions
-
-        while let Some((_, request)) = request_stream.next().await {
+        while let Some(request) = rx.recv().await {
             match request {
                 ViewRequest::Render { reply_tx } => {
                     let _ = reply_tx.send(markup.serialize());
@@ -63,6 +57,7 @@ where
                     let response = match diff {
                         Some(diff) if js_commands.is_empty() => UpdateResponse::Diff(diff),
                         Some(diff) => UpdateResponse::DiffAndJsCommands(diff, js_commands),
+                        None if js_commands.is_empty() => UpdateResponse::JsCommands(js_commands),
                         None => UpdateResponse::Empty,
                     };
 
@@ -72,14 +67,22 @@ where
         }
     });
 
-    ViewHandle { tx }
+    ViewTaskHandle { tx }
 }
 
-struct ViewHandle<M> {
+struct ViewTaskHandle<M> {
     tx: mpsc::Sender<ViewRequest<M>>,
 }
 
-impl<M> ViewHandle<M> {
+impl<M> Clone for ViewTaskHandle<M> {
+    fn clone(&self) -> Self {
+        Self {
+            tx: self.tx.clone(),
+        }
+    }
+}
+
+impl<M> ViewTaskHandle<M> {
     async fn render(&self) -> anyhow::Result<html::Serialized> {
         let (reply_tx, reply_rx) = oneshot::channel();
 
@@ -133,10 +136,12 @@ enum UpdateResponse {
     Empty,
 }
 
+#[derive(Debug)]
 pub struct LiveViewUpgrade {
     inner: LiveViewUpgradeInner,
 }
 
+#[derive(Debug)]
 enum LiveViewUpgradeInner {
     Http,
     Ws(WebSocketUpgrade),
@@ -179,61 +184,121 @@ impl LiveViewUpgrade {
         };
 
         let mut handle = None;
+        let (tx, rx) = mpsc::channel(1024);
 
         let embed = EmbedLiveView {
-            handle: Some(&mut handle),
+            handle: Some((&mut handle, tx)),
         };
 
         render(embed);
 
-        if let Some(handle) = handle {
-            ws.on_upgrade(move |socket| async move {
-                let (write, read) = socket.split();
-
-                let write = write.with(|msg| async move {
-                    let encoded_msg = ws::Message::Text(serde_json::to_string(&msg)?);
-                    Ok::<_, anyhow::Error>(encoded_msg)
-                });
-                futures_util::pin_mut!(write);
-
-                let read = read
-                    .map_err(anyhow::Error::from)
-                    .and_then(|msg| async move {
-                        if let ws::Message::Text(text) = msg {
-                            serde_json::from_str(&text).map_err(Into::into)
-                        } else {
-                            anyhow::bail!("not text")
-                        }
-                    });
-                futures_util::pin_mut!(read);
-
-                if let Err(err) = process_view_messages(write, read, handle).await {
-                    tracing::error!(%err, "encountered while processing socket");
-                }
-            })
-            .into_response()
+        let handle = if let Some(handle) = handle {
+            handle
         } else {
-            ws.on_upgrade(|_| async {}).into_response()
-        }
+            return ws.on_upgrade(|_| async {}).into_response();
+        };
+
+        ws.on_upgrade(move |socket| async move {
+            let (write, read) = socket.split();
+
+            let write = write.with(|msg| async move {
+                let encoded_msg = ws::Message::Text(serde_json::to_string(&msg)?);
+                Ok::<_, anyhow::Error>(encoded_msg)
+            });
+            futures_util::pin_mut!(write);
+
+            let read = read
+                .map_err(anyhow::Error::from)
+                .and_then(|msg| async move {
+                    if let ws::Message::Text(text) = msg {
+                        serde_json::from_str(&text).map_err(Into::into)
+                    } else {
+                        anyhow::bail!("received message from socket that wasn't text")
+                    }
+                });
+            futures_util::pin_mut!(read);
+
+            if let Err(err) = process_view_messages(write, read, handle, rx).await {
+                tracing::error!(%err, "encountered while processing socket");
+            }
+        })
+        .into_response()
     }
 }
 
 pub struct EmbedLiveView<'a, M> {
-    handle: Option<&'a mut Option<ViewHandle<M>>>,
+    handle: Option<(&'a mut Option<ViewTaskHandle<M>>, mpsc::Sender<M>)>,
 }
 
 impl<'a, M> EmbedLiveView<'a, M> {
-    pub fn embed<L>(mut self, view: L) -> Html<M>
+    pub fn embed<L>(self, view: L) -> Html<M>
+    where
+        L: LiveView<Message = M>,
+    {
+        self.embed_handle(view).0
+    }
+
+    pub fn embed_handle<L>(self, view: L) -> (Html<M>, Option<ViewHandle<L::Message>>)
     where
         L: LiveView<Message = M>,
     {
         let html = wrap_in_live_view_container(view.render());
-        if let Some(handle) = &mut self.handle {
-            **handle = Some(spawn_view(view));
+
+        if let Some((handle, tx)) = self.handle {
+            *handle = Some(spawn_view(view));
+            (html, Some(ViewHandle { tx }))
+        } else {
+            (html, None)
         }
-        html
+    }
+
+    pub fn connected(&self) -> bool {
+        self.handle.is_some()
     }
 }
+
+impl<'a, M> fmt::Debug for EmbedLiveView<'a, M> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("EmbedLiveView").finish()
+    }
+}
+
+pub struct ViewHandle<M> {
+    tx: mpsc::Sender<M>,
+}
+
+impl<M> ViewHandle<M> {
+    pub async fn send(&self, msg: M) -> Result<(), ViewHandleSendError> {
+        self.tx.send(msg).await.map_err(|_| ViewHandleSendError)?;
+        Ok(())
+    }
+}
+
+impl<M> Clone for ViewHandle<M> {
+    fn clone(&self) -> Self {
+        Self {
+            tx: self.tx.clone(),
+        }
+    }
+}
+
+impl<M> fmt::Debug for ViewHandle<M> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ViewHandle").finish()
+    }
+}
+
+#[non_exhaustive]
+#[derive(Debug)]
+pub struct ViewHandleSendError;
+
+impl fmt::Display for ViewHandleSendError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "failed to send message to view")
+    }
+}
+
+impl std::error::Error for ViewHandleSendError {}
 
 #[allow(
     unused_variables,
@@ -243,8 +308,9 @@ impl<'a, M> EmbedLiveView<'a, M> {
 )]
 async fn process_view_messages<W, R, RE, M>(
     mut write: W,
-    mut read: R,
-    view: ViewHandle<M>,
+    read: R,
+    view: ViewTaskHandle<M>,
+    rx: mpsc::Receiver<M>,
 ) -> anyhow::Result<()>
 where
     W: Sink<MessageToSocket> + Unpin,
@@ -256,11 +322,20 @@ where
     let markup = view.render().await?;
     write_message(&mut write, MessageToSocketData::InitialRender(markup)).await?;
 
+    let rx_stream = ReceiverStream::new(rx).map(|msg| {
+        Ok(MessageFromSocket {
+            msg,
+            data: MessageFromSocketData::None,
+        })
+    });
+
+    let mut stream = tokio_stream::StreamExt::merge(read, rx_stream);
+
     loop {
         let MessageFromSocket {
             msg: msg_for_view,
             data,
-        } = match read.next().await {
+        } = match stream.next().await {
             Some(Ok(msg)) => msg,
             Some(Err(err)) => {
                 let err = err.into();
@@ -332,6 +407,7 @@ struct MessageFromSocket<M> {
 #[serde(tag = "t", content = "d")]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum MessageFromSocketData {
+    None,
     Click,
     WindowFocus,
     WindowBlur,

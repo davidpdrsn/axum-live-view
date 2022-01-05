@@ -16,7 +16,8 @@ impl From<MessageFromSocketData> for EventData {
         match data {
             MessageFromSocketData::Click
             | MessageFromSocketData::WindowFocus
-            | MessageFromSocketData::WindowBlur => Self::None,
+            | MessageFromSocketData::WindowBlur
+            | MessageFromSocketData::None => Self::None,
             MessageFromSocketData::FormSubmit { query } => Self::FormSubmit(FormSubmit { query }),
             MessageFromSocketData::FormChange { query } => Self::FormChange(FormChange { query }),
             MessageFromSocketData::InputChange { value } => {

@@ -83,22 +83,6 @@ function onClose(socket: WebSocket, state: State, options: LiveViewOptions) {
 }
 
 function bindInitialEvents(socket: WebSocket) {
-  // var elements = new Set()
-  // for (let def of elementLocalAttrs) {
-  //   document.querySelectorAll(`[${def.attr}]`).forEach((el) => {
-  //     if (!elements.has(el)) {
-  //       addEventListeners(socket, el)
-  //     }
-  //     elements.add(el)
-  //   })
-  // }
-
-  // for (let def of windowAttrs) {
-  //   document.querySelectorAll(`[${def.attr}]`).forEach((el) => {
-  //     bindLiveEvent(socket, el, def)
-  //   })
-  // }
-
   document.querySelectorAll(`[axm-click]`).forEach((element) => {
     addEventListeners(socket, element)
   })

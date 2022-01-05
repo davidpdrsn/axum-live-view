@@ -50,8 +50,9 @@ mod live_view;
 mod util;
 
 pub use self::{
+    event_data::EventData,
     html::Html,
-    life_cycle::{EmbedLiveView, LiveViewUpgrade},
+    life_cycle::{EmbedLiveView, LiveViewUpgrade, ViewHandle, ViewHandleSendError},
     live_view::{LiveView, Updated},
 };
 pub use axum_live_view_macros::html;

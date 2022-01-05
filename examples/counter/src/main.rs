@@ -5,9 +5,7 @@ use axum::{
     routing::{get, get_service},
     Router,
 };
-use axum_live_view::{
-    html, pubsub::InProcess, test, EmbedLiveView, EventData, Html, LiveView, Updated,
-};
+use axum_live_view::{html, EventData, Html, LiveView, LiveViewUpgrade, Updated};
 use serde::{Deserialize, Serialize};
 use std::{env, net::SocketAddr, path::PathBuf};
 use tower_http::services::ServeFile;
@@ -31,7 +29,7 @@ async fn main() {
         .unwrap();
 }
 
-async fn root(live: test::LiveViewUpgrade) -> impl IntoResponse {
+async fn root(live: LiveViewUpgrade) -> impl IntoResponse {
     let view = Counter::default();
 
     live.response(move |embed| {
