@@ -26,15 +26,14 @@ use tokio_stream::{wrappers::ReceiverStream, StreamMap};
 
 type OwnedStream<T> = BoxStream<'static, T>;
 
-pub fn spawn_view<L>(mut view: L) -> ViewHandle<L::Message>
+fn spawn_view<L>(mut view: L) -> ViewHandle<L::Message>
 where
     L: LiveView,
 {
-    let id = LiveViewId::new();
     let (tx, rx) = mpsc::channel(1024);
 
     crate::spawn_unit(async move {
-        let mut markup = view.render();
+        let mut markup = wrap_in_live_view_container(view.render());
 
         let mut request_stream = StreamMap::<u32, _>::new();
         request_stream.insert(0, Box::pin(ReceiverStream::new(rx)));
@@ -58,7 +57,7 @@ where
 
                     view = new_view;
 
-                    let new_markup = view.render();
+                    let new_markup = wrap_in_live_view_container(view.render());
                     let diff = markup.diff(&new_markup);
                     markup = new_markup;
 
@@ -74,11 +73,10 @@ where
         }
     });
 
-    ViewHandle { id, tx }
+    ViewHandle { tx }
 }
 
 pub struct ViewHandle<M> {
-    id: LiveViewId,
     tx: mpsc::Sender<ViewRequest<M>>,
 }
 
@@ -170,29 +168,26 @@ where
 impl LiveViewUpgrade {
     pub fn response<F, M>(self, render: F) -> Response
     where
-        F: FnOnce(&mut EmbedLiveView<'_, M>) -> Html<M>,
+        F: FnOnce(EmbedLiveView<'_, M>) -> Html<M>,
         M: Serialize + DeserializeOwned + Send + 'static,
     {
-        let mut handles = Vec::<ViewHandle<M>>::new();
-
         let ws = match self.inner {
             LiveViewUpgradeInner::Http => {
-                let mut embed = EmbedLiveView { handles: None };
-                return render(&mut embed).into_response();
+                let embed = EmbedLiveView { handle: None };
+                return render(embed).into_response();
             }
             LiveViewUpgradeInner::Ws(ws) => ws,
         };
 
-        let mut embed = EmbedLiveView {
-            handles: Some(&mut handles),
+        let mut handle = None;
+
+        let embed = EmbedLiveView {
+            handle: Some(&mut handle),
         };
 
-        render(&mut embed);
+        render(embed);
 
-        if handles.is_empty() {
-            tracing::trace!("no live views found in response");
-            ws.on_upgrade(|_| async {}).into_response()
-        } else {
+        if let Some(handle) = handle {
             ws.on_upgrade(move |socket| async move {
                 let (write, read) = socket.split();
 
@@ -213,27 +208,30 @@ impl LiveViewUpgrade {
                     });
                 futures_util::pin_mut!(read);
 
-                if let Err(err) = process_view_messages(write, read, handles).await {
+                if let Err(err) = process_view_messages(write, read, handle).await {
                     tracing::error!(%err, "encountered while processing socket");
                 }
             })
             .into_response()
+        } else {
+            tracing::trace!("no live views found in response");
+            ws.on_upgrade(|_| async {}).into_response()
         }
     }
 }
 
 pub struct EmbedLiveView<'a, M> {
-    handles: Option<&'a mut Vec<ViewHandle<M>>>,
+    handle: Option<&'a mut Option<ViewHandle<M>>>,
 }
 
 impl<'a, M> EmbedLiveView<'a, M> {
-    pub fn embed<L>(&mut self, view: L) -> Html<M>
+    pub fn embed<L>(mut self, view: L) -> Html<M>
     where
         L: LiveView<Message = M>,
     {
-        let html = view.render();
-        if let Some(handles) = &mut self.handles {
-            handles.push(spawn_view(view));
+        let html = wrap_in_live_view_container(view.render());
+        if let Some(handle) = &mut self.handle {
+            **handle = Some(spawn_view(view));
         }
         html
     }
@@ -248,7 +246,7 @@ impl<'a, M> EmbedLiveView<'a, M> {
 async fn process_view_messages<W, R, RE, M>(
     mut write: W,
     mut read: R,
-    handles: Vec<ViewHandle<M>>,
+    view: ViewHandle<M>,
 ) -> anyhow::Result<()>
 where
     W: Sink<MessageToSocket> + Unpin,
@@ -257,24 +255,11 @@ where
     RE: Into<anyhow::Error>,
     M: DeserializeOwned,
 {
-    for handle in &handles {
-        let markup = handle.render().await?;
-        socket_message(
-            &mut write,
-            handle.id,
-            MessageToSocketData::InitialRender(markup),
-        )
-        .await?;
-    }
-
-    let handles = handles
-        .into_iter()
-        .map(|handle| (handle.id, handle))
-        .collect::<HashMap<_, _>>();
+    let markup = view.render().await?;
+    socket_message(&mut write, MessageToSocketData::InitialRender(markup)).await?;
 
     loop {
         let MessageFromSocket {
-            id,
             msg: msg_for_view,
             data,
         } = match read.next().await {
@@ -289,8 +274,6 @@ where
                 break;
             }
         };
-
-        let view = handles.get(&id).context("live view not found")?;
 
         let data: EventData = match data {
             MessageFromSocketData::Click => todo!(),
@@ -323,14 +306,14 @@ where
 
         match view.update(msg_for_view, data).await? {
             UpdateResponse::Diff(diff) => {
-                socket_message(&mut write, id, MessageToSocketData::Render(diff)).await?;
+                socket_message(&mut write, MessageToSocketData::Render(diff)).await?;
             }
             UpdateResponse::JsCommands(commands) => {
-                socket_message(&mut write, id, MessageToSocketData::JsCommands(commands)).await?;
+                socket_message(&mut write, MessageToSocketData::JsCommands(commands)).await?;
             }
             UpdateResponse::DiffAndJsCommands(diff, commands) => {
-                socket_message(&mut write, id, MessageToSocketData::Render(diff)).await?;
-                socket_message(&mut write, id, MessageToSocketData::JsCommands(commands)).await?;
+                socket_message(&mut write, MessageToSocketData::Render(diff)).await?;
+                socket_message(&mut write, MessageToSocketData::JsCommands(commands)).await?;
             }
             UpdateResponse::Empty => {}
         }
@@ -341,8 +324,6 @@ where
 
 #[derive(Serialize, Debug)]
 struct MessageToSocket {
-    #[serde(rename = "id")]
-    id: LiveViewId,
     #[serde(flatten)]
     data: MessageToSocketData,
 }
@@ -358,24 +339,18 @@ enum MessageToSocketData {
     JsCommands(Vec<JsCommand>),
 }
 
-async fn socket_message<W>(
-    write: &mut W,
-    id: LiveViewId,
-    data: MessageToSocketData,
-) -> anyhow::Result<()>
+async fn socket_message<W>(write: &mut W, data: MessageToSocketData) -> anyhow::Result<()>
 where
     W: Sink<MessageToSocket> + Unpin,
     W::Error: Into<anyhow::Error>,
 {
-    let msg = MessageToSocket { id, data };
+    let msg = MessageToSocket { data };
     tracing::trace!(?msg, "sending message to socket");
     Ok(write.send(msg).await.map_err(Into::into)?)
 }
 
 #[derive(Debug, Deserialize, PartialEq)]
 struct MessageFromSocket<M> {
-    #[serde(rename = "id")]
-    id: LiveViewId,
     #[serde(rename = "m")]
     msg: M,
     #[serde(flatten)]
@@ -437,6 +412,13 @@ enum MessageFromSocketData {
         #[serde(rename = "sy")]
         screen_y: f64,
     },
+}
+
+fn wrap_in_live_view_container<T>(markup: Html<T>) -> Html<T> {
+    use crate as axum_live_view;
+    axum_live_view_macros::html! {
+        <div id="live-view-container">{ markup }</div>
+    }
 }
 
 #[cfg(test)]
@@ -509,29 +491,24 @@ mod tests {
 
     #[test]
     fn deserialize_message_from_socket_mount() {
-        let id = LiveViewId::new();
-
-        let msg = serde_json::from_value::<MessageFromSocket<Msg>>(
-            json!({ "i": id, "m": "Incr", "t": "click" }),
-        )
-        .unwrap();
+        let msg =
+            serde_json::from_value::<MessageFromSocket<Msg>>(json!({ "m": "Incr", "t": "click" }))
+                .unwrap();
         assert_eq!(
             msg,
             MessageFromSocket {
-                id,
                 msg: Msg::Incr,
                 data: MessageFromSocketData::Click
             }
         );
 
         let msg = serde_json::from_value::<MessageFromSocket<Msg>>(
-            json!({ "i": id, "m": "Incr", "t": "submit", "d": { "q": "name=bob&age=20" } }),
+            json!({ "m": "Incr", "t": "submit", "d": { "q": "name=bob&age=20" } }),
         )
         .unwrap();
         assert_eq!(
             msg,
             MessageFromSocket {
-                id,
                 msg: Msg::Incr,
                 data: MessageFromSocketData::Submit {
                     query: "name=bob&age=20".to_owned()

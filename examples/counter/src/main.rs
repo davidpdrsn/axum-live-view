@@ -16,9 +16,6 @@ use tower_http::services::ServeFile;
 async fn main() {
     tracing_subscriber::fmt::init();
 
-    // let pubsub = InProcess::new();
-    // let (live_view_routes, live_view_layer) = axum_live_view::router_parts(pubsub);
-
     let app = Router::new().route("/", get(root)).route(
         "/app.js",
         get_service(ServeFile::new(
@@ -26,8 +23,6 @@ async fn main() {
         ))
         .handle_error(|_| async { StatusCode::INTERNAL_SERVER_ERROR }),
     );
-    // .merge(live_view_routes)
-    // .layer(live_view_layer);
 
     let addr = SocketAddr::from(([0, 0, 0, 0], 3000));
     axum::Server::bind(&addr)
@@ -66,6 +61,7 @@ impl LiveView for Counter {
     async fn update(mut self, msg: Msg, _data: EventData) -> Updated<Self> {
         match msg {
             Msg::Incr => self.count += 1,
+            Msg::IncrBy(n) => self.count += n,
             Msg::Decr => {
                 if self.count > 0 {
                     self.count -= 1;
@@ -73,11 +69,8 @@ impl LiveView for Counter {
             }
         }
 
-        if self.count >= 10 {
-            panic!();
-        }
-
-        Updated::new(self)
+        let set_title = axum_live_view::js_command::set_title(format!("Count: {}", self.count));
+        Updated::new(self).with(set_title)
     }
 
     fn render(&self) -> Html<Self::Message> {
@@ -86,6 +79,12 @@ impl LiveView for Counter {
                 <button axm-click={ Msg::Incr }>"+"</button>
                 <button axm-click={ Msg::Decr }>"-"</button>
             </div>
+
+            if self.count >= 3 {
+                <div>
+                    <button axm-click={ Msg::IncrBy(10) }>"+10"</button>
+                </div>
+            }
 
             <div>
                 "Counter value: "
@@ -99,4 +98,5 @@ impl LiveView for Counter {
 enum Msg {
     Incr,
     Decr,
+    IncrBy(u64),
 }

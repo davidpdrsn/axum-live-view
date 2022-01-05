@@ -78,7 +78,6 @@ impl fmt::Display for LiveViewId {
 
 pub(super) fn wrap_in_live_view_container<T>(live_view_id: LiveViewId, markup: Html<T>) -> Html<T> {
     use crate as axum_live_view;
-
     html! {
         <div class="live-view-container" data-live-view-id={ live_view_id.to_string() }>
             { markup }

@@ -5,11 +5,8 @@ export interface LiveViewOptions {
   port: number;
 }
 
-interface ConnectState {
-}
-
-interface ViewStates {
-  [index: string]: ViewState;
+interface State {
+  viewState?: ViewState;
 }
 
 interface ViewState {
@@ -21,150 +18,123 @@ interface ViewStateDiff {
 }
 
 export function connectAndRun(options: LiveViewOptions) {
-  var connectState = {
-  }
-
-  doConnectAndRun(options, connectState)
-}
-
-function doConnectAndRun(options: LiveViewOptions, connectState: ConnectState) {
   const socket = new WebSocket(`ws://${window.location.host}${window.location.pathname}`);
 
-  const viewStates = {}
-
-  socket.addEventListener("open", (event) => {
-    // onOpen(socket, connectState, options)
-  })
+  var state: State = {}
 
   socket.addEventListener("message", (event) => {
-    // const msg: MessageFromView = JSON.parse(event.data)
-    // onMessage(socket, event, connectState, options, viewStates)
+    onMessage(socket, event, state, options)
   })
 
   socket.addEventListener("close", (event) => {
-    console.log("close", event)
-    // onClose(socket, connectState, options)
-  })
-
-  socket.addEventListener("error", (event) => {
-    console.log("error", event)
-    // onError(socket, connectState, options)
+    onClose(socket, state, options)
   })
 }
 
-type MessageFromView = InitialRender
+type MessageFromView = InitialRender | Render | JsCommands
 
 type InitialRender = {
   t: "i",
   d: ViewState,
-  id: string;
 }
 
-// function onOpen(socket: WebSocket, connectState: ConnectState, options: LiveViewOptions) {
-//   mountComponents(socket)
-//   bindInitialEvents(socket)
-// }
+type Render = {
+  t: "r",
+  d: ViewStateDiff,
+}
 
-// interface InitialRender { t: "i", i: string, d: ViewState }
-// interface Rendered { t: "r", i: string, d: ViewStateDiff }
-// interface JsCommand { t: "j", i: string, d: JsCommandData[] }
+type JsCommands = {
+  t: "j",
+  d: JsCommand[],
+}
 
-// type Msg = InitialRender | Rendered | JsCommand
+function onMessage(
+  socket: WebSocket,
+  event: MessageEvent,
+  state: State,
+  options: LiveViewOptions,
+) {
+  const msg: MessageFromView = JSON.parse(event.data)
 
-// function onMessage(
-//   socket: WebSocket,
-//   event: MessageEvent,
-//   connectState: ConnectState,
-//   options: LiveViewOptions,
-//   viewStates: ViewStates,
-// ) {
-//   const payload: Msg = JSON.parse(event.data)
+  if (msg.t === "i") {
+    state.viewState = msg.d
+    updateDomFromState(socket, state)
+    bindInitialEvents(socket)
 
-//   if (payload.t === "i") {
-//     // initial-render
+  } else if (msg.t === "r") {
+    if (!state.viewState) { return }
+    patchViewState(state.viewState, msg.d)
+    updateDomFromState(socket, state)
 
-//     const liveViewId = payload.i
-//     const data = payload.d
-//     const element = document.querySelector(`[data-live-view-id="${liveViewId}"]`)
-//     if (!element) { throw "Element not found" }
-//     const html = buildHtmlFromState(data)
-//     updateDom(socket, element, html)
-//     viewStates[liveViewId] = data
+  } else if (msg.t === "j") {
+    for (const jsCommand of msg.d) {
+      handleJsCommand(jsCommand)
+    }
 
-//   } else if (payload.t === "r") {
-//     // rendered
-//     const liveViewId = payload.i
-//     const diff = payload.d
-//     const element = document.querySelector(`[data-live-view-id="${liveViewId}"]`)
-//     if (!element) { throw "Element not found" }
+  } else {
+    const _: never = msg
+  }
+}
 
-//     const state = viewStates[liveViewId]
-//     if (!state) { throw "No liveView state found" }
-//     patchViewState(state, diff)
+function onClose(socket: WebSocket, state: State, options: LiveViewOptions) {
+  setTimeout(() => {
+    connectAndRun(options)
+  }, 500)
+}
 
-//     const html = buildHtmlFromState(state)
-//     updateDom(socket, element, html)
+function bindInitialEvents(socket: WebSocket) {
+  // var elements = new Set()
+  // for (let def of elementLocalAttrs) {
+  //   document.querySelectorAll(`[${def.attr}]`).forEach((el) => {
+  //     if (!elements.has(el)) {
+  //       addEventListeners(socket, el)
+  //     }
+  //     elements.add(el)
+  //   })
+  // }
 
-//   } else if (payload.t === "j") {
-//     // js-command
-//     payload.d.forEach(handleJsCommand)
+  // for (let def of windowAttrs) {
+  //   document.querySelectorAll(`[${def.attr}]`).forEach((el) => {
+  //     bindLiveEvent(socket, el, def)
+  //   })
+  // }
 
-//   } else {
-//     const _: never = payload
-//   }
-// }
+  document.querySelectorAll(`[axm-click]`).forEach((element) => {
+    addEventListeners(socket, element)
+  })
+}
 
-// function onClose(socket: WebSocket, connectState: ConnectState, options: LiveViewOptions) {
-//   setTimeout(() => {
-//     doConnectAndRun(options, connectState)
-//   }, 500)
-// }
+function addEventListeners(socket: WebSocket, element: Element) {
+  // bind click
+  if (element.hasAttribute("axm-click")) {
+    element.addEventListener("click", (event) => {
+      event.preventDefault()
 
-// function onError(socket: WebSocket, connectState: ConnectState, options: LiveViewOptions) {
-// }
+      const decodeMsg = msgAttr(element, "axm-click")
+      if (!decodeMsg) { return }
 
-// function socketSend(socket: WebSocket, liveViewId: string, topic: string, data: object) {
-//   let msg = [liveViewId, topic, data]
-//   socket.send(JSON.stringify(msg))
-// }
+      const viewMsg = { t: "click", m: decodeMsg }
+      socket.send(JSON.stringify(viewMsg))
+    })
+  }
 
-// function mountComponents(socket: WebSocket) {
-//   const liveViewIdAttr = "data-live-view-id"
+  function msgAttr(element: Element, attr: string): string | JSON | undefined {
+      const value = element.getAttribute(attr)
+      if (!value) { return }
+      try {
+        return JSON.parse(value)
+      } catch {
+        return value
+      }
+  }
+}
 
-//   document.querySelectorAll(`[${liveViewIdAttr}]`).forEach((component) => {
-//     const liveViewId = component.getAttribute(liveViewIdAttr)
+type MessageToView = Click
 
-//     if (liveViewId) {
-//       socketSend(socket, liveViewId, "axum/mount-live-view", {})
-//     }
-//   })
-// }
-
-// function bindInitialEvents(socket: WebSocket) {
-//   var elements = new Set()
-//   for (let def of elementLocalAttrs) {
-//     document.querySelectorAll(`[${def.attr}]`).forEach((el) => {
-//       if (!elements.has(el)) {
-//         addEventListeners(socket, el)
-//       }
-//       elements.add(el)
-//     })
-//   }
-
-//   for (let def of windowAttrs) {
-//     document.querySelectorAll(`[${def.attr}]`).forEach((el) => {
-//       bindLiveEvent(socket, el, def)
-//     })
-//   }
-// }
-
-// function addEventListeners(socket: WebSocket, element: Element) {
-//   const defs = elementLocalAttrs
-
-//   for (let def of elementLocalAttrs) {
-//     bindLiveEvent(socket, element, def)
-//   }
-// }
+interface Click {
+  t: "click",
+  m: string | JSON,
+}
 
 // interface AttrDef {
 //   attr: string;
@@ -396,201 +366,209 @@ type InitialRender = {
 //   return null
 // }
 
-// const fixed = "f";
+function updateDomFromState(socket: WebSocket, state: State) {
+  if (!state.viewState) { return }
+  const html = buildHtml(state.viewState)
+  const container = document.querySelector("#live-view-container")
+  if (!container) { return }
+  patchDom(socket, container, html)
 
-// function buildHtmlFromState(state: ViewState): string {
-//     var combined = ""
+  function buildHtml(state: ViewState): string {
+      var combined = ""
 
-//     const f = state[fixed]
-//     if (!Array.isArray(f)) {
-//       throw "fixed is not an array"
-//     }
+      const f = state[fixed]
+      if (!Array.isArray(f)) {
+        throw "fixed is not an array"
+      }
 
-//     f.forEach((value, i) => {
-//       combined = combined.concat(value)
-//       const variable = state[i]
+      f.forEach((value, i) => {
+        combined = combined.concat(value)
+        const variable = state[i]
 
-//       if (variable === undefined || variable === null) {
-//         return
-//       }
+        if (variable === undefined || variable === null) {
+          return
+        }
 
-//       if (typeof variable === "string") {
-//         combined = combined.concat(variable)
+        if (typeof variable === "string") {
+          combined = combined.concat(variable)
 
-//       } else if (Array.isArray(variable)) {
-//         throw "wat"
+        } else if (Array.isArray(variable)) {
+          throw "wat"
 
-//       } else {
-//         combined = combined.concat(buildHtmlFromState(variable))
-//       }
-//     })
+        } else {
+          combined = combined.concat(buildHtml(variable))
+        }
+      })
 
-//     return combined
-// }
+      return combined
+  }
 
-// function updateDom(socket: WebSocket, element: Element, html: string) {
-//     morphdom(element, html, {
-//         onNodeAdded: (node) => {
-//           if (node instanceof Element) {
-//             addEventListeners(socket, node)
-//           }
-//           return node
-//         },
-//         onBeforeElUpdated: (fromEl, toEl) => {
-//           const tag = toEl.tagName
+  function patchDom(socket: WebSocket, element: Element, html: string) {
+      morphdom(element, html, {
+          onNodeAdded: (node) => {
+            if (node instanceof Element) {
+              addEventListeners(socket, node)
+            }
+            return node
+          },
+          onBeforeElUpdated: (fromEl, toEl) => {
+            const tag = toEl.tagName
 
-//           if (fromEl instanceof HTMLInputElement && toEl instanceof HTMLInputElement) {
-//             if (toEl.getAttribute("type") === "radio" || toEl.getAttribute("type") === "checkbox") {
-//               toEl.checked = fromEl.checked;
-//             } else {
-//               toEl.value = fromEl.value;
-//             }
-//           }
+            if (fromEl instanceof HTMLInputElement && toEl instanceof HTMLInputElement) {
+              if (toEl.getAttribute("type") === "radio" || toEl.getAttribute("type") === "checkbox") {
+                toEl.checked = fromEl.checked;
+              } else {
+                toEl.value = fromEl.value;
+              }
+            }
 
-//           if (fromEl instanceof HTMLTextAreaElement && toEl instanceof HTMLTextAreaElement) {
-//             toEl.value = fromEl.value;
-//           }
+            if (fromEl instanceof HTMLTextAreaElement && toEl instanceof HTMLTextAreaElement) {
+              toEl.value = fromEl.value;
+            }
 
-//           if (fromEl instanceof HTMLOptionElement && toEl instanceof HTMLOptionElement) {
-//             if (toEl.closest("select")?.hasAttribute("multiple")) {
-//               toEl.selected = fromEl.selected
-//             }
-//           }
+            if (fromEl instanceof HTMLOptionElement && toEl instanceof HTMLOptionElement) {
+              if (toEl.closest("select")?.hasAttribute("multiple")) {
+                toEl.selected = fromEl.selected
+              }
+            }
 
-//           if (fromEl instanceof HTMLSelectElement && toEl instanceof HTMLSelectElement && !toEl.hasAttribute("multiple")) {
-//             toEl.value = fromEl.value
-//           }
+            if (fromEl instanceof HTMLSelectElement && toEl instanceof HTMLSelectElement && !toEl.hasAttribute("multiple")) {
+              toEl.value = fromEl.value
+            }
 
-//           return true
-//         },
-//     })
-// }
+            return true
+          },
+      })
+  }
+}
 
-// function patchViewState(state: ViewState, diff: ViewStateDiff) {
-//   for (const [key, val] of Object.entries(diff)) {
-//     if (typeof val === "string" || Array.isArray(val)) {
-//       state[key] = val
+const fixed = "f";
 
-//     } else if (val === null) {
-//       delete state[key]
+function patchViewState(state: ViewState, diff: ViewStateDiff) {
+  for (const [key, val] of Object.entries(diff)) {
+    if (typeof val === "string" || Array.isArray(val)) {
+      state[key] = val
 
-//     } else if (typeof val === "object") {
-//       const nestedState = state[key]
+    } else if (val === null) {
+      delete state[key]
 
-//       if (typeof nestedState === "object" && !Array.isArray(nestedState)) {
-//         patchViewState(nestedState, val)
+    } else if (typeof val === "object") {
+      const nestedState = state[key]
 
-//       } else if (typeof nestedState === "string" || nestedState === undefined) {
-//         state[key] = <ViewState>val
+      if (typeof nestedState === "object" && !Array.isArray(nestedState)) {
+        patchViewState(nestedState, val)
 
-//       } else if (Array.isArray(nestedState)) {
-//         throw "can this be an array?"
+      } else if (typeof nestedState === "string" || nestedState === undefined) {
+        state[key] = <ViewState>val
 
-//       } else {
-//         const _: never = nestedState
-//       }
+      } else if (Array.isArray(nestedState)) {
+        throw "can this be an array?"
 
-//     } else {
-//       const _: never = val
-//     }
-//   }
-// }
+      } else {
+        const _: never = nestedState
+      }
 
-// interface JsCommandData {
-//   delay_ms: number | null,
-//   kind: JsCommandKind,
-// }
+    } else {
+      const _: never = val
+    }
+  }
+}
 
-// type JsCommandKind =
-//   { AddClass: { selector: string, klass: string } }
-//   | { RemoveClass: { selector: string, klass: string } }
-//   | { ToggleClass: { selector: string, klass: string } }
-//   | { NavigateTo: { uri: string } }
-//   | { ClearValue: { selector: string } }
-//   | { SetTitle: { title: string } }
-//   | { HistoryPushState: { uri: string } }
+interface JsCommand {
+  delay_ms: number | null,
+  kind: JsCommandKind,
+}
 
-// function handleJsCommand(cmd: JsCommandData) {
-//   const run = () => {
-//     if ("AddClass" in cmd.kind) {
-//       const { selector, klass } = cmd.kind.AddClass
-//       document.querySelectorAll(selector).forEach((element) => {
-//         element.classList.add(klass)
-//       })
+type JsCommandKind =
+  { t: "navigate_to", uri: string }
+  | { t: "add_class", selector: string, klass: string }
+  | { t: "remove_class", selector: string, klass: string }
+  | { t: "toggle_class", selector: string, klass: string }
+  | { t: "clear_value", selector: string }
+  | { t: "set_title", title: string }
+  | { t: "history_push_state", uri: string }
 
-//     } else if ("RemoveClass" in cmd.kind) {
-//       const { selector, klass } = cmd.kind.RemoveClass
-//       document.querySelectorAll(selector).forEach((element) => {
-//         element.classList.remove(klass)
-//       })
+function handleJsCommand(cmd: JsCommand) {
+  const run = () => {
+    if (cmd.kind.t === "navigate_to") {
+      const uri = cmd.kind.uri
+      if (uri.startsWith("http")) {
+        window.location.href = uri
+      } else {
+        window.location.pathname = uri
+      }
 
-//     } else if ("ToggleClass" in cmd.kind) {
-//       const { selector, klass } = cmd.kind.ToggleClass
-//       document.querySelectorAll(selector).forEach((element) => {
-//         element.classList.toggle(klass)
-//       })
+    } else if (cmd.kind.t === "add_class") {
+      const { selector, klass } = cmd.kind
+      document.querySelectorAll(selector).forEach((element) => {
+        element.classList.add(klass)
+      })
 
-//     } else if ("NavigateTo" in cmd.kind) {
-//       const { uri } = cmd.kind.NavigateTo
-//       if (uri.startsWith("http")) {
-//         window.location.href = uri
-//       } else {
-//         window.location.pathname = uri
-//       }
+    } else if (cmd.kind.t === "remove_class") {
+      const { selector, klass } = cmd.kind
+      document.querySelectorAll(selector).forEach((element) => {
+        element.classList.remove(klass)
+      })
 
-//     } else if ("ClearValue" in cmd.kind) {
-//       const { selector } = cmd.kind.ClearValue
-//       document.querySelectorAll(selector).forEach((element) => {
-//         if (element instanceof HTMLInputElement || element instanceof HTMLSelectElement || element instanceof HTMLTextAreaElement) {
-//           element.value = ""
-//         }
-//       })
+    } else if (cmd.kind.t === "toggle_class") {
+      const { selector, klass } = cmd.kind
+      document.querySelectorAll(selector).forEach((element) => {
+        element.classList.toggle(klass)
+      })
 
-//     } else if ("SetTitle" in cmd.kind) {
-//       document.title = cmd.kind.SetTitle.title
+    } else if (cmd.kind.t === "clear_value") {
+      const { selector } = cmd.kind
+      document.querySelectorAll(selector).forEach((element) => {
+        if (element instanceof HTMLInputElement || element instanceof HTMLSelectElement || element instanceof HTMLTextAreaElement) {
+          element.value = ""
+        }
+      })
 
-//     } else if ("HistoryPushState" in cmd.kind) {
-//       window.history.pushState({}, "", cmd.kind.HistoryPushState.uri);
+    } else if (cmd.kind.t === "set_title") {
+      document.title = cmd.kind.title
 
-//     } else {
-//       const _: never = cmd.kind
-//     }
-//   }
+    } else if (cmd.kind.t === "history_push_state") {
+      window.history.pushState({}, "", cmd.kind.uri);
 
-//   if (cmd.delay_ms) {
-//     setTimeout(run, cmd.delay_ms)
-//   } else {
-//     run()
-//   }
-// }
+    } else {
+      const _: never = cmd.kind
+    }
+  }
 
-// type Fn<
-//   In extends unknown[],
-// > = (...args: In) => void;
+  if (cmd.delay_ms) {
+    setTimeout(run, cmd.delay_ms)
+  } else {
+    run()
+  }
+}
 
-// function debounce<In extends unknown[]>(f: Fn<In>, delayMs: number): Fn<In> {
-//   var timeout: number
-//   return (...args) => {
-//     if (timeout) {
-//       clearTimeout(timeout)
-//     }
+type Fn<
+  In extends unknown[],
+> = (...args: In) => void;
 
-//     timeout = setTimeout(() => {
-//       f(...args)
-//     }, delayMs)
-//   }
-// }
+function debounce<In extends unknown[]>(f: Fn<In>, delayMs: number): Fn<In> {
+  var timeout: number
+  return (...args) => {
+    if (timeout) {
+      clearTimeout(timeout)
+    }
 
-// function throttle<In extends unknown[]>(f: Fn<In>, delayMs: number): Fn<In> {
-//   var timeout: number | null
-//   return (...args) => {
-//     if (timeout) {
-//       return
-//     } else {
-//       f(...args)
-//       timeout = setTimeout(() => {
-//         timeout = null
-//       }, delayMs)
-//     }
-//   }
-// }
+    timeout = setTimeout(() => {
+      f(...args)
+    }, delayMs)
+  }
+}
+
+function throttle<In extends unknown[]>(f: Fn<In>, delayMs: number): Fn<In> {
+  var timeout: number | null
+  return (...args) => {
+    if (timeout) {
+      return
+    } else {
+      f(...args)
+      timeout = setTimeout(() => {
+        timeout = null
+      }, delayMs)
+    }
+  }
+}
