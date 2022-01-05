@@ -89,11 +89,18 @@ const axm = {
   submit: "axm-submit",
   focus: "axm-focus",
   blur: "axm-blur",
+  keydown: "axm-keydown",
+  keyup: "axm-keyup",
+  window_keydown: "axm-window-keydown",
+  window_keyup: "axm-window-keyup",
+  window_focus: "axm-window-focus",
+  window_blur: "axm-window-blur",
   mouseenter: "axm-mouseenter",
   mouseover: "axm-mouseover",
   mouseleave: "axm-mouseleave",
   mouseout: "axm-mouseout",
   mousemove: "axm-mousemove",
+  scroll: "axm-scroll",
 }
 
 function bindInitialEvents(socket: WebSocket) {
@@ -106,30 +113,35 @@ function bindInitialEvents(socket: WebSocket) {
 
 function addEventListeners(socket: WebSocket, element: Element) {
   if (element.hasAttribute(axm.click)) {
-    on("click", axm.click, (msg) => ({ t: "click", m: msg }))
+    on(element, "click", axm.click, (msg) => ({ t: "click", m: msg }))
   }
 
   if (
     element instanceof HTMLInputElement ||
-      element instanceof HTMLSelectElement ||
-      element instanceof HTMLTextAreaElement
+      element instanceof HTMLTextAreaElement ||
+      element instanceof HTMLSelectElement
   ) {
     if (element.hasAttribute(axm.input)) {
-      on("input", axm.input, (msg) => {
+      on(element, "input", axm.input, (msg) => {
         const value = inputValue(element)
         return { t: "input_change", m: msg, d: { v: value } }
       })
     }
 
     if (element.hasAttribute(axm.change)) {
-      on("change", axm.change, (msg) => {
+      on(element, "change", axm.change, (msg) => {
         const value = inputValue(element)
         return { t: "input_change", m: msg, d: { v: value } }
       })
     }
+  }
 
+  if (
+    element instanceof HTMLInputElement ||
+      element instanceof HTMLTextAreaElement
+  ) {
     if (element.hasAttribute(axm.focus)) {
-      on("focus", axm.focus, (msg) => {
+      on(element, "focus", axm.focus, (msg) => {
         const value = inputValue(element)
         if (typeof value === "string") {
           return { t: "input_focus", m: msg, d: { v: value } }
@@ -139,8 +151,8 @@ function addEventListeners(socket: WebSocket, element: Element) {
       })
     }
 
-    if (element.hasAttribute(axm.focus)) {
-      on("blur", axm.blur, (msg) => {
+    if (element.hasAttribute(axm.blur)) {
+      on(element, "blur", axm.blur, (msg) => {
         const value = inputValue(element)
         if (typeof value === "string") {
           return { t: "input_blur", m: msg, d: { v: value } }
@@ -153,7 +165,7 @@ function addEventListeners(socket: WebSocket, element: Element) {
 
   if (element instanceof HTMLFormElement) {
     if (element.hasAttribute(axm.change)) {
-      on("change", axm.change, (msg) => {
+      on(element, "change", axm.change, (msg) => {
         // workaround for https://github.com/microsoft/TypeScript/issues/30584
         const form = new FormData(element) as any
         const query = new URLSearchParams(form).toString()
@@ -162,7 +174,7 @@ function addEventListeners(socket: WebSocket, element: Element) {
     }
 
     if (element.hasAttribute(axm.submit)) {
-      on("submit", axm.submit, (msg) => {
+      on(element, "submit", axm.submit, (msg) => {
         // workaround for https://github.com/microsoft/TypeScript/issues/30584
         const form = new FormData(element) as any
         const query = new URLSearchParams(form).toString()
@@ -177,12 +189,12 @@ function addEventListeners(socket: WebSocket, element: Element) {
     ["mouseleave", axm.mouseleave],
     ["mouseout", axm.mouseout],
     ["mousemove", axm.mousemove],
-  ].forEach(([ev, axm]) => {
-    if (!ev) { return }
+  ].forEach(([event, axm]) => {
+    if (!event) { return }
     if (!axm) { return }
 
     if (element.hasAttribute(axm)) {
-      on(ev, axm, (msg, event) => {
+      on(element, event, axm, (msg, event) => {
         if (event instanceof MouseEvent) {
           const data: MouseData = {
             cx: event.clientX,
@@ -202,23 +214,107 @@ function addEventListeners(socket: WebSocket, element: Element) {
         }
       })
     }
-  })
+  });
 
-  // { attr: "axm-keydown", eventName: "keydown" },
-  // { attr: "axm-keyup", eventName: "keyup" },
+  [
+    ["keydown", axm.keydown],
+    ["keyup", axm.keyup],
+  ].forEach(([event, axm]) => {
+    if (!event) { return }
+    if (!axm) { return }
 
-  // { attr: "axm-window-keydown", eventName: "keydown", bindEventTo: window },
-  // { attr: "axm-window-keyup", eventName: "keyup", bindEventTo: window },
-  // { attr: "axm-window-focus", eventName: "focus", bindEventTo: window },
-  // { attr: "axm-window-blur", eventName: "blur", bindEventTo: window },
+    if (element.hasAttribute(axm)) {
+      on(element, event, axm, (msg, event) => {
+        if (event instanceof KeyboardEvent) {
+          if (
+            element.hasAttribute("axm-key") &&
+            element?.getAttribute("axm-key")?.toLowerCase() !== event.key.toLowerCase()
+          ) {
+            return;
+          }
+
+          const data: KeyData = {
+            k: event.key,
+            kc: event.code,
+            a: event.altKey,
+            c: event.ctrlKey,
+            s: event.shiftKey,
+            me: event.metaKey,
+          }
+          return { t: "key", m: msg, d: data }
+        } else {
+          return
+        }
+      })
+    }
+  });
+
+  [
+    ["keydown", axm.window_keydown],
+    ["keyup", axm.window_keyup],
+  ].forEach(([event, axm]) => {
+    if (!event) { return }
+    if (!axm) { return }
+
+    if (element.hasAttribute(axm)) {
+      on(window, event, axm, (msg, event) => {
+        if (event instanceof KeyboardEvent) {
+          if (
+            element.hasAttribute("axm-key") &&
+            element?.getAttribute("axm-key")?.toLowerCase() !== event.key.toLowerCase()
+          ) {
+            return;
+          }
+
+          const data: KeyData = {
+            k: event.key,
+            kc: event.code,
+            a: event.altKey,
+            c: event.ctrlKey,
+            s: event.shiftKey,
+            me: event.metaKey,
+          }
+          return { t: "key", m: msg, d: data }
+        } else {
+          return
+        }
+      })
+    }
+  });
+
+  if (element.hasAttribute(axm.window_focus)) {
+    on(window, "focus", axm.window_focus, (msg, event) => {
+      return { t: "window_focus", m: msg }
+    })
+  }
+
+  if (element.hasAttribute(axm.window_blur)) {
+    on(window, "blur", axm.window_blur, (msg, event) => {
+      return { t: "window_blur", m: msg }
+    })
+  }
+
+  if (element.hasAttribute(axm.scroll)) {
+    on(document, "scroll", axm.scroll, (msg, event) => {
+      const data = {
+        sx: window.scrollX,
+        sy: window.scrollY,
+      }
+      return { t: "scroll", m: msg, d: data }
+    })
+  }
 
   function on(
+    element: Element | typeof window | typeof document,
     eventName: string,
     attr: string,
     f: (msg: string | JSON, event: Event) => MessageToView | undefined,
   ) {
     element.addEventListener(eventName, delayOrThrottle((event) => {
-      event.preventDefault()
+      if (!(event instanceof KeyboardEvent)) {
+        event.preventDefault()
+      }
+
       const decodeMsg = msgAttr(attr)
       if (!decodeMsg) { return }
       const payload = f(decodeMsg, event)
@@ -260,13 +356,27 @@ type MessageToView =
   | Key
   | InputFocus
   | InputBlur
+  | WindowFocus
+  | WindowBlur
   | Mouse
+  | Scroll
 
 interface Click { t: "click", m: string | JSON }
 
-interface InputFocus { t: "input_focus", m: string | JSON, d: { v: string } }
+interface WindowFocus { t: "window_focus", m: string | JSON }
+interface WindowBlur { t: "window_blur", m: string | JSON }
 
+interface InputFocus { t: "input_focus", m: string | JSON, d: { v: string } }
 interface InputBlur { t: "input_blur", m: string | JSON, d: { v: string } }
+
+interface Scroll {
+  t: "scroll",
+  m: string | JSON,
+  d: {
+    sx: number,
+    sy: number,
+  }
+}
 
 interface FormSubmit {
   t: "form_submit",
@@ -295,14 +405,16 @@ interface InputChange {
 interface Key {
   t: "key",
   m: string | JSON,
-  d: {
-    k: string,
-    kc: string,
-    a: boolean,
-    c: boolean,
-    s: boolean,
-    me: boolean,
-  }
+  d: KeyData,
+}
+
+interface KeyData {
+  k: string,
+  kc: string,
+  a: boolean,
+  c: boolean,
+  s: boolean,
+  me: boolean,
 }
 
 interface Mouse {

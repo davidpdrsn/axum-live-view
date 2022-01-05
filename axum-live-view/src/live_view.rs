@@ -50,6 +50,10 @@ impl<T> Updated<T> {
         self.extend(commands);
         self
     }
+
+    pub fn into_parts(self) -> (T, Vec<JsCommand>) {
+        (self.live_view, self.js_commands)
+    }
 }
 
 impl<T> Extend<JsCommand> for Updated<T> {

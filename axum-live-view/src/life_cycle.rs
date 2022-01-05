@@ -70,11 +70,11 @@ where
                     let diff = markup.diff(&new_markup);
                     markup = new_markup;
 
-                    let response = match diff {
-                        Some(diff) if js_commands.is_empty() => UpdateResponse::Diff(diff),
-                        Some(diff) => UpdateResponse::DiffAndJsCommands(diff, js_commands),
-                        None if js_commands.is_empty() => UpdateResponse::Empty,
-                        None => UpdateResponse::Empty,
+                    let response = match (diff, js_commands.is_empty()) {
+                        (None, true) => UpdateResponse::Empty,
+                        (None, false) => UpdateResponse::JsCommands(js_commands),
+                        (Some(diff), true) => UpdateResponse::Diff(diff),
+                        (Some(diff), false) => UpdateResponse::DiffAndJsCommands(diff, js_commands),
                     };
 
                     let _ = reply_tx.send(response);
@@ -526,6 +526,12 @@ pub(crate) enum MessageFromSocketData {
         screen_x: f64,
         #[serde(rename = "sy")]
         screen_y: f64,
+    },
+    Scroll {
+        #[serde(rename = "sx")]
+        scroll_x: f64,
+        #[serde(rename = "sy")]
+        scroll_y: f64,
     },
 }
 

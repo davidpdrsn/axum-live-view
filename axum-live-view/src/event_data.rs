@@ -10,6 +10,7 @@ pub enum EventData {
     InputBlur(InputBlur),
     Key(Key),
     Mouse(Mouse),
+    Scroll(Scroll),
 }
 
 impl From<MessageFromSocketData> for Option<EventData> {
@@ -77,6 +78,9 @@ impl From<MessageFromSocketData> for Option<EventData> {
                 screen_x,
                 screen_y,
             })),
+            MessageFromSocketData::Scroll { scroll_x, scroll_y } => {
+                Some(EventData::Scroll(Scroll { scroll_x, scroll_y }))
+            }
         }
     }
 }
@@ -221,5 +225,21 @@ impl Mouse {
 
     pub fn screen_y(&self) -> f64 {
         self.screen_y
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Scroll {
+    scroll_x: f64,
+    scroll_y: f64,
+}
+
+impl Scroll {
+    pub fn scroll_x(&self) -> f64 {
+        self.scroll_x
+    }
+
+    pub fn scroll_y(&self) -> f64 {
+        self.scroll_y
     }
 }
