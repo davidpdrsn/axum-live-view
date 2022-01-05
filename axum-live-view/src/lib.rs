@@ -49,6 +49,7 @@ pub mod js_command;
 pub mod live_view;
 pub mod middleware;
 pub mod pubsub;
+pub mod test;
 
 mod topics;
 mod util;

@@ -339,49 +339,46 @@ where
     M: MakeLiveView,
     P: PubSub + Clone,
 {
-    let mut first_iteration = true;
+    todo!()
 
-    let stream = stream! {
-        loop {
-            let mut subscriptions = Subscriptions::new(live_view_id);
-            live_view.init(&mut subscriptions);
-            let mut stream = match subscriptions.into_stream(pubsub.clone()).await {
-                Ok(stream) => stream,
-                Err(err) => {
-                    tracing::error!(%err, "failed to create subscription streams for live view");
-                    break;
-                }
-            };
+    // let mut first_iteration = true;
 
-            if !first_iteration {
-                yield (Some(live_view.render()), Vec::new());
-            }
-            first_iteration = false;
+    // let stream = stream! {
+    //     loop {
+    //         let mut subscriptions = Subscriptions::new(live_view_id);
+    //         live_view.init(&mut subscriptions);
+    //         let mut stream = match subscriptions.into_stream(pubsub.clone()).await {
+    //             Ok(stream) => stream,
+    //             Err(err) => {
+    //                 tracing::error!(%err, "failed to create subscription streams for live view");
+    //                 break;
+    //             }
+    //         };
 
-            'inner: while let Some((callback, msg)) = stream.next().await {
-                let Updated {
-                    live_view: new_live_view,
-                    js_commands,
-                    skip_render,
-                } = callback.call(live_view, msg).await;
+    //         if !first_iteration {
+    //             yield (Some(live_view.render()), Vec::new());
+    //         }
+    //         first_iteration = false;
 
-                if let Some(new_live_view) = new_live_view {
-                    live_view = new_live_view;
+    //         'inner: while let Some((callback, msg)) = stream.next().await {
+    //             let Updated {
+    //                 live_view: new_live_view,
+    //                 js_commands,
+    //             } = callback.call(live_view, msg).await;
 
-                    if skip_render {
-                        yield (None, js_commands);
-                    } else {
-                        let markup = live_view.render();
-                        yield (Some(markup), js_commands);
-                    }
-                } else {
-                    tracing::trace!("live view update panicked. Recreating it using `MakeLiveView`");
-                    live_view = make_live_view.make_live_view().await;
-                    break 'inner;
-                }
-            }
-        }
-    };
+    //             if let Some(new_live_view) = new_live_view {
+    //                 live_view = new_live_view;
 
-    Box::pin(stream)
+    //                 let markup = live_view.render();
+    //                 yield (Some(markup), js_commands);
+    //             } else {
+    //                 tracing::trace!("live view update panicked. Recreating it using `MakeLiveView`");
+    //                 live_view = make_live_view.make_live_view().await;
+    //                 break 'inner;
+    //             }
+    //         }
+    //     }
+    // };
+
+    // Box::pin(stream)
 }

@@ -169,10 +169,11 @@ impl<T> AsyncCallback<T> {
         let f = std::panic::AssertUnwindSafe(f);
         let f = futures_util::future::FutureExt::catch_unwind(f);
 
-        match f.await {
-            Ok(updated) => updated,
-            Err(_) => Updated::panicked(),
-        }
+        todo!()
+        // match f.await {
+        //     Ok(updated) => updated,
+        //     Err(_) => Updated::panicked(),
+        // }
     }
 }
 

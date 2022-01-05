@@ -65,7 +65,7 @@ pub trait LiveView: Sized + Send + Sync + 'static {
 pub(crate) struct LiveViewId(Uuid);
 
 impl LiveViewId {
-    fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self(Uuid::new_v4())
     }
 }
@@ -88,25 +88,15 @@ pub(super) fn wrap_in_live_view_container<T>(live_view_id: LiveViewId, markup: H
 
 #[derive(Debug, Clone)]
 pub struct Updated<T> {
-    live_view: Option<T>,
-    js_commands: Vec<JsCommand>,
-    skip_render: bool,
+    pub(crate) live_view: T,
+    pub(crate) js_commands: Vec<JsCommand>,
 }
 
 impl<T> Updated<T> {
     pub fn new(live_view: T) -> Self {
         Self {
-            live_view: Some(live_view),
+            live_view,
             js_commands: Default::default(),
-            skip_render: false,
-        }
-    }
-
-    pub(crate) fn panicked() -> Self {
-        Self {
-            live_view: None,
-            js_commands: Default::default(),
-            skip_render: false,
         }
     }
 
@@ -120,11 +110,6 @@ impl<T> Updated<T> {
         I: IntoIterator<Item = JsCommand>,
     {
         self.extend(commands);
-        self
-    }
-
-    pub fn skip_render(mut self, skip: bool) -> Self {
-        self.skip_render = skip;
         self
     }
 }

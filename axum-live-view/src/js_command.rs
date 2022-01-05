@@ -16,6 +16,8 @@ impl JsCommand {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[serde(tag = "t")]
 pub(crate) enum JsCommandKind {
     NavigateTo { uri: String },
     AddClass { selector: String, klass: String },
