@@ -3,7 +3,6 @@ use crate::life_cycle::MessageFromSocketData;
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 pub enum EventData {
-    None,
     FormSubmit(FormSubmit),
     FormChange(FormChange),
     InputChange(InputChange),
@@ -11,17 +10,21 @@ pub enum EventData {
     Mouse(Mouse),
 }
 
-impl From<MessageFromSocketData> for EventData {
+impl From<MessageFromSocketData> for Option<EventData> {
     fn from(data: MessageFromSocketData) -> Self {
         match data {
             MessageFromSocketData::Click
             | MessageFromSocketData::WindowFocus
             | MessageFromSocketData::WindowBlur
-            | MessageFromSocketData::None => Self::None,
-            MessageFromSocketData::FormSubmit { query } => Self::FormSubmit(FormSubmit { query }),
-            MessageFromSocketData::FormChange { query } => Self::FormChange(FormChange { query }),
+            | MessageFromSocketData::None => None,
+            MessageFromSocketData::FormSubmit { query } => {
+                Some(EventData::FormSubmit(FormSubmit { query }))
+            }
+            MessageFromSocketData::FormChange { query } => {
+                Some(EventData::FormChange(FormChange { query }))
+            }
             MessageFromSocketData::InputChange { value } => {
-                Self::InputChange(InputChange { value })
+                Some(EventData::InputChange(InputChange { value }))
             }
             MessageFromSocketData::Key {
                 key,
@@ -30,14 +33,14 @@ impl From<MessageFromSocketData> for EventData {
                 ctrl,
                 shift,
                 meta,
-            } => Self::Key(Key {
+            } => Some(EventData::Key(Key {
                 key,
                 code,
                 alt,
                 ctrl,
                 shift,
                 meta,
-            }),
+            })),
             MessageFromSocketData::Mouse {
                 client_x,
                 client_y,
@@ -49,7 +52,7 @@ impl From<MessageFromSocketData> for EventData {
                 movement_y,
                 screen_x,
                 screen_y,
-            } => Self::Mouse(Mouse {
+            } => Some(EventData::Mouse(Mouse {
                 client_x,
                 client_y,
                 page_x,
@@ -60,7 +63,7 @@ impl From<MessageFromSocketData> for EventData {
                 movement_y,
                 screen_x,
                 screen_y,
-            }),
+            })),
         }
     }
 }

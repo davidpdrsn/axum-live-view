@@ -18,7 +18,7 @@ pub trait LiveView: Sized + Send + Sync + 'static {
     async fn update(
         self,
         msg: Self::Message,
-        data: EventData,
+        data: Option<EventData>,
     ) -> Result<Updated<Self>, Self::Error>;
 
     fn render(&self) -> Html<Self::Message>;

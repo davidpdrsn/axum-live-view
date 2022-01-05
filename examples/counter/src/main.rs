@@ -57,7 +57,11 @@ impl LiveView for Counter {
     type Message = Msg;
     type Error = Infallible;
 
-    async fn update(mut self, msg: Msg, _data: EventData) -> Result<Updated<Self>, Self::Error> {
+    async fn update(
+        mut self,
+        msg: Msg,
+        _data: Option<EventData>,
+    ) -> Result<Updated<Self>, Self::Error> {
         match msg {
             Msg::Incr => self.count += 1,
             Msg::Decr => {

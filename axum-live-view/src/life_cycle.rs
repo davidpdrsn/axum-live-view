@@ -133,12 +133,16 @@ impl<M> ViewTaskHandle<M> {
             .map_err(|_| anyhow::anyhow!("live view didn't response to render request"))
     }
 
-    async fn update(&self, msg: M, data: EventData) -> anyhow::Result<UpdateResponse> {
+    async fn update(
+        &self,
+        msg: M,
+        event_data: Option<EventData>,
+    ) -> anyhow::Result<UpdateResponse> {
         let (reply_tx, reply_rx) = oneshot::channel();
 
         let request = ViewRequest::Update {
             msg,
-            event_data: data,
+            event_data,
             reply_tx,
         };
 
@@ -164,7 +168,7 @@ enum ViewRequest<M> {
     },
     Update {
         msg: M,
-        event_data: EventData,
+        event_data: Option<EventData>,
         reply_tx: oneshot::Sender<UpdateResponse>,
     },
 }
@@ -404,7 +408,7 @@ where
             }
         };
 
-        let data = EventData::from(data);
+        let data = Option::<EventData>::from(data);
 
         match view.update(msg_for_view, data).await? {
             UpdateResponse::Diff(diff) => {

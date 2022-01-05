@@ -42,17 +42,17 @@
 #[doc(hidden)]
 pub mod html;
 
+pub mod event_data;
 pub mod js_command;
 
-mod event_data;
-mod life_cycle;
+pub mod life_cycle;
 mod live_view;
 mod util;
 
 pub use self::{
     event_data::EventData,
     html::Html,
-    life_cycle::{EmbedLiveView, LiveViewUpgrade, ViewHandle, ViewHandleSendError},
+    life_cycle::LiveViewUpgrade,
     live_view::{LiveView, Updated},
 };
 pub use axum_live_view_macros::html;
