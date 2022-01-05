@@ -43,35 +43,15 @@
 pub mod html;
 
 pub mod js_command;
-pub mod live_view;
-pub mod middleware;
-pub mod pubsub;
-pub mod test;
 
-mod topics;
+mod event_data;
+mod life_cycle;
+mod live_view;
 mod util;
-mod ws;
 
 pub use self::{
     html::Html,
-    live_view::{EmbedLiveView, EventData, LiveView, Updated},
-    middleware::LiveViewLayer,
+    life_cycle::{EmbedLiveView, LiveViewUpgrade},
+    live_view::{LiveView, Updated},
 };
 pub use axum_live_view_macros::html;
-
-pub fn router_parts<P, B>(pubsub: P) -> (axum::Router<B>, LiveViewLayer<P>)
-where
-    P: pubsub::PubSub + Clone,
-    B: Send + 'static,
-{
-    let routes = ws::routes::<P, B>();
-    let layer = LiveViewLayer::new(pubsub);
-    (routes, layer)
-}
-
-fn spawn_unit<F>(future: F) -> tokio::task::JoinHandle<()>
-where
-    F: std::future::Future<Output = ()> + Send + 'static,
-{
-    tokio::spawn(future)
-}

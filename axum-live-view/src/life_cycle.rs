@@ -1,16 +1,15 @@
 #![allow(dead_code, missing_debug_implementations)]
 
 use crate::{
+    event_data::EventData,
     html::{self, Html},
     js_command::JsCommand,
-    live_view::LiveViewId,
-    EventData, LiveView, Updated,
+    LiveView, Updated,
 };
-use anyhow::Context;
 use async_trait::async_trait;
 use axum::{
     extract::{
-        ws::{self, WebSocket, WebSocketUpgrade},
+        ws::{self, WebSocketUpgrade},
         FromRequest, RequestParts,
     },
     response::{IntoResponse, Response},
@@ -20,7 +19,7 @@ use futures_util::{
     stream::{BoxStream, Stream, StreamExt, TryStreamExt},
 };
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
-use std::{collections::HashMap, convert::Infallible};
+use std::convert::Infallible;
 use tokio::sync::{mpsc, oneshot};
 use tokio_stream::{wrappers::ReceiverStream, StreamMap};
 
@@ -32,7 +31,7 @@ where
 {
     let (tx, rx) = mpsc::channel(1024);
 
-    crate::spawn_unit(async move {
+    crate::util::spawn_unit(async move {
         let mut markup = wrap_in_live_view_container(view.render());
 
         let mut request_stream = StreamMap::<u32, _>::new();
@@ -76,7 +75,7 @@ where
     ViewHandle { tx }
 }
 
-pub struct ViewHandle<M> {
+struct ViewHandle<M> {
     tx: mpsc::Sender<ViewRequest<M>>,
 }
 
@@ -214,7 +213,6 @@ impl LiveViewUpgrade {
             })
             .into_response()
         } else {
-            tracing::trace!("no live views found in response");
             ws.on_upgrade(|_| async {}).into_response()
         }
     }
@@ -256,7 +254,7 @@ where
     M: DeserializeOwned,
 {
     let markup = view.render().await?;
-    socket_message(&mut write, MessageToSocketData::InitialRender(markup)).await?;
+    write_message(&mut write, MessageToSocketData::InitialRender(markup)).await?;
 
     loop {
         let MessageFromSocket {
@@ -275,45 +273,18 @@ where
             }
         };
 
-        let data: EventData = match data {
-            MessageFromSocketData::Click => todo!(),
-            MessageFromSocketData::WindowFocus => todo!(),
-            MessageFromSocketData::WindowBlur => todo!(),
-            MessageFromSocketData::Submit { query } => todo!(),
-            MessageFromSocketData::FormChange { query } => todo!(),
-            MessageFromSocketData::InputChange { value } => todo!(),
-            MessageFromSocketData::Key {
-                key,
-                code,
-                alt,
-                ctrl,
-                shift,
-                meta,
-            } => todo!(),
-            MessageFromSocketData::Mouse {
-                client_x,
-                client_y,
-                page_x,
-                page_y,
-                offset_x,
-                offset_y,
-                movement_x,
-                movement_y,
-                screen_x,
-                screen_y,
-            } => todo!(),
-        };
+        let data = EventData::from(data);
 
         match view.update(msg_for_view, data).await? {
             UpdateResponse::Diff(diff) => {
-                socket_message(&mut write, MessageToSocketData::Render(diff)).await?;
+                write_message(&mut write, MessageToSocketData::Render(diff)).await?;
             }
             UpdateResponse::JsCommands(commands) => {
-                socket_message(&mut write, MessageToSocketData::JsCommands(commands)).await?;
+                write_message(&mut write, MessageToSocketData::JsCommands(commands)).await?;
             }
             UpdateResponse::DiffAndJsCommands(diff, commands) => {
-                socket_message(&mut write, MessageToSocketData::Render(diff)).await?;
-                socket_message(&mut write, MessageToSocketData::JsCommands(commands)).await?;
+                write_message(&mut write, MessageToSocketData::Render(diff)).await?;
+                write_message(&mut write, MessageToSocketData::JsCommands(commands)).await?;
             }
             UpdateResponse::Empty => {}
         }
@@ -339,7 +310,7 @@ enum MessageToSocketData {
     JsCommands(Vec<JsCommand>),
 }
 
-async fn socket_message<W>(write: &mut W, data: MessageToSocketData) -> anyhow::Result<()>
+async fn write_message<W>(write: &mut W, data: MessageToSocketData) -> anyhow::Result<()>
 where
     W: Sink<MessageToSocket> + Unpin,
     W::Error: Into<anyhow::Error>,
@@ -360,11 +331,11 @@ struct MessageFromSocket<M> {
 #[derive(Debug, Deserialize, PartialEq)]
 #[serde(tag = "t", content = "d")]
 #[serde(rename_all = "snake_case")]
-enum MessageFromSocketData {
+pub(crate) enum MessageFromSocketData {
     Click,
     WindowFocus,
     WindowBlur,
-    Submit {
+    FormSubmit {
         #[serde(rename = "q")]
         query: String,
     },
@@ -425,8 +396,7 @@ fn wrap_in_live_view_container<T>(markup: Html<T>) -> Html<T> {
 mod tests {
     use super::*;
     use crate as axum_live_view;
-    use crate::{EventData, Html, LiveView, Updated};
-    use async_trait::async_trait;
+    use crate::Html;
     use axum_live_view_macros::html;
     use serde::{Deserialize, Serialize};
     use serde_json::json;
@@ -510,7 +480,7 @@ mod tests {
             msg,
             MessageFromSocket {
                 msg: Msg::Incr,
-                data: MessageFromSocketData::Submit {
+                data: MessageFromSocketData::FormSubmit {
                     query: "name=bob&age=20".to_owned()
                 }
             }
