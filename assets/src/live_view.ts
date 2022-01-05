@@ -82,27 +82,152 @@ function onClose(socket: WebSocket, state: State, options: LiveViewOptions) {
   }, 500)
 }
 
+const axm = {
+  click: "axm-click",
+  input: "axm-input",
+  change: "axm-change",
+  submit: "axm-submit",
+  focus: "axm-focus",
+  blur: "axm-blur",
+  mouseenter: "axm-mouseenter",
+  mouseover: "axm-mouseover",
+  mouseleave: "axm-mouseleave",
+  mouseout: "axm-mouseout",
+  mousemove: "axm-mousemove",
+}
+
 function bindInitialEvents(socket: WebSocket) {
-  document.querySelectorAll(`[axm-click]`).forEach((element) => {
+  const attrs = Object.values(axm).map((attr) => `[${attr}]`).join(", ")
+
+  document.querySelectorAll(attrs).forEach((element) => {
     addEventListeners(socket, element)
   })
 }
 
 function addEventListeners(socket: WebSocket, element: Element) {
-  // bind click
-  if (element.hasAttribute("axm-click")) {
-    element.addEventListener("click", (event) => {
-      event.preventDefault()
-
-      const decodeMsg = msgAttr(element, "axm-click")
-      if (!decodeMsg) { return }
-
-      const viewMsg = { t: "click", m: decodeMsg }
-      socket.send(JSON.stringify(viewMsg))
-    })
+  if (element.hasAttribute(axm.click)) {
+    on("click", axm.click, (msg) => ({ t: "click", m: msg }))
   }
 
-  function msgAttr(element: Element, attr: string): string | JSON | undefined {
+  if (
+    element instanceof HTMLInputElement ||
+      element instanceof HTMLSelectElement ||
+      element instanceof HTMLTextAreaElement
+  ) {
+    if (element.hasAttribute(axm.input)) {
+      on("input", axm.input, (msg) => {
+        const value = inputValue(element)
+        return { t: "input_change", m: msg, d: { v: value } }
+      })
+    }
+
+    if (element.hasAttribute(axm.change)) {
+      on("change", axm.change, (msg) => {
+        const value = inputValue(element)
+        return { t: "input_change", m: msg, d: { v: value } }
+      })
+    }
+
+    if (element.hasAttribute(axm.focus)) {
+      on("focus", axm.focus, (msg) => {
+        const value = inputValue(element)
+        if (typeof value === "string") {
+          return { t: "input_focus", m: msg, d: { v: value } }
+        } else {
+          return
+        }
+      })
+    }
+
+    if (element.hasAttribute(axm.focus)) {
+      on("blur", axm.blur, (msg) => {
+        const value = inputValue(element)
+        if (typeof value === "string") {
+          return { t: "input_blur", m: msg, d: { v: value } }
+        } else {
+          return
+        }
+      })
+    }
+  }
+
+  if (element instanceof HTMLFormElement) {
+    if (element.hasAttribute(axm.change)) {
+      on("change", axm.change, (msg) => {
+        // workaround for https://github.com/microsoft/TypeScript/issues/30584
+        const form = new FormData(element) as any
+        const query = new URLSearchParams(form).toString()
+        return { t: "form_change", m: msg, d: { q: query } }
+      })
+    }
+
+    if (element.hasAttribute(axm.submit)) {
+      on("submit", axm.submit, (msg) => {
+        // workaround for https://github.com/microsoft/TypeScript/issues/30584
+        const form = new FormData(element) as any
+        const query = new URLSearchParams(form).toString()
+        return { t: "form_submit", m: msg, d: { q: query } }
+      })
+    }
+  }
+
+  [
+    ["mouseenter", axm.mouseenter],
+    ["mouseover", axm.mouseover],
+    ["mouseleave", axm.mouseleave],
+    ["mouseout", axm.mouseout],
+    ["mousemove", axm.mousemove],
+  ].forEach(([ev, axm]) => {
+    if (!ev) { return }
+    if (!axm) { return }
+
+    if (element.hasAttribute(axm)) {
+      on(ev, axm, (msg, event) => {
+        if (event instanceof MouseEvent) {
+          const data: MouseData = {
+            cx: event.clientX,
+            cy: event.clientY,
+            px: event.pageX,
+            py: event.pageY,
+            ox: event.offsetX,
+            oy: event.offsetY,
+            mx: event.movementX,
+            my: event.movementY,
+            sx: event.screenX,
+            sy: event.screenY,
+          }
+          return { t: "mouse", m: msg, d: data }
+        } else {
+          return
+        }
+      })
+    }
+  })
+
+  // { attr: "axm-keydown", eventName: "keydown" },
+  // { attr: "axm-keyup", eventName: "keyup" },
+
+  // { attr: "axm-window-keydown", eventName: "keydown", bindEventTo: window },
+  // { attr: "axm-window-keyup", eventName: "keyup", bindEventTo: window },
+  // { attr: "axm-window-focus", eventName: "focus", bindEventTo: window },
+  // { attr: "axm-window-blur", eventName: "blur", bindEventTo: window },
+
+  function on(
+    eventName: string,
+    attr: string,
+    f: (msg: string | JSON, event: Event) => MessageToView | undefined,
+  ) {
+    element.addEventListener(eventName, delayOrThrottle((event) => {
+      event.preventDefault()
+      const decodeMsg = msgAttr(attr)
+      if (!decodeMsg) { return }
+      const payload = f(decodeMsg, event)
+      if (!payload) { return }
+      socket.send(JSON.stringify(payload))
+    }))
+  }
+
+  function msgAttr(attr: string): string | JSON | undefined {
       const value = element.getAttribute(attr)
       if (!value) { return }
       try {
@@ -111,244 +236,129 @@ function addEventListeners(socket: WebSocket, element: Element) {
         return value
       }
   }
+
+  function delayOrThrottle<In extends unknown[]>(f: Fn<In>): Fn<In> {
+    var delayMs = numberAttr(element, "axm-debounce")
+    if (delayMs) {
+      return debounce(f, delayMs)
+    }
+
+    var delayMs = numberAttr(element, "axm-throttle")
+    if (delayMs) {
+      return throttle(f, delayMs)
+    }
+
+    return f
+  }
 }
 
-type MessageToView = Click
+type MessageToView =
+  Click
+  | FormSubmit
+  | FormChange
+  | InputChange
+  | Key
+  | InputFocus
+  | InputBlur
+  | Mouse
 
-interface Click {
-  t: "click",
+interface Click { t: "click", m: string | JSON }
+
+interface InputFocus { t: "input_focus", m: string | JSON, d: { v: string } }
+
+interface InputBlur { t: "input_blur", m: string | JSON, d: { v: string } }
+
+interface FormSubmit {
+  t: "form_submit",
   m: string | JSON,
+  d: {
+    q: string
+  }
 }
 
-// interface AttrDef {
-//   attr: string;
-//   eventName: string;
-// }
+interface FormChange {
+  t: "form_change",
+  m: string | JSON,
+  d: {
+    q: string
+  }
+}
 
-// const elementLocalAttrs: AttrDef[] = [
-//   { attr: "axm-click", eventName: "click" },
-//   { attr: "axm-input", eventName: "input" },
-//   { attr: "axm-blur", eventName: "blur" },
-//   { attr: "axm-focus", eventName: "focus" },
-//   { attr: "axm-change", eventName: "change" },
-//   { attr: "axm-submit", eventName: "submit" },
-//   { attr: "axm-keydown", eventName: "keydown" },
-//   { attr: "axm-keyup", eventName: "keyup" },
-//   { attr: "axm-mouseenter", eventName: "mouseenter" },
-//   { attr: "axm-mouseover", eventName: "mouseover" },
-//   { attr: "axm-mouseleave", eventName: "mouseleave" },
-//   { attr: "axm-mouseout", eventName: "mouseout" },
-//   { attr: "axm-mousemove", eventName: "mousemove" },
-// ]
+interface InputChange {
+  t: "input_change",
+  m: string | JSON,
+  d: {
+    v: InputValue
+  }
+}
 
-// interface WindowAttrDef {
-//   attr: string;
-//   eventName: string;
-//   bindEventTo: typeof window;
-// }
+interface Key {
+  t: "key",
+  m: string | JSON,
+  d: {
+    k: string,
+    kc: string,
+    a: boolean,
+    c: boolean,
+    s: boolean,
+    me: boolean,
+  }
+}
 
-// const windowAttrs: WindowAttrDef[] = [
-//   { attr: "axm-window-keydown", eventName: "keydown", bindEventTo: window },
-//   { attr: "axm-window-keyup", eventName: "keyup", bindEventTo: window },
-//   { attr: "axm-window-focus", eventName: "focus", bindEventTo: window },
-//   { attr: "axm-window-blur", eventName: "blur", bindEventTo: window },
-// ]
+interface Mouse {
+  t: "mouse",
+  m: string | JSON,
+  d: MouseData,
+}
 
-// interface EventData {
-//   e: string;
-//   m?: JSON | string;
-//   v?: FormData | InputValue;
-//   cx?: number;
-//   cy?: number;
-//   px?: number;
-//   py?: number;
-//   ox?: number;
-//   oy?: number;
-//   mx?: number;
-//   my?: number;
-//   sx?: number;
-//   sy?: number;
-//   k?: string;
-//   kc?: string;
-//   a?: boolean;
-//   c?: boolean;
-//   s?: boolean;
-//   me?: boolean;
-// }
+interface MouseData {
+  cx: number,
+  cy: number,
+  px: number,
+  py: number,
+  ox: number,
+  oy: number,
+  mx: number,
+  my: number,
+  sx: number,
+  sy: number,
+}
 
-// function bindLiveEvent(
-//   socket: WebSocket,
-//   element: Element,
-//   def: AttrDef | WindowAttrDef,
-// ) {
-//   var actualBindEventTo: Element | typeof window
-//   if ("bindEventTo" in def) {
-//     actualBindEventTo = def.bindEventTo
-//   } else {
-//     actualBindEventTo = element
-//   }
+type InputValue = string | string[] | boolean
 
-//   const { attr, eventName } = def
+function inputValue(element: Element): InputValue {
+  if (element instanceof HTMLTextAreaElement) {
+    return element.value
 
-//   if (!element.getAttribute?.(attr)) {
-//     return;
-//   }
+  } else if (element instanceof HTMLInputElement) {
+    if (element.getAttribute("type") === "radio" || element.getAttribute("type") === "checkbox") {
+      return element.checked
+    } else {
+      return element.value
+    }
 
-//   var f = (event: Event) => {
-//     let liveViewId = element.closest("[data-live-view-id]")?.getAttribute("data-live-view-id")
-//     if (!liveViewId) return
-//     let msg = element.getAttribute(attr)
-//     if (!msg) return
+  } else if (element instanceof HTMLSelectElement) {
+    if (element.hasAttribute("multiple")) {
+      return Array.from(element.selectedOptions).map((opt) => opt.value)
+    } else {
+      return element.value
+    }
 
-//     var data: EventData = { e: eventName };
+  } else {
+    throw "Input has no input value"
+  }
+}
 
-//     try {
-//       data.m = JSON.parse(msg);
-//     } catch {
-//       data.m = msg;
-//     }
-
-//     if (element.nodeName === "FORM") {
-//       data.v = serializeForm(element)
-//     } else {
-//       const value = inputValue(element)
-//       if (value !== null) {
-//         data.v = value
-//       }
-//     }
-
-//     if (event instanceof MouseEvent) {
-//       data.cx = event.clientX
-//       data.cy = event.clientY
-//       data.px = event.pageX
-//       data.py = event.pageY
-//       data.ox = event.offsetX
-//       data.oy = event.offsetY
-//       data.mx = event.movementX
-//       data.my = event.movementY
-//       data.sx = event.screenX
-//       data.sy = event.screenY
-//     }
-
-//     if (event instanceof KeyboardEvent) {
-//       if (
-//         element.hasAttribute("axm-key") &&
-//         element?.getAttribute("axm-key")?.toLowerCase() !== event.key.toLowerCase()
-//       ) {
-//         return;
-//       }
-
-//       data.k = event.key
-//       data.kc = event.code
-//       data.a = event.altKey
-//       data.c = event.ctrlKey
-//       data.s = event.shiftKey
-//       data.me = event.metaKey
-//     }
-
-//     socketSend(socket, liveViewId, `axum/${attr}`, data)
-//   }
-
-//   var delayMs = numberAttr(element, "axm-debounce")
-//   if (delayMs) {
-//     f = debounce(f, delayMs)
-//   }
-
-//   var delayMs = numberAttr(element, "axm-throttle")
-//   if (delayMs) {
-//     f = throttle(f, delayMs)
-//   }
-
-//   actualBindEventTo.addEventListener(eventName, (event) => {
-//     if (!(event instanceof KeyboardEvent)) {
-//       event.preventDefault()
-//     }
-//     f(event)
-//   })
-// }
-
-// interface FormData {
-//   [index: string]: any;
-// }
-
-// function serializeForm(element: Element): FormData {
-//   var formData: FormData = {}
-
-//   element.querySelectorAll("textarea").forEach((child) => {
-//     const name = child.getAttribute("name")
-//     if (!name) { return }
-
-//     formData[name] = child.value
-//   })
-
-//   element.querySelectorAll("input").forEach((child) => {
-//     const name = child.getAttribute("name")
-//     if (!name) { return }
-
-//     if (child.getAttribute("type") === "radio") {
-//       if (child.checked) {
-//         formData[name] = child.value
-//       }
-//     } else if (child.getAttribute("type") === "checkbox") {
-//       if (!formData[name]) {
-//         formData[name] = {}
-//       }
-//       formData[name][child.value] = child.checked
-//     } else {
-//       formData[name] = child.value
-//     }
-//   })
-
-//   element.querySelectorAll("select").forEach((child) => {
-//     const name = child.getAttribute("name")
-//     if (!name) return
-
-//       if (child.hasAttribute("multiple")) {
-//         const values = Array.from(child.selectedOptions).map((opt) => opt.value)
-//         formData[name] = values
-//       } else {
-//         formData[name] = child.value
-//       }
-//   })
-
-//   return formData
-// }
-
-// type InputValue = string | string[] | boolean
-
-// function inputValue(element: Element): InputValue | null {
-//   if (element instanceof HTMLTextAreaElement) {
-//     return element.value
-
-//   } else if (element instanceof HTMLInputElement) {
-//     if (element.getAttribute("type") === "radio" || element.getAttribute("type") === "checkbox") {
-//       return element.checked
-//     } else {
-//       return element.value
-//     }
-
-//   } else if (element instanceof HTMLSelectElement) {
-//     if (element.hasAttribute("multiple")) {
-//       return Array.from(element.selectedOptions).map((opt) => opt.value)
-//     } else {
-//       return element.value
-//     }
-
-//   } else {
-//     return null
-//   }
-// }
-
-// function numberAttr(element: Element, attr: string): number | null {
-//   const value = element.getAttribute(attr)
-//   if (value) {
-//     const number = parseInt(value, 10)
-//     if (number) {
-//       return number
-//     }
-//   }
-//   return null
-// }
+function numberAttr(element: Element, attr: string): number | null {
+  const value = element.getAttribute(attr)
+  if (value) {
+    const number = parseInt(value, 10)
+    if (number) {
+      return number
+    }
+  }
+  return null
+}
 
 function updateDomFromState(socket: WebSocket, state: State) {
   if (!state.viewState) { return }

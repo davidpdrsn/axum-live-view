@@ -73,7 +73,7 @@ where
                     let response = match diff {
                         Some(diff) if js_commands.is_empty() => UpdateResponse::Diff(diff),
                         Some(diff) => UpdateResponse::DiffAndJsCommands(diff, js_commands),
-                        None if js_commands.is_empty() => UpdateResponse::JsCommands(js_commands),
+                        None if js_commands.is_empty() => UpdateResponse::Empty,
                         None => UpdateResponse::Empty,
                     };
 
@@ -481,6 +481,14 @@ pub(crate) enum MessageFromSocketData {
     },
     InputChange {
         #[serde(rename = "v")]
+        value: InputValue,
+    },
+    InputFocus {
+        #[serde(rename = "v")]
+        value: String,
+    },
+    InputBlur {
+        #[serde(rename = "v")]
         value: String,
     },
     Key {
@@ -519,6 +527,14 @@ pub(crate) enum MessageFromSocketData {
         #[serde(rename = "sy")]
         screen_y: f64,
     },
+}
+
+#[derive(Deserialize, PartialEq, Debug)]
+#[serde(untagged)]
+pub(crate) enum InputValue {
+    Bool(bool),
+    String(String),
+    Strings(Vec<String>),
 }
 
 fn wrap_in_live_view_container<T>(markup: Html<T>) -> Html<T> {

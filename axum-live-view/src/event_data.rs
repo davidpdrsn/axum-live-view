@@ -1,4 +1,4 @@
-use crate::life_cycle::MessageFromSocketData;
+use crate::life_cycle::{self, MessageFromSocketData};
 
 #[derive(Debug, Clone)]
 #[non_exhaustive]
@@ -6,6 +6,8 @@ pub enum EventData {
     FormSubmit(FormSubmit),
     FormChange(FormChange),
     InputChange(InputChange),
+    InputFocus(InputFocus),
+    InputBlur(InputBlur),
     Key(Key),
     Mouse(Mouse),
 }
@@ -23,8 +25,19 @@ impl From<MessageFromSocketData> for Option<EventData> {
             MessageFromSocketData::FormChange { query } => {
                 Some(EventData::FormChange(FormChange { query }))
             }
+            MessageFromSocketData::InputFocus { value } => {
+                Some(EventData::InputFocus(InputFocus { value }))
+            }
+            MessageFromSocketData::InputBlur { value } => {
+                Some(EventData::InputBlur(InputBlur { value }))
+            }
             MessageFromSocketData::InputChange { value } => {
-                Some(EventData::InputChange(InputChange { value }))
+                let value = match value {
+                    life_cycle::InputValue::Bool(x) => InputChange::Bool(x),
+                    life_cycle::InputValue::String(x) => InputChange::String(x),
+                    life_cycle::InputValue::Strings(x) => InputChange::Strings(x),
+                };
+                Some(EventData::InputChange(value))
             }
             MessageFromSocketData::Key {
                 key,
@@ -91,14 +104,32 @@ impl FormChange {
 }
 
 #[derive(Debug, Clone)]
-pub struct InputChange {
+pub struct InputFocus {
     value: String,
 }
 
-impl InputChange {
+impl InputFocus {
     pub fn value(&self) -> &str {
         &self.value
     }
+}
+
+#[derive(Debug, Clone)]
+pub struct InputBlur {
+    value: String,
+}
+
+impl InputBlur {
+    pub fn value(&self) -> &str {
+        &self.value
+    }
+}
+
+#[derive(Clone, Debug)]
+pub enum InputChange {
+    Bool(bool),
+    String(String),
+    Strings(Vec<String>),
 }
 
 #[derive(Debug, Clone)]

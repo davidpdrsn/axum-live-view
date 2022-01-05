@@ -5,56 +5,48 @@ use axum::{
     routing::{get, get_service},
     Router,
 };
-use axum_live_view::{
-    html,
-    live_view::{EmbedLiveView, EventData, LiveView, Subscriptions, Updated},
-    pubsub::InProcess,
-    Html,
-};
+use axum_live_view::{html, EventData, Html, LiveView, LiveViewUpgrade, Updated};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
-use std::{collections::HashMap, env, net::SocketAddr, path::PathBuf};
+use std::{
+    collections::HashMap, convert::Infallible, env, net::SocketAddr, path::PathBuf, time::Instant,
+};
 use tower_http::services::ServeFile;
 
 #[tokio::main]
 async fn main() {
     tracing_subscriber::fmt::init();
 
-    let pubsub = axum_live_view::pubsub::InProcess::new();
-    let (live_view_routes, live_view_layer) = axum_live_view::router_parts(pubsub);
+    let app = Router::new().route("/", get(root)).route(
+        "/bundle.js",
+        get_service(ServeFile::new(
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("dist/bundle.js"),
+        ))
+        .handle_error(|_| async { StatusCode::INTERNAL_SERVER_ERROR }),
+    );
 
-    let app = Router::new()
-        .route("/", get(root))
-        .route(
-            "/bundle.js",
-            get_service(ServeFile::new(
-                PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap()).join("dist/bundle.js"),
-            ))
-            .handle_error(|_| async { StatusCode::INTERNAL_SERVER_ERROR }),
-        )
-        .merge(live_view_routes)
-        .layer(live_view_layer);
-
-    let addr = SocketAddr::from(([0, 0, 0, 0], 4000));
+    let addr = SocketAddr::from(([0, 0, 0, 0], 3000));
     axum::Server::bind(&addr)
         .serve(app.into_make_service())
         .await
         .unwrap();
 }
 
-async fn root(embed_live_view: EmbedLiveView<InProcess>) -> impl IntoResponse {
-    let form = FormView::default();
+async fn root(live: LiveViewUpgrade) -> impl IntoResponse {
+    let view = FormView::default();
 
-    html! {
-        <!DOCTYPE html>
-        <html>
-            <head>
-                <script src="/bundle.js"></script>
-            </head>
-            <body>
-                { embed_live_view.embed(form) }
-            </body>
-        </html>
-    }
+    live.response(move |embed| {
+        html! {
+            <!DOCTYPE html>
+            <html>
+                <head>
+                </head>
+                <body>
+                    { embed.embed(view) }
+                    <script src="/bundle.js"></script>
+                </body>
+            </html>
+        }
+    })
 }
 
 #[derive(Default, Clone)]
@@ -63,47 +55,60 @@ struct FormView {
     textarea_value: String,
     errors: Vec<String>,
     values: Option<FormValues>,
+    prev: Option<Instant>,
 }
 
 #[async_trait]
 impl LiveView for FormView {
     type Message = Msg;
+    type Error = Infallible;
 
-    fn init(&self, _subscriptions: &mut Subscriptions<Self>) {}
-
-    async fn update(mut self, msg: Msg, data: EventData) -> Updated<Self> {
-        match msg {
-            Msg::Validate => {
-                let values: FormValues = transcode(&data.as_form().unwrap());
-                self.perform_validations(&values);
-            }
-            Msg::Submit => {
-                let values: FormValues = transcode(&data.as_form().unwrap());
-                self.perform_validations(&values);
-                if self.errors.is_empty() {
-                    tracing::info!("submitting");
-                } else {
-                    tracing::info!("there are warnings, not submitting");
-                }
-                self.values = Some(values);
-            }
-            Msg::TextInputChanged => {
-                self.text_input_value = transcode(&data.as_form().unwrap());
-            }
-            Msg::TextAreaChanged => {
-                self.textarea_value = transcode(&data.as_form().unwrap());
-            }
-            Msg::Changed(msg) => {
-                println!("change: {:?}", msg);
-            }
+    async fn update(
+        mut self,
+        msg: Msg,
+        data: Option<EventData>,
+    ) -> Result<Updated<Self>, Infallible> {
+        if let Some(prev) = self.prev {
+            println!("{:?}", prev.elapsed());
         }
 
-        Updated::new(self)
+        self.prev = Some(Instant::now());
+
+        // match msg {
+        //     Msg::Validate => {
+        //         let values: FormValues = transcode(&data.as_form().unwrap());
+        //         self.perform_validations(&values);
+        //     }
+        //     Msg::Submit => {
+        //         let values: FormValues = transcode(&data.as_form().unwrap());
+        //         self.perform_validations(&values);
+        //         if self.errors.is_empty() {
+        //             tracing::info!("submitting");
+        //         } else {
+        //             tracing::info!("there are warnings, not submitting");
+        //         }
+        //         self.values = Some(values);
+        //     }
+        //     Msg::TextInputChanged => {
+        //         self.text_input_value = transcode(&data.as_form().unwrap());
+        //     }
+        //     Msg::TextAreaChanged => {
+        //         self.textarea_value = transcode(&data.as_form().unwrap());
+        //     }
+        //     Msg::Changed(msg) => {
+        //         println!("change: {:?}", msg);
+        //     }
+        // }
+
+        Ok(Updated::new(self))
     }
 
     fn render(&self) -> Html<Self::Message> {
         html! {
-            <form axm-change={ Msg::Validate } axm-submit={ Msg::Submit }>
+            <form
+                axm-change={ Msg::Validate }
+                axm-submit={ Msg::Submit }
+            >
                 <label>
                     <div>"Text input"</div>
                     <input type="text" name="input" axm-input={ Msg::TextInputChanged } axm-debounce="1000" />

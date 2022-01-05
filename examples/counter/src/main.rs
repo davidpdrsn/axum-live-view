@@ -15,7 +15,7 @@ async fn main() {
     tracing_subscriber::fmt::init();
 
     let app = Router::new().route("/", get(root)).route(
-        "/app.js",
+        "/bundle.js",
         get_service(ServeFile::new(
             PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("dist/bundle.js"),
         ))
@@ -40,7 +40,7 @@ async fn root(live: LiveViewUpgrade) -> impl IntoResponse {
                 </head>
                 <body>
                     { embed.embed(view) }
-                    <script src="/app.js"></script>
+                    <script src="/bundle.js"></script>
                 </body>
             </html>
         }
