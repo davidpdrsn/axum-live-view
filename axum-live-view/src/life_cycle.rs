@@ -656,7 +656,7 @@ mod tests {
         );
 
         let msg = serde_json::from_value::<MessageFromSocket<Msg>>(
-            json!({ "m": "Incr", "t": "submit", "d": { "q": "name=bob&age=20" } }),
+            json!({ "m": "Incr", "t": "form_submit", "d": { "q": "name=bob&age=20" } }),
         )
         .unwrap();
         assert_eq!(
