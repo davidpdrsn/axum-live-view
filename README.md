@@ -17,34 +17,16 @@ This is what using axum-live-view looks like.
 
 ```rust
 use axum::{async_trait, response::IntoResponse, routing::get, Router};
-use axum_live_view::{
-    html, EventData, EmbedLiveView, Html,
-    LiveView, LiveViewLayer, Updated, pubsub::InProcess,
-};
+use axum_live_view::{html, EventData, Html, LiveView, LiveViewUpgrade, Updated};
 use serde::{Deserialize, Serialize};
+use std::convert::Infallible;
 
 #[tokio::main]
 async fn main() {
-    // Live views must send and receive messages both from the browser and from
-    // other parts of your application. `axum_live_view::pubsub` is how that is
-    // done.
-    //
-    // It allows you publish messages to topics and subscribe to a stream
-    // of messages in a particular topic.
-    //
-    // `InProcess` is a pubsub implementation that uses `tokio::sync::broadcast`.
-    let pubsub = InProcess::new();
+    // A normal axum router...
+    let app = Router::new().route("/", get(root));
 
-    // axum-live-view has a few routes and a middleware of its own that you have to include.
-    let (live_view_routes, live_view_layer) = axum_live_view::router_parts(pubsub);
-
-    // A normal axum router.
-    let app = Router::new()
-        .route("/", get(root))
-        .merge(live_view_routes)
-        .layer(live_view_layer);
-
-    // We run the app just like any other axum app
+    // ...that we run like any other axum app
     axum::Server::bind(&"0.0.0.0:3000".parse().unwrap())
         .serve(app.into_make_service())
         .await
@@ -53,35 +35,47 @@ async fn main() {
 
 // Our handler function for `GET /`
 async fn root(
-    // `EmbedLiveView` is an extractor that is hooked up to the live view setup
-    // and enables you to embed live views into HTML templates.
-    embed_live_view: EmbedLiveView<InProcess>,
+    // `LiveViewUpgrade` is an extractor that accepts both regular requests and
+    // WebSocket upgrade requests. If it receives a regular request it will
+    // render your live view's HTML and return a regular static response. This
+    // leads to good SEO and fast first paint.
+    //
+    // axum-live-view's JavaScript client will then call this endpoint a second
+    // time to establish a WebSocket connection at which point your view will be
+    // spawned in an async task. Events from the browser and HTML diffs from
+    // your view will then be sent over the WebSocket connection.
+    //
+    // If the WebSocket connection breaks (or your view crashes) the JavaScript
+    // client will call this endpoint again to establish a new connection and
+    // a new instance instance of your view is created.
+    //
+    // The task running the old view automatically stops when the WebSocket is
+    // closed.
+    live: LiveViewUpgrade,
 ) -> impl IntoResponse {
     // `Counter` is our live view and we initialize it with the default values.
     let counter = Counter::default();
 
-    html! {
-        <!DOCTYPE html>
-        <html>
-            <head>
-                // axum-live-view comes with some assets that you must bundle and load.
-                // Your JavaScript should contain something along the lines of
-                //
-                //     const liveView = new LiveView({ host: 'localhost', port: 3000 })
-                //     liveView.connect()
-            </head>
-            <body>
-                // Embed our live view into the HTML template. This will render the
-                // view and include the HTML in the response, leading to good SEO
-                // and fast first paint.
-                //
-                // It will also start a stateful async task for updating the view
-                // and sending the changes down to the client via a WebSocket
-                // connection.
-                { embed_live_view.embed(counter) }
-            </body>
-        </html>
-    }
+    live.response(|embed_live_view| {
+        html! {
+            <!DOCTYPE html>
+            <html>
+                <head>
+                    // axum-live-view comes with some assets that you must bundle and load.
+                    // Your JavaScript should contain something along the lines of
+                    //
+                    //     import * as LiveView from "axum-live-view"
+                    //     LiveView.connectAndRun({})
+                </head>
+                <body>
+                    // Embed our live view into the HTML template. This will render the
+                    // view and include the HTML in the response, leading to good SEO
+                    // and fast first paint.
+                    { embed_live_view.embed(counter) }
+                </body>
+            </html>
+        }
+    })
 }
 
 // Our live view is just a regular Rust struct...
@@ -97,12 +91,25 @@ impl LiveView for Counter {
     // to the view in the `update` method
     type Message = Msg;
 
+    // This is the error type our `update` method might fail with.
+    //
+    // If a live view crashes the browser will simply call the endpoint again to
+    // establish a new websocket connection and thus a new instance of your view
+    // will be created.
+    //
+    // Our live view never returns any errors so we use `Infallible`.
+    type Error = Infallible;
+
     // Update the view based on which message it receives.
     //
     // `EventData` contains data from the event that happened in the
     // browser. This might be values of input fields or which key was pressed in
     // a keyboard event.
-    async fn update(mut self, msg: Msg, data: EventData) -> Updated<Self> {
+    async fn update(
+        mut self,
+        msg: Msg,
+        data: Option<EventData>,
+    ) -> Result<Updated<Self>, Self::Error> {
         match msg {
             Msg::Increment => {
                 self.count += 1;
@@ -114,7 +121,7 @@ impl LiveView for Counter {
             }
         }
 
-        Updated::new(self)
+        Ok(Updated::new(self))
     }
 
     // Render the live view into an HTML template. This function is called during
@@ -143,6 +150,13 @@ impl LiveView for Counter {
             </div>
         }
     }
+
+    // The `LiveView` trait also has a `mount` method that is called when a new
+    // WebSocket connects. This can be used to perform auth, load data that
+    // isn't needed for the first response, and spawn a task that can send
+    // messages to the view itself from other parts of the application.
+    //
+    // `LiveView::mount` simply returns `Ok(())`.
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
