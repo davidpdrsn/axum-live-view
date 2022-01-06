@@ -1,12 +1,14 @@
 use axum::{
     async_trait,
     extract::Extension,
-    http::StatusCode,
+    http::{HeaderMap, StatusCode, Uri},
     response::IntoResponse,
     routing::{get, get_service},
     AddExtensionLayer, Router,
 };
-use axum_live_view::{html, live_view, EventData, Html, LiveView, LiveViewUpgrade, Updated};
+use axum_live_view::{
+    html, js_command, live_view, EventData, Html, LiveView, LiveViewUpgrade, SelfHandle, Updated,
+};
 use serde::{Deserialize, Serialize};
 use std::{
     convert::Infallible,
@@ -15,6 +17,8 @@ use std::{
     path::PathBuf,
     sync::{Arc, Mutex},
 };
+use tokio::sync::broadcast;
+use tower::ServiceBuilder;
 use tower_http::services::ServeFile;
 
 #[tokio::main]
@@ -35,6 +39,8 @@ async fn main() {
     //     });
     // }
 
+    let (tx, _) = broadcast::channel::<NewMessagePing>(1024);
+
     let app = Router::new()
         .route("/", get(root))
         .route(
@@ -44,7 +50,11 @@ async fn main() {
             ))
             .handle_error(|_| async { StatusCode::INTERNAL_SERVER_ERROR }),
         )
-        .layer(AddExtensionLayer::new(messages));
+        .layer(
+            ServiceBuilder::new()
+                .layer(AddExtensionLayer::new(messages))
+                .layer(AddExtensionLayer::new(tx)),
+        );
 
     let addr = SocketAddr::from(([0, 0, 0, 0], 3000));
     axum::Server::bind(&addr)
@@ -55,20 +65,30 @@ async fn main() {
 
 type Messages = Arc<Mutex<Vec<Message>>>;
 
+#[derive(Clone, Copy)]
+struct NewMessagePing;
+
 async fn root(
     live: LiveViewUpgrade,
     Extension(messages): Extension<Messages>,
+    Extension(tx): Extension<broadcast::Sender<NewMessagePing>>,
 ) -> impl IntoResponse {
-    let list = MessagesList { messages };
+    let list = MessagesList {
+        messages: messages.clone(),
+        tx: tx.clone(),
+    };
 
     let form = SendMessageForm {
         message: Default::default(),
         name: Default::default(),
+        messages,
+        tx,
     };
 
     let combined = live_view::combine((list, form), |list, form| {
         html! {
             { list }
+            <hr />
             { form }
         }
     });
@@ -88,15 +108,33 @@ async fn root(
     })
 }
 
-#[derive(Clone)]
 struct MessagesList {
-    messages: Arc<Mutex<Vec<Message>>>,
+    messages: Messages,
+    tx: broadcast::Sender<NewMessagePing>,
 }
 
 #[async_trait]
 impl LiveView for MessagesList {
     type Message = ();
     type Error = Infallible;
+
+    async fn mount(
+        &mut self,
+        _: Uri,
+        _: &HeaderMap,
+        handle: SelfHandle<Self::Message>,
+    ) -> Result<(), Self::Error> {
+        let mut rx = self.tx.subscribe();
+        tokio::spawn(async move {
+            while let Ok(NewMessagePing) = rx.recv().await {
+                if handle.send(()).await.is_err() {
+                    break;
+                }
+            }
+        });
+
+        Ok(())
+    }
 
     async fn update(
         mut self,
@@ -130,6 +168,8 @@ impl LiveView for MessagesList {
 struct SendMessageForm {
     message: String,
     name: String,
+    messages: Messages,
+    tx: broadcast::Sender<NewMessagePing>,
 }
 
 #[async_trait]
@@ -142,43 +182,42 @@ impl LiveView for SendMessageForm {
         msg: FormMsg,
         data: Option<EventData>,
     ) -> Result<Updated<Self>, Self::Error> {
-        dbg!((msg, data));
-
         let mut js_commands = Vec::new();
 
-        // match msg {
-        //     FormMsg::Submit => {
-        //         let new_msg = serde_json::json!(data.as_form().unwrap());
-        //         let new_msg = serde_json::from_value::<Message>(new_msg).unwrap();
+        match msg {
+            FormMsg::Submit => {
+                let new_msg = data
+                    .unwrap()
+                    .as_form()
+                    .unwrap()
+                    .deserialize::<Message>()
+                    .unwrap();
 
-        //         let _ = self.pubsub.broadcast(&NewMessageTopic, Json(new_msg)).await;
+                self.messages.lock().unwrap().push(new_msg);
+                let _ = self.tx.send(NewMessagePing);
 
-        //         self.message.clear();
-        //         js_commands.push(js_command::clear_value("#text-input"));
-        //     }
-        //     FormMsg::MessageChange => match data.as_form().unwrap() {
-        //         FormEventData::String(value) => {
-        //             self.message = value.to_owned();
-        //         }
-        //         other => {
-        //             tracing::error!(
-        //                 ?other,
-        //                 "unexpected value type for `FormMsg::MessageChange` event"
-        //             )
-        //         }
-        //     },
-        //     FormMsg::NameChange => match data.as_form().unwrap() {
-        //         FormEventData::String(value) => {
-        //             self.name = value.to_owned();
-        //         }
-        //         other => {
-        //             tracing::error!(
-        //                 ?other,
-        //                 "unexpected value type for `FormMsg::NameChange` event"
-        //             )
-        //         }
-        //     },
-        // }
+                self.message.clear();
+                js_commands.push(js_command::clear_value("#text-input"));
+            }
+            FormMsg::MessageChange => {
+                self.message = data
+                    .unwrap()
+                    .as_input()
+                    .unwrap()
+                    .as_str()
+                    .unwrap()
+                    .to_owned();
+            }
+            FormMsg::NameChange => {
+                self.name = data
+                    .unwrap()
+                    .as_input()
+                    .unwrap()
+                    .as_str()
+                    .unwrap()
+                    .to_owned();
+            }
+        }
 
         Ok(Updated::new(self).with_all(js_commands))
     }

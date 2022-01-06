@@ -1,16 +1,75 @@
 use crate::life_cycle::{self, MessageFromSocketData};
+use serde::de::DeserializeOwned;
+use std::fmt;
 
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 pub enum EventData {
-    FormSubmit(FormSubmit),
-    FormChange(FormChange),
-    InputChange(InputChange),
+    Form(Form),
+    Input(Input),
     InputFocus(InputFocus),
     InputBlur(InputBlur),
     Key(Key),
     Mouse(Mouse),
     Scroll(Scroll),
+}
+
+impl EventData {
+    pub fn as_form(&self) -> Option<&Form> {
+        if let Self::Form(inner) = self {
+            Some(inner)
+        } else {
+            None
+        }
+    }
+
+    pub fn as_input(&self) -> Option<&Input> {
+        if let Self::Input(inner) = self {
+            Some(inner)
+        } else {
+            None
+        }
+    }
+
+    pub fn as_input_focus(&self) -> Option<&InputFocus> {
+        if let Self::InputFocus(inner) = self {
+            Some(inner)
+        } else {
+            None
+        }
+    }
+
+    pub fn as_input_blur(&self) -> Option<&InputBlur> {
+        if let Self::InputBlur(inner) = self {
+            Some(inner)
+        } else {
+            None
+        }
+    }
+
+    pub fn as_key(&self) -> Option<&Key> {
+        if let Self::Key(inner) = self {
+            Some(inner)
+        } else {
+            None
+        }
+    }
+
+    pub fn as_mouse(&self) -> Option<&Mouse> {
+        if let Self::Mouse(inner) = self {
+            Some(inner)
+        } else {
+            None
+        }
+    }
+
+    pub fn as_scroll(&self) -> Option<&Scroll> {
+        if let Self::Scroll(inner) = self {
+            Some(inner)
+        } else {
+            None
+        }
+    }
 }
 
 impl From<MessageFromSocketData> for Option<EventData> {
@@ -20,12 +79,8 @@ impl From<MessageFromSocketData> for Option<EventData> {
             | MessageFromSocketData::WindowFocus
             | MessageFromSocketData::WindowBlur
             | MessageFromSocketData::None => None,
-            MessageFromSocketData::FormSubmit { query } => {
-                Some(EventData::FormSubmit(FormSubmit { query }))
-            }
-            MessageFromSocketData::FormChange { query } => {
-                Some(EventData::FormChange(FormChange { query }))
-            }
+            MessageFromSocketData::FormSubmit { query } => Some(EventData::Form(Form { query })),
+            MessageFromSocketData::FormChange { query } => Some(EventData::Form(Form { query })),
             MessageFromSocketData::InputFocus { value } => {
                 Some(EventData::InputFocus(InputFocus { value }))
             }
@@ -34,11 +89,11 @@ impl From<MessageFromSocketData> for Option<EventData> {
             }
             MessageFromSocketData::InputChange { value } => {
                 let value = match value {
-                    life_cycle::InputValue::Bool(x) => InputChange::Bool(x),
-                    life_cycle::InputValue::String(x) => InputChange::String(x),
-                    life_cycle::InputValue::Strings(x) => InputChange::Strings(x),
+                    life_cycle::InputValue::Bool(x) => Input::Bool(x),
+                    life_cycle::InputValue::String(x) => Input::String(x),
+                    life_cycle::InputValue::Strings(x) => Input::Strings(x),
                 };
-                Some(EventData::InputChange(value))
+                Some(EventData::Input(value))
             }
             MessageFromSocketData::Key {
                 key,
@@ -86,24 +141,50 @@ impl From<MessageFromSocketData> for Option<EventData> {
 }
 
 #[derive(Debug, Clone)]
-pub struct FormSubmit {
+pub struct Form {
     query: String,
 }
 
-impl FormSubmit {
-    pub fn query(&self) -> &str {
-        &self.query
+impl Form {
+    pub fn deserialize<T>(&self) -> Result<T, DeserializeQueryError>
+    where
+        T: DeserializeOwned,
+    {
+        let query = percent_encoding::percent_decode_str(&self.query)
+            .decode_utf8()
+            .map_err(|err| DeserializeQueryError(DeserializeQueryErrorKind::Utf8Error(err)))?;
+
+        let t = serde_qs::from_str(&*query)
+            .map_err(|err| DeserializeQueryError(DeserializeQueryErrorKind::Deserialize(err)))?;
+
+        Ok(t)
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct FormChange {
-    query: String,
+#[derive(Debug)]
+pub struct DeserializeQueryError(DeserializeQueryErrorKind);
+
+#[derive(Debug)]
+enum DeserializeQueryErrorKind {
+    Utf8Error(std::str::Utf8Error),
+    Deserialize(serde_qs::Error),
 }
 
-impl FormChange {
-    pub fn query(&self) -> &str {
-        &self.query
+impl fmt::Display for DeserializeQueryError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match &self.0 {
+            DeserializeQueryErrorKind::Utf8Error(inner) => inner.fmt(f),
+            DeserializeQueryErrorKind::Deserialize(inner) => inner.fmt(f),
+        }
+    }
+}
+
+impl std::error::Error for DeserializeQueryError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match &self.0 {
+            DeserializeQueryErrorKind::Utf8Error(inner) => Some(&*inner),
+            DeserializeQueryErrorKind::Deserialize(inner) => Some(&*inner),
+        }
     }
 }
 
@@ -130,10 +211,36 @@ impl InputBlur {
 }
 
 #[derive(Clone, Debug)]
-pub enum InputChange {
+pub enum Input {
     Bool(bool),
     String(String),
     Strings(Vec<String>),
+}
+
+impl Input {
+    pub fn as_bool(&self) -> Option<bool> {
+        if let Self::Bool(inner) = self {
+            Some(*inner)
+        } else {
+            None
+        }
+    }
+
+    pub fn as_str(&self) -> Option<&str> {
+        if let Self::String(inner) = self {
+            Some(inner)
+        } else {
+            None
+        }
+    }
+
+    pub fn as_strings(&self) -> Option<&[String]> {
+        if let Self::Strings(inner) = self {
+            Some(inner)
+        } else {
+            None
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -243,3 +350,34 @@ impl Scroll {
         self.scroll_y
     }
 }
+
+// #[cfg(test)]
+// mod tests {
+//     use std::collections::HashMap;
+//     use serde::Deserialize;
+//     use percent_encoding::{percent_decode, percent_decode_str};
+
+//     #[allow(unused_imports)]
+//     use super::*;
+
+//     #[test]
+//     fn test_decode_form_query() {
+//         let query = "input=foo&textarea=bar&number=2&numbers%5B%5D=0&numbers%5B%5D=1&numbers%5B%5D=2&radio=2&checkboxes%5B3%5D=3&checkboxes%5B4%5D=4";
+//         let query = percent_decode_str(query).decode_utf8().unwrap();
+//         dbg!(&query);
+
+//         let query: FormValues = serde_qs::from_str(&*query).unwrap();
+
+//         dbg!(&query);
+//     }
+
+//     #[derive(Debug, Deserialize)]
+//     struct FormValues {
+//         input: String,
+//         textarea: String,
+//         number: String,
+//         numbers: Vec<String>,
+//         radio: Option<String>,
+//         checkboxes: HashMap<String, bool>,
+//     }
+// }

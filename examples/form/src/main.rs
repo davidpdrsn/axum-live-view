@@ -6,10 +6,8 @@ use axum::{
     Router,
 };
 use axum_live_view::{html, EventData, Html, LiveView, LiveViewUpgrade, Updated};
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
-use std::{
-    collections::HashMap, convert::Infallible, env, net::SocketAddr, path::PathBuf, time::Instant,
-};
+use serde::{Deserialize, Serialize};
+use std::{collections::HashMap, convert::Infallible, env, net::SocketAddr, path::PathBuf};
 use tower_http::services::ServeFile;
 
 #[tokio::main]
@@ -55,7 +53,6 @@ struct FormView {
     textarea_value: String,
     errors: Vec<String>,
     values: Option<FormValues>,
-    prev: Option<Instant>,
 }
 
 #[async_trait]
@@ -68,37 +65,44 @@ impl LiveView for FormView {
         msg: Msg,
         data: Option<EventData>,
     ) -> Result<Updated<Self>, Infallible> {
-        if let Some(prev) = self.prev {
-            println!("{:?}", prev.elapsed());
+        match msg {
+            Msg::Validate => {
+                let values: FormValues = data.unwrap().as_form().unwrap().deserialize().unwrap();
+                self.perform_validations(&values);
+            }
+            Msg::Submit => {
+                let values: FormValues = data.unwrap().as_form().unwrap().deserialize().unwrap();
+                self.perform_validations(&values);
+
+                if self.errors.is_empty() {
+                    tracing::info!("submitting");
+                } else {
+                    tracing::info!("there are warnings, not submitting");
+                }
+                self.values = Some(values);
+            }
+            Msg::TextInputChanged => {
+                self.text_input_value = data
+                    .unwrap()
+                    .as_input()
+                    .unwrap()
+                    .as_str()
+                    .unwrap()
+                    .to_owned();
+            }
+            Msg::TextAreaChanged => {
+                self.textarea_value = data
+                    .unwrap()
+                    .as_input()
+                    .unwrap()
+                    .as_str()
+                    .unwrap()
+                    .to_owned();
+            }
+            Msg::Changed(msg) => {
+                println!("change: {:?}", msg);
+            }
         }
-
-        self.prev = Some(Instant::now());
-
-        // match msg {
-        //     Msg::Validate => {
-        //         let values: FormValues = transcode(&data.as_form().unwrap());
-        //         self.perform_validations(&values);
-        //     }
-        //     Msg::Submit => {
-        //         let values: FormValues = transcode(&data.as_form().unwrap());
-        //         self.perform_validations(&values);
-        //         if self.errors.is_empty() {
-        //             tracing::info!("submitting");
-        //         } else {
-        //             tracing::info!("there are warnings, not submitting");
-        //         }
-        //         self.values = Some(values);
-        //     }
-        //     Msg::TextInputChanged => {
-        //         self.text_input_value = transcode(&data.as_form().unwrap());
-        //     }
-        //     Msg::TextAreaChanged => {
-        //         self.textarea_value = transcode(&data.as_form().unwrap());
-        //     }
-        //     Msg::Changed(msg) => {
-        //         println!("change: {:?}", msg);
-        //     }
-        // }
 
         Ok(Updated::new(self))
     }
@@ -138,7 +142,7 @@ impl LiveView for FormView {
 
                 <label>
                     <div>"Multi select"</div>
-                    <select name="numbers" size="6" multiple axm-change={ Msg::Changed(Input::MultiSelect) }>
+                    <select name="numbers[]" size="6" multiple axm-change={ Msg::Changed(Input::MultiSelect) }>
                         for n in 0..5 {
                             <option value={ n }>{ n }</option>
                         }
@@ -169,8 +173,8 @@ impl LiveView for FormView {
                             <label>
                                 <input
                                     type="checkbox"
-                                    name="checkboxes"
-                                    value={ n }
+                                    name={ format!("checkboxes[{}]", n) }
+                                    value="true"
                                     axm-change={ Msg::Changed(Input::Checkbox(n)) }
                                 />
                                 { n }
@@ -279,17 +283,12 @@ struct FormValues {
     input: String,
     textarea: String,
     number: String,
+    #[serde(default)]
     numbers: Vec<String>,
+    #[serde(default)]
     radio: Option<String>,
+    #[serde(default)]
     checkboxes: HashMap<String, bool>,
-}
-
-fn transcode<A, B>(from: &A) -> B
-where
-    A: Serialize + std::fmt::Debug,
-    B: DeserializeOwned,
-{
-    serde_json::from_value(serde_json::json!(from)).unwrap()
 }
 
 const TEXTAREA_MAX_LEN: i32 = 10;

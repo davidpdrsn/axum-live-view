@@ -1,4 +1,4 @@
-use crate::{event_data::EventData, html::Html, js_command::JsCommand};
+use crate::{event_data::EventData, html::Html, js_command::JsCommand, life_cycle::SelfHandle};
 use axum::{
     async_trait,
     http::{HeaderMap, Uri},
@@ -15,7 +15,12 @@ pub trait LiveView: Sized + Send + Sync + 'static {
     type Message: Serialize + DeserializeOwned + PartialEq + Send + Sync + 'static;
     type Error: fmt::Display;
 
-    async fn mount(&mut self, _uri: Uri, _request_headers: &HeaderMap) -> Result<(), Self::Error> {
+    async fn mount(
+        &mut self,
+        _uri: Uri,
+        _request_headers: &HeaderMap,
+        _handle: SelfHandle<Self::Message>,
+    ) -> Result<(), Self::Error> {
         Ok(())
     }
 
@@ -38,8 +43,8 @@ pub trait LiveView: Sized + Send + Sync + 'static {
 
 #[derive(Debug, Clone)]
 pub struct Updated<T> {
-    pub(crate) live_view: T,
-    pub(crate) js_commands: Vec<JsCommand>,
+    live_view: T,
+    js_commands: Vec<JsCommand>,
 }
 
 impl<T> Updated<T> {
@@ -63,7 +68,7 @@ impl<T> Updated<T> {
         self
     }
 
-    pub fn into_parts(self) -> (T, Vec<JsCommand>) {
+    pub(crate) fn into_parts(self) -> (T, Vec<JsCommand>) {
         (self.live_view, self.js_commands)
     }
 }
@@ -112,8 +117,16 @@ where
     type Message = V::Message;
     type Error = E2;
 
-    async fn mount(&mut self, uri: Uri, request_headers: &HeaderMap) -> Result<(), Self::Error> {
-        self.view.mount(uri, request_headers).await.map_err(&self.f)
+    async fn mount(
+        &mut self,
+        uri: Uri,
+        request_headers: &HeaderMap,
+        handle: SelfHandle<Self::Message>,
+    ) -> Result<(), Self::Error> {
+        self.view
+            .mount(uri, request_headers, handle)
+            .await
+            .map_err(&self.f)
     }
 
     async fn update(

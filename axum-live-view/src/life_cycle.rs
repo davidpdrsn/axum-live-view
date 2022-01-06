@@ -2,7 +2,7 @@ use crate::{
     event_data::EventData,
     html::{self, Html},
     js_command::JsCommand,
-    LiveView, Updated,
+    LiveView,
 };
 use async_trait::async_trait;
 use axum::{
@@ -37,9 +37,10 @@ where
                 ViewRequest::Mount {
                     uri,
                     headers,
+                    handle,
                     reply_tx,
                 } => {
-                    if let Err(err) = view.mount(uri, &headers).await {
+                    if let Err(err) = view.mount(uri, &headers, handle).await {
                         tracing::error!("mount failed with error: {}", err);
                         break;
                     }
@@ -53,11 +54,8 @@ where
                     reply_tx,
                     event_data,
                 } => {
-                    let Updated {
-                        live_view: new_view,
-                        js_commands,
-                    } = match view.update(msg, event_data).await {
-                        Ok(updated) => updated,
+                    let (new_view, js_commands) = match view.update(msg, event_data).await {
+                        Ok(updated) => updated.into_parts(),
                         Err(err) => {
                             tracing::error!("View failed with error: {}", err);
                             break;
@@ -99,13 +97,19 @@ impl<M> Clone for ViewTaskHandle<M> {
 }
 
 impl<M> ViewTaskHandle<M> {
-    async fn mount(&self, uri: Uri, headers: HeaderMap) -> anyhow::Result<()> {
+    async fn mount(
+        &self,
+        uri: Uri,
+        headers: HeaderMap,
+        handle: SelfHandle<M>,
+    ) -> anyhow::Result<()> {
         let (reply_tx, reply_rx) = oneshot::channel();
 
         let request = ViewRequest::Mount {
             reply_tx,
             uri,
             headers,
+            handle,
         };
 
         self.tx
@@ -161,6 +165,7 @@ enum ViewRequest<M> {
     Mount {
         uri: Uri,
         headers: HeaderMap,
+        handle: SelfHandle<M>,
         reply_tx: oneshot::Sender<()>,
     },
     Render {
@@ -238,23 +243,23 @@ impl LiveViewUpgrade {
     {
         let (ws, uri, headers) = match self.inner {
             LiveViewUpgradeInner::Http => {
-                let embed = EmbedLiveView { handle: None };
+                let embed = EmbedLiveView { view: None };
                 return gather_view(embed).into_response();
             }
             LiveViewUpgradeInner::Ws(data) => *data,
         };
 
-        let mut handle = None;
+        let mut view = None;
         let (tx, rx) = mpsc::channel(1024);
 
         let embed = EmbedLiveView {
-            handle: Some((&mut handle, tx)),
+            view: Some(&mut view),
         };
 
         gather_view(embed);
 
-        let handle = if let Some(handle) = handle {
-            handle
+        let view = if let Some(view) = view {
+            view
         } else {
             return ws.on_upgrade(|_| async {}).into_response();
         };
@@ -279,7 +284,11 @@ impl LiveViewUpgrade {
                 });
             futures_util::pin_mut!(read);
 
-            if let Err(err) = process_view_messages(write, read, handle, rx, uri, headers).await {
+            let handle = SelfHandle { tx };
+
+            if let Err(err) =
+                process_view_messages(write, read, view, handle, rx, uri, headers).await
+            {
                 tracing::error!(%err, "encountered while processing socket");
             }
         })
@@ -288,7 +297,7 @@ impl LiveViewUpgrade {
 }
 
 pub struct EmbedLiveView<'a, M> {
-    handle: Option<(&'a mut Option<ViewTaskHandle<M>>, mpsc::Sender<M>)>,
+    view: Option<&'a mut Option<ViewTaskHandle<M>>>,
 }
 
 impl<'a, M> EmbedLiveView<'a, M> {
@@ -296,25 +305,17 @@ impl<'a, M> EmbedLiveView<'a, M> {
     where
         L: LiveView<Message = M>,
     {
-        self.embed_handle(view).0
-    }
-
-    pub fn embed_handle<L>(self, view: L) -> (Html<M>, Option<ViewHandle<L::Message>>)
-    where
-        L: LiveView<Message = M>,
-    {
         let html = wrap_in_live_view_container(view.render());
 
-        if let Some((handle, tx)) = self.handle {
-            *handle = Some(spawn_view(view));
-            (html, Some(ViewHandle { tx }))
-        } else {
-            (html, None)
+        if let Some(view_handle) = self.view {
+            *view_handle = Some(spawn_view(view));
         }
+
+        html
     }
 
     pub fn connected(&self) -> bool {
-        self.handle.is_some()
+        self.view.is_some()
     }
 }
 
@@ -324,18 +325,42 @@ impl<'a, M> fmt::Debug for EmbedLiveView<'a, M> {
     }
 }
 
-pub struct ViewHandle<M> {
+pub struct SelfHandle<M> {
     tx: mpsc::Sender<M>,
 }
 
-impl<M> ViewHandle<M> {
-    pub async fn send(&self, msg: M) -> Result<(), ViewHandleSendError> {
-        self.tx.send(msg).await.map_err(|_| ViewHandleSendError)?;
+impl<M> SelfHandle<M> {
+    pub async fn send(&self, msg: M) -> Result<(), SelfHandleSendError> {
+        self.tx.send(msg).await.map_err(|_| SelfHandleSendError)?;
         Ok(())
+    }
+
+    pub(crate) fn with<F, M2>(self, f: F) -> SelfHandle<M2>
+    where
+        F: Fn(M2) -> M + Send + Sync + 'static,
+        M2: Send + 'static,
+        M: Send + 'static,
+    {
+        let (tx, mut rx) = mpsc::channel::<M2>(1024);
+        let old_tx = self.tx;
+
+        // probably not the most effecient thing to spawn here
+        // might be worth moving to using a `Sink` and using `SinkExt::with`
+        // will probably require boxing since `SelfHandle` should only
+        // be generic over the message
+        crate::util::spawn_unit(async move {
+            while let Some(msg) = rx.recv().await {
+                if old_tx.send(f(msg)).await.is_err() {
+                    break;
+                }
+            }
+        });
+
+        SelfHandle { tx }
     }
 }
 
-impl<M> Clone for ViewHandle<M> {
+impl<M> Clone for SelfHandle<M> {
     fn clone(&self) -> Self {
         Self {
             tx: self.tx.clone(),
@@ -343,7 +368,7 @@ impl<M> Clone for ViewHandle<M> {
     }
 }
 
-impl<M> fmt::Debug for ViewHandle<M> {
+impl<M> fmt::Debug for SelfHandle<M> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ViewHandle").finish()
     }
@@ -351,20 +376,21 @@ impl<M> fmt::Debug for ViewHandle<M> {
 
 #[non_exhaustive]
 #[derive(Debug)]
-pub struct ViewHandleSendError;
+pub struct SelfHandleSendError;
 
-impl fmt::Display for ViewHandleSendError {
+impl fmt::Display for SelfHandleSendError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "failed to send message to view")
     }
 }
 
-impl std::error::Error for ViewHandleSendError {}
+impl std::error::Error for SelfHandleSendError {}
 
 async fn process_view_messages<W, R, RE, M>(
     mut write: W,
     read: R,
     view: ViewTaskHandle<M>,
+    handle: SelfHandle<M>,
     rx: mpsc::Receiver<M>,
     uri: Uri,
     headers: HeaderMap,
@@ -376,7 +402,7 @@ where
     RE: Into<anyhow::Error>,
     M: DeserializeOwned,
 {
-    view.mount(uri, headers).await?;
+    view.mount(uri, headers, handle).await?;
 
     let markup = view.render().await?;
 
@@ -388,7 +414,6 @@ where
             data: MessageFromSocketData::None,
         })
     });
-
     let mut stream = tokio_stream::StreamExt::merge(read, rx_stream);
 
     loop {

@@ -2,7 +2,7 @@ use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 use std::{env, fs, path::Path};
 
-const N: usize = 16;
+const N: usize = 2;
 
 fn main() {
     let eithers = eithers();
@@ -44,9 +44,7 @@ fn eithers() -> TokenStream {
 fn live_view_impls() -> TokenStream {
     (1..=N)
         .map(|n| {
-            let types = (1..=n)
-                .map(|n| format_ident!("T{}", n))
-                .collect::<Vec<_>>();
+            let types = (1..=n).map(|n| format_ident!("T{}", n)).collect::<Vec<_>>();
 
             let live_view_bounds = types.iter().map(|ty| {
                 quote! { #ty: LiveView<Error = E>, }
@@ -69,7 +67,13 @@ fn live_view_impls() -> TokenStream {
 
             let mount = quote! {
                 let Self { views: (#(#types,)*), .. } = self;
-                #( #types.mount(uri.clone(), request_headers).await?; )*
+                #(
+                    #types.mount(
+                        uri.clone(),
+                        request_headers,
+                        handle.clone().with(#either_name::#types),
+                    ).await?;
+                )*
             };
 
             let update = {
@@ -111,7 +115,12 @@ fn live_view_impls() -> TokenStream {
                     type Message = #either;
                     type Error = E;
 
-                    async fn mount(&mut self, uri: Uri, request_headers: &HeaderMap) -> Result<(), Self::Error> {
+                    async fn mount(
+                        &mut self,
+                        uri: Uri,
+                        request_headers: &HeaderMap,
+                        handle: SelfHandle<Self::Message>,
+                    ) -> Result<(), Self::Error> {
                         #mount
                         Ok(())
                     }

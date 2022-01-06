@@ -52,7 +52,7 @@ mod util;
 pub use self::{
     event_data::EventData,
     html::Html,
-    life_cycle::LiveViewUpgrade,
+    life_cycle::{LiveViewUpgrade, SelfHandle},
     live_view::{LiveView, Updated},
 };
 pub use axum_live_view_macros::html;

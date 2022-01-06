@@ -1,4 +1,4 @@
-use crate::{EventData, Html, LiveView, Updated};
+use crate::{life_cycle::SelfHandle, EventData, Html, LiveView, Updated};
 use async_trait::async_trait;
 use axum::http::{HeaderMap, Uri};
 use serde::{Deserialize, Serialize};
