@@ -6,7 +6,7 @@ use axum::{
     routing::{get, get_service},
     AddExtensionLayer, Router,
 };
-use axum_live_view::{html, EventData, Html, LiveView, LiveViewUpgrade, Updated};
+use axum_live_view::{html, live_view, EventData, Html, LiveView, LiveViewUpgrade, Updated};
 use serde::{Deserialize, Serialize};
 use std::{
     convert::Infallible,
@@ -66,7 +66,12 @@ async fn root(
         name: Default::default(),
     };
 
-    let combined = Combined { a: list, b: form };
+    let combined = live_view::combine((list, form), |list, form| {
+        html! {
+            { list }
+            { form }
+        }
+    });
 
     live.response(move |embed| {
         html! {
@@ -81,55 +86,6 @@ async fn root(
             </html>
         }
     })
-}
-
-// TODO(david): upstream this but figure out how to customize the render function
-// so the views don't always have to be right next to each other
-struct Combined<A, B> {
-    a: A,
-    b: B,
-}
-
-#[async_trait]
-impl<A, B> LiveView for Combined<A, B>
-where
-    A: LiveView,
-    B: LiveView<Error = A::Error>,
-{
-    type Message = Either<A::Message, B::Message>;
-    type Error = A::Error;
-
-    async fn update(
-        mut self,
-        msg: Self::Message,
-        data: Option<EventData>,
-    ) -> Result<Updated<Self>, Self::Error> {
-        match msg {
-            Either::A(msg) => {
-                let (updated, js) = self.a.update(msg, data).await?.into_parts();
-                self.a = updated;
-                return Ok(Updated::new(self).with_all(js));
-            }
-            Either::B(msg) => {
-                let (updated, js) = self.b.update(msg, data).await?.into_parts();
-                self.b = updated;
-                return Ok(Updated::new(self).with_all(js));
-            }
-        }
-    }
-
-    fn render(&self) -> Html<Self::Message> {
-        html! {
-            { self.a.render().map(Either::A) }
-            { self.b.render().map(Either::B) }
-        }
-    }
-}
-
-#[derive(Clone, PartialEq, Serialize, Deserialize)]
-enum Either<A, B> {
-    A(A),
-    B(B),
 }
 
 #[derive(Clone)]

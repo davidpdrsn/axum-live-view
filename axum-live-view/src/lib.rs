@@ -44,9 +44,9 @@ pub mod html;
 
 pub mod event_data;
 pub mod js_command;
-
 pub mod life_cycle;
-mod live_view;
+pub mod live_view;
+
 mod util;
 
 pub use self::{
