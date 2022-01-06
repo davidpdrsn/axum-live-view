@@ -1,25 +1,23 @@
 use axum::{
     async_trait,
     extract::Extension,
-    http::StatusCode,
+    http::{HeaderMap, StatusCode, Uri},
     response::IntoResponse,
     routing::{get, get_service},
-    AddExtensionLayer, Json, Router,
+    AddExtensionLayer, Router,
 };
 use axum_live_view::{
-    html, js_command,
-    live_view::{EmbedLiveView, EventData, FormEventData, LiveView, Subscriptions, Updated},
-    pubsub::{InProcess, PubSub, Topic},
-    Html,
+    html, js_command, live_view, EventData, Html, LiveView, LiveViewUpgrade, SelfHandle, Updated,
 };
-use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use std::{
+    convert::Infallible,
     env,
     net::SocketAddr,
     path::PathBuf,
     sync::{Arc, Mutex},
 };
+use tokio::sync::broadcast;
 use tower::ServiceBuilder;
 use tower_http::services::ServeFile;
 
@@ -27,41 +25,38 @@ use tower_http::services::ServeFile;
 async fn main() {
     tracing_subscriber::fmt::init();
 
-    let pubsub = InProcess::new();
-    let (live_view_routes, live_view_layer) = axum_live_view::router_parts(pubsub.clone());
-
     let messages: Messages = Default::default();
 
-    {
-        let pubsub = pubsub.clone();
-        let messages = messages.clone();
-        let mut new_messages = pubsub.subscribe(&NewMessageTopic).await.unwrap();
-        tokio::spawn(async move {
-            while let Some(Json(msg)) = new_messages.next().await {
-                messages.lock().unwrap().push(msg);
-                let _ = pubsub.broadcast(&ReRenderMessageList, ()).await;
-            }
-        });
-    }
+    // {
+    //     let pubsub = pubsub.clone();
+    //     let messages = messages.clone();
+    //     let mut new_messages = pubsub.subscribe(&NewMessageTopic).await.unwrap();
+    //     tokio::spawn(async move {
+    //         while let Some(Json(msg)) = new_messages.next().await {
+    //             messages.lock().unwrap().push(msg);
+    //             let _ = pubsub.broadcast(&ReRenderMessageList, ()).await;
+    //         }
+    //     });
+    // }
+
+    let (tx, _) = broadcast::channel::<NewMessagePing>(1024);
 
     let app = Router::new()
         .route("/", get(root))
         .route(
             "/bundle.js",
             get_service(ServeFile::new(
-                PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap()).join("dist/bundle.js"),
+                PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("dist/bundle.js"),
             ))
             .handle_error(|_| async { StatusCode::INTERNAL_SERVER_ERROR }),
         )
-        .merge(live_view_routes)
         .layer(
             ServiceBuilder::new()
-                .layer(live_view_layer)
-                .layer(AddExtensionLayer::new(pubsub))
-                .layer(AddExtensionLayer::new(messages)),
+                .layer(AddExtensionLayer::new(messages))
+                .layer(AddExtensionLayer::new(tx)),
         );
 
-    let addr = SocketAddr::from(([0, 0, 0, 0], 4000));
+    let addr = SocketAddr::from(([0, 0, 0, 0], 3000));
     axum::Server::bind(&addr)
         .serve(app.into_make_service())
         .await
@@ -70,50 +65,83 @@ async fn main() {
 
 type Messages = Arc<Mutex<Vec<Message>>>;
 
-async fn root(
-    embed_live_view: EmbedLiveView<InProcess>,
-    Extension(pubsub): Extension<InProcess>,
-    Extension(messages): Extension<Messages>,
-) -> impl IntoResponse {
-    let list = MessagesList { messages };
+#[derive(Clone, Copy)]
+struct NewMessagePing;
 
-    let form = SendMessageForm {
-        pubsub,
-        message: Default::default(),
-        name: Default::default(),
+async fn root(
+    live: LiveViewUpgrade,
+    Extension(messages): Extension<Messages>,
+    Extension(tx): Extension<broadcast::Sender<NewMessagePing>>,
+) -> impl IntoResponse {
+    let list = MessagesList {
+        messages: messages.clone(),
+        tx: tx.clone(),
     };
 
-    html! {
-        <!DOCTYPE html>
-        <html>
-            <head>
-                <script src="/bundle.js"></script>
-            </head>
-            <body>
-                { embed_live_view.embed(list).unit() }
-                { embed_live_view.embed(form).unit() }
-            </body>
-        </html>
-    }
+    let form = SendMessageForm {
+        message: Default::default(),
+        name: Default::default(),
+        messages,
+        tx,
+    };
+
+    let combined = live_view::combine((list, form), |list, form| {
+        html! {
+            { list }
+            <hr />
+            { form }
+        }
+    });
+
+    live.response(move |embed| {
+        html! {
+            <!DOCTYPE html>
+            <html>
+                <head>
+                </head>
+                <body>
+                    { embed.embed(combined) }
+                    <script src="/bundle.js"></script>
+                </body>
+            </html>
+        }
+    })
 }
 
-#[derive(Clone)]
 struct MessagesList {
-    messages: Arc<Mutex<Vec<Message>>>,
+    messages: Messages,
+    tx: broadcast::Sender<NewMessagePing>,
 }
 
 #[async_trait]
 impl LiveView for MessagesList {
     type Message = ();
+    type Error = Infallible;
 
-    fn init(&self, subscriptions: &mut Subscriptions<Self>) {
-        subscriptions.on(&ReRenderMessageList, |this, ()| async move {
-            Updated::new(this)
+    async fn mount(
+        &mut self,
+        _: Uri,
+        _: &HeaderMap,
+        handle: SelfHandle<Self::Message>,
+    ) -> Result<(), Self::Error> {
+        let mut rx = self.tx.subscribe();
+        tokio::spawn(async move {
+            while let Ok(NewMessagePing) = rx.recv().await {
+                if handle.send(()).await.is_err() {
+                    break;
+                }
+            }
         });
+
+        Ok(())
     }
 
-    async fn update(mut self, _msg: (), _data: EventData) -> Updated<Self> {
-        Updated::new(self)
+    async fn update(
+        mut self,
+        _msg: (),
+        _data: Option<EventData>,
+    ) -> Result<Updated<Self>, Self::Error> {
+        Ok(Updated::new(self))
     }
 
     fn render(&self) -> Html<Self::Message> {
@@ -137,60 +165,61 @@ impl LiveView for MessagesList {
     }
 }
 
-#[derive(Clone)]
-struct SendMessageForm<P> {
-    pubsub: P,
+struct SendMessageForm {
     message: String,
     name: String,
+    messages: Messages,
+    tx: broadcast::Sender<NewMessagePing>,
 }
 
 #[async_trait]
-impl<P> LiveView for SendMessageForm<P>
-where
-    P: PubSub,
-{
+impl LiveView for SendMessageForm {
     type Message = FormMsg;
+    type Error = Infallible;
 
-    fn init(&self, _subscriptions: &mut Subscriptions<Self>) {}
-
-    async fn update(mut self, msg: FormMsg, data: EventData) -> Updated<Self> {
+    async fn update(
+        mut self,
+        msg: FormMsg,
+        data: Option<EventData>,
+    ) -> Result<Updated<Self>, Self::Error> {
         let mut js_commands = Vec::new();
 
         match msg {
             FormMsg::Submit => {
-                let new_msg = serde_json::json!(data.as_form().unwrap());
-                let new_msg = serde_json::from_value::<Message>(new_msg).unwrap();
+                let new_msg = data
+                    .unwrap()
+                    .as_form()
+                    .unwrap()
+                    .deserialize::<Message>()
+                    .unwrap();
 
-                let _ = self.pubsub.broadcast(&NewMessageTopic, Json(new_msg)).await;
+                self.messages.lock().unwrap().push(new_msg);
+                let _ = self.tx.send(NewMessagePing);
 
                 self.message.clear();
                 js_commands.push(js_command::clear_value("#text-input"));
             }
-            FormMsg::MessageChange => match data.as_form().unwrap() {
-                FormEventData::String(value) => {
-                    self.message = value.to_owned();
-                }
-                other => {
-                    tracing::error!(
-                        ?other,
-                        "unexpected value type for `FormMsg::MessageChange` event"
-                    )
-                }
-            },
-            FormMsg::NameChange => match data.as_form().unwrap() {
-                FormEventData::String(value) => {
-                    self.name = value.to_owned();
-                }
-                other => {
-                    tracing::error!(
-                        ?other,
-                        "unexpected value type for `FormMsg::NameChange` event"
-                    )
-                }
-            },
+            FormMsg::MessageChange => {
+                self.message = data
+                    .unwrap()
+                    .as_input()
+                    .unwrap()
+                    .as_str()
+                    .unwrap()
+                    .to_owned();
+            }
+            FormMsg::NameChange => {
+                self.name = data
+                    .unwrap()
+                    .as_input()
+                    .unwrap()
+                    .as_str()
+                    .unwrap()
+                    .to_owned();
+            }
         }
 
-        Updated::new(self).with_all(js_commands)
+        Ok(Updated::new(self).with_all(js_commands))
     }
 
     fn render(&self) -> Html<Self::Message> {
@@ -234,24 +263,4 @@ enum FormMsg {
 struct Message {
     name: String,
     message: String,
-}
-
-struct ReRenderMessageList;
-
-impl Topic for ReRenderMessageList {
-    type Message = ();
-
-    fn topic(&self) -> &str {
-        "re-render-message-list"
-    }
-}
-
-struct NewMessageTopic;
-
-impl Topic for NewMessageTopic {
-    type Message = Json<Message>;
-
-    fn topic(&self) -> &str {
-        "new-message"
-    }
 }

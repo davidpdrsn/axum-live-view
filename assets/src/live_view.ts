@@ -1,15 +1,9 @@
 import morphdom from "morphdom"
 
-export interface LiveViewOptions {
-  host: string;
-  port: number;
-}
+export interface LiveViewOptions {}
 
-interface ConnectState {
-}
-
-interface ViewStates {
-  [index: string]: ViewState;
+interface State {
+  viewState?: ViewState;
 }
 
 interface ViewState {
@@ -21,337 +15,427 @@ interface ViewStateDiff {
 }
 
 export function connectAndRun(options: LiveViewOptions) {
-  var connectState = {
-  }
+  const socket = new WebSocket(`ws://${window.location.host}${window.location.pathname}`);
 
-  doConnectAndRun(options, connectState)
-}
-
-function doConnectAndRun(options: LiveViewOptions, connectState: ConnectState) {
-  const socket = new WebSocket(`ws://${options.host}:${options.port}/live`)
-
-  const viewStates = {}
-
-  socket.addEventListener("open", () => {
-    onOpen(socket, connectState, options)
-  })
+  var state: State = {}
 
   socket.addEventListener("message", (event) => {
-    onMessage(socket, event, connectState, options, viewStates)
+    onMessage(socket, event, state, options)
   })
 
-  socket.addEventListener("close", () => {
-    onClose(socket, connectState, options)
-  })
-
-  socket.addEventListener("error", () => {
-    onError(socket, connectState, options)
+  socket.addEventListener("close", (event) => {
+    onClose(socket, state, options)
   })
 }
 
-function onOpen(socket: WebSocket, connectState: ConnectState, options: LiveViewOptions) {
-  mountComponents(socket)
-  bindInitialEvents(socket)
+type MessageFromView = InitialRender | Render | JsCommands
+
+type InitialRender = {
+  t: "i",
+  d: ViewState,
 }
 
-interface InitialRender { t: "i", i: string, d: ViewState }
-interface Rendered { t: "r", i: string, d: ViewStateDiff }
-interface JsCommand { t: "j", i: string, d: JsCommandData[] }
+type Render = {
+  t: "r",
+  d: ViewStateDiff,
+}
 
-type Msg = InitialRender | Rendered | JsCommand
+type JsCommands = {
+  t: "j",
+  d: JsCommand[],
+}
 
 function onMessage(
   socket: WebSocket,
   event: MessageEvent,
-  connectState: ConnectState,
+  state: State,
   options: LiveViewOptions,
-  viewStates: ViewStates,
 ) {
-  const payload: Msg = JSON.parse(event.data)
+  const msg: MessageFromView = JSON.parse(event.data)
 
-  if (payload.t === "i") {
-    // initial-render
+  if (msg.t === "i") {
+    state.viewState = msg.d
+    updateDomFromState(socket, state)
+    bindInitialEvents(socket)
 
-    const liveViewId = payload.i
-    const data = payload.d
-    const element = document.querySelector(`[data-live-view-id="${liveViewId}"]`)
-    if (!element) { throw "Element not found" }
-    const html = buildHtmlFromState(data)
-    updateDom(socket, element, html)
-    viewStates[liveViewId] = data
+  } else if (msg.t === "r") {
+    if (!state.viewState) { return }
+    patchViewState(state.viewState, msg.d)
+    updateDomFromState(socket, state)
 
-  } else if (payload.t === "r") {
-    // rendered
-    const liveViewId = payload.i
-    const diff = payload.d
-    const element = document.querySelector(`[data-live-view-id="${liveViewId}"]`)
-    if (!element) { throw "Element not found" }
-
-    const state = viewStates[liveViewId]
-    if (!state) { throw "No liveView state found" }
-    patchViewState(state, diff)
-
-    const html = buildHtmlFromState(state)
-    updateDom(socket, element, html)
-
-  } else if (payload.t === "j") {
-    // js-command
-    payload.d.forEach(handleJsCommand)
+  } else if (msg.t === "j") {
+    for (const jsCommand of msg.d) {
+      handleJsCommand(jsCommand)
+    }
 
   } else {
-    const _: never = payload
+    const _: never = msg
   }
 }
 
-function onClose(socket: WebSocket, connectState: ConnectState, options: LiveViewOptions) {
+function onClose(socket: WebSocket, state: State, options: LiveViewOptions) {
   setTimeout(() => {
-    doConnectAndRun(options, connectState)
+    connectAndRun(options)
   }, 500)
 }
 
-function onError(socket: WebSocket, connectState: ConnectState, options: LiveViewOptions) {
-}
-
-function socketSend(socket: WebSocket, liveViewId: string, topic: string, data: object) {
-  let msg = [liveViewId, topic, data]
-  socket.send(JSON.stringify(msg))
-}
-
-function mountComponents(socket: WebSocket) {
-  const liveViewIdAttr = "data-live-view-id"
-
-  document.querySelectorAll(`[${liveViewIdAttr}]`).forEach((component) => {
-    const liveViewId = component.getAttribute(liveViewIdAttr)
-
-    if (liveViewId) {
-      socketSend(socket, liveViewId, "axum/mount-live-view", {})
-    }
-  })
+const axm = {
+  click: "axm-click",
+  input: "axm-input",
+  change: "axm-change",
+  submit: "axm-submit",
+  focus: "axm-focus",
+  blur: "axm-blur",
+  keydown: "axm-keydown",
+  keyup: "axm-keyup",
+  window_keydown: "axm-window-keydown",
+  window_keyup: "axm-window-keyup",
+  window_focus: "axm-window-focus",
+  window_blur: "axm-window-blur",
+  mouseenter: "axm-mouseenter",
+  mouseover: "axm-mouseover",
+  mouseleave: "axm-mouseleave",
+  mouseout: "axm-mouseout",
+  mousemove: "axm-mousemove",
+  scroll: "axm-scroll",
 }
 
 function bindInitialEvents(socket: WebSocket) {
-  var elements = new Set()
-  for (let def of elementLocalAttrs) {
-    document.querySelectorAll(`[${def.attr}]`).forEach((el) => {
-      if (!elements.has(el)) {
-        addEventListeners(socket, el)
-      }
-      elements.add(el)
-    })
-  }
+  const attrs = Object.values(axm).map((attr) => `[${attr}]`).join(", ")
 
-  for (let def of windowAttrs) {
-    document.querySelectorAll(`[${def.attr}]`).forEach((el) => {
-      bindLiveEvent(socket, el, def)
-    })
-  }
+  document.querySelectorAll(attrs).forEach((element) => {
+    addEventListeners(socket, element)
+  })
 }
 
 function addEventListeners(socket: WebSocket, element: Element) {
-  const defs = elementLocalAttrs
-
-  for (let def of elementLocalAttrs) {
-    bindLiveEvent(socket, element, def)
-  }
-}
-
-interface AttrDef {
-  attr: string;
-  eventName: string;
-}
-
-const elementLocalAttrs: AttrDef[] = [
-  { attr: "axm-click", eventName: "click" },
-  { attr: "axm-input", eventName: "input" },
-  { attr: "axm-blur", eventName: "blur" },
-  { attr: "axm-focus", eventName: "focus" },
-  { attr: "axm-change", eventName: "change" },
-  { attr: "axm-submit", eventName: "submit" },
-  { attr: "axm-keydown", eventName: "keydown" },
-  { attr: "axm-keyup", eventName: "keyup" },
-  { attr: "axm-mouseenter", eventName: "mouseenter" },
-  { attr: "axm-mouseover", eventName: "mouseover" },
-  { attr: "axm-mouseleave", eventName: "mouseleave" },
-  { attr: "axm-mouseout", eventName: "mouseout" },
-  { attr: "axm-mousemove", eventName: "mousemove" },
-]
-
-interface WindowAttrDef {
-  attr: string;
-  eventName: string;
-  bindEventTo: typeof window;
-}
-
-const windowAttrs: WindowAttrDef[] = [
-  { attr: "axm-window-keydown", eventName: "keydown", bindEventTo: window },
-  { attr: "axm-window-keyup", eventName: "keyup", bindEventTo: window },
-  { attr: "axm-window-focus", eventName: "focus", bindEventTo: window },
-  { attr: "axm-window-blur", eventName: "blur", bindEventTo: window },
-]
-
-interface EventData {
-  e: string;
-  m?: JSON | string;
-  v?: FormData | InputValue;
-  cx?: number;
-  cy?: number;
-  px?: number;
-  py?: number;
-  ox?: number;
-  oy?: number;
-  mx?: number;
-  my?: number;
-  sx?: number;
-  sy?: number;
-  k?: string;
-  kc?: string;
-  a?: boolean;
-  c?: boolean;
-  s?: boolean;
-  me?: boolean;
-}
-
-function bindLiveEvent(
-  socket: WebSocket,
-  element: Element,
-  def: AttrDef | WindowAttrDef,
-) {
-  var actualBindEventTo: Element | typeof window
-  if ("bindEventTo" in def) {
-    actualBindEventTo = def.bindEventTo
-  } else {
-    actualBindEventTo = element
+  if (element.hasAttribute(axm.click)) {
+    on(element, "click", axm.click, (msg) => ({ t: "click", m: msg }))
   }
 
-  const { attr, eventName } = def
-
-  if (!element.getAttribute?.(attr)) {
-    return;
-  }
-
-  var f = (event: Event) => {
-    let liveViewId = element.closest("[data-live-view-id]")?.getAttribute("data-live-view-id")
-    if (!liveViewId) return
-    let msg = element.getAttribute(attr)
-    if (!msg) return
-
-    var data: EventData = { e: eventName };
-
-    try {
-      data.m = JSON.parse(msg);
-    } catch {
-      data.m = msg;
+  if (
+    element instanceof HTMLInputElement ||
+      element instanceof HTMLTextAreaElement ||
+      element instanceof HTMLSelectElement
+  ) {
+    if (element.hasAttribute(axm.input)) {
+      on(element, "input", axm.input, (msg) => {
+        const value = inputValue(element)
+        return { t: "input_change", m: msg, d: { v: value } }
+      })
     }
 
-    if (element.nodeName === "FORM") {
-      data.v = serializeForm(element)
-    } else {
-      const value = inputValue(element)
-      if (value !== null) {
-        data.v = value
+    if (element.hasAttribute(axm.change)) {
+      on(element, "change", axm.change, (msg) => {
+        const value = inputValue(element)
+        return { t: "input_change", m: msg, d: { v: value } }
+      })
+    }
+  }
+
+  if (
+    element instanceof HTMLInputElement ||
+      element instanceof HTMLTextAreaElement
+  ) {
+    if (element.hasAttribute(axm.focus)) {
+      on(element, "focus", axm.focus, (msg) => {
+        const value = inputValue(element)
+        if (typeof value === "string") {
+          return { t: "input_focus", m: msg, d: { v: value } }
+        } else {
+          return
+        }
+      })
+    }
+
+    if (element.hasAttribute(axm.blur)) {
+      on(element, "blur", axm.blur, (msg) => {
+        const value = inputValue(element)
+        if (typeof value === "string") {
+          return { t: "input_blur", m: msg, d: { v: value } }
+        } else {
+          return
+        }
+      })
+    }
+  }
+
+  if (element instanceof HTMLFormElement) {
+    if (element.hasAttribute(axm.change)) {
+      on(element, "change", axm.change, (msg) => {
+        // workaround for https://github.com/microsoft/TypeScript/issues/30584
+        const form = new FormData(element) as any
+        const query = new URLSearchParams(form).toString()
+        return { t: "form_change", m: msg, d: { q: query } }
+      })
+    }
+
+    if (element.hasAttribute(axm.submit)) {
+      on(element, "submit", axm.submit, (msg) => {
+        // workaround for https://github.com/microsoft/TypeScript/issues/30584
+        const form = new FormData(element) as any
+        const query = new URLSearchParams(form).toString()
+        return { t: "form_submit", m: msg, d: { q: query } }
+      })
+    }
+  }
+
+  [
+    ["mouseenter", axm.mouseenter],
+    ["mouseover", axm.mouseover],
+    ["mouseleave", axm.mouseleave],
+    ["mouseout", axm.mouseout],
+    ["mousemove", axm.mousemove],
+  ].forEach(([event, axm]) => {
+    if (!event) { return }
+    if (!axm) { return }
+
+    if (element.hasAttribute(axm)) {
+      on(element, event, axm, (msg, event) => {
+        if (event instanceof MouseEvent) {
+          const data: MouseData = {
+            cx: event.clientX,
+            cy: event.clientY,
+            px: event.pageX,
+            py: event.pageY,
+            ox: event.offsetX,
+            oy: event.offsetY,
+            mx: event.movementX,
+            my: event.movementY,
+            sx: event.screenX,
+            sy: event.screenY,
+          }
+          return { t: "mouse", m: msg, d: data }
+        } else {
+          return
+        }
+      })
+    }
+  });
+
+  [
+    ["keydown", axm.keydown],
+    ["keyup", axm.keyup],
+  ].forEach(([event, axm]) => {
+    if (!event) { return }
+    if (!axm) { return }
+
+    if (element.hasAttribute(axm)) {
+      on(element, event, axm, (msg, event) => {
+        if (event instanceof KeyboardEvent) {
+          if (
+            element.hasAttribute("axm-key") &&
+            element?.getAttribute("axm-key")?.toLowerCase() !== event.key.toLowerCase()
+          ) {
+            return;
+          }
+
+          const data: KeyData = {
+            k: event.key,
+            kc: event.code,
+            a: event.altKey,
+            c: event.ctrlKey,
+            s: event.shiftKey,
+            me: event.metaKey,
+          }
+          return { t: "key", m: msg, d: data }
+        } else {
+          return
+        }
+      })
+    }
+  });
+
+  [
+    ["keydown", axm.window_keydown],
+    ["keyup", axm.window_keyup],
+  ].forEach(([event, axm]) => {
+    if (!event) { return }
+    if (!axm) { return }
+
+    if (element.hasAttribute(axm)) {
+      on(window, event, axm, (msg, event) => {
+        if (event instanceof KeyboardEvent) {
+          if (
+            element.hasAttribute("axm-key") &&
+            element?.getAttribute("axm-key")?.toLowerCase() !== event.key.toLowerCase()
+          ) {
+            return;
+          }
+
+          const data: KeyData = {
+            k: event.key,
+            kc: event.code,
+            a: event.altKey,
+            c: event.ctrlKey,
+            s: event.shiftKey,
+            me: event.metaKey,
+          }
+          return { t: "key", m: msg, d: data }
+        } else {
+          return
+        }
+      })
+    }
+  });
+
+  if (element.hasAttribute(axm.window_focus)) {
+    on(window, "focus", axm.window_focus, (msg, event) => {
+      return { t: "window_focus", m: msg }
+    })
+  }
+
+  if (element.hasAttribute(axm.window_blur)) {
+    on(window, "blur", axm.window_blur, (msg, event) => {
+      return { t: "window_blur", m: msg }
+    })
+  }
+
+  if (element.hasAttribute(axm.scroll)) {
+    on(document, "scroll", axm.scroll, (msg, event) => {
+      const data = {
+        sx: window.scrollX,
+        sy: window.scrollY,
       }
-    }
+      return { t: "scroll", m: msg, d: data }
+    })
+  }
 
-    if (event instanceof MouseEvent) {
-      data.cx = event.clientX
-      data.cy = event.clientY
-      data.px = event.pageX
-      data.py = event.pageY
-      data.ox = event.offsetX
-      data.oy = event.offsetY
-      data.mx = event.movementX
-      data.my = event.movementY
-      data.sx = event.screenX
-      data.sy = event.screenY
-    }
-
-    if (event instanceof KeyboardEvent) {
-      if (
-        element.hasAttribute("axm-key") &&
-        element?.getAttribute("axm-key")?.toLowerCase() !== event.key.toLowerCase()
-      ) {
-        return;
+  function on(
+    element: Element | typeof window | typeof document,
+    eventName: string,
+    attr: string,
+    f: (msg: string | JSON, event: Event) => MessageToView | undefined,
+  ) {
+    element.addEventListener(eventName, delayOrThrottle((event) => {
+      if (!(event instanceof KeyboardEvent)) {
+        event.preventDefault()
       }
 
-      data.k = event.key
-      data.kc = event.code
-      data.a = event.altKey
-      data.c = event.ctrlKey
-      data.s = event.shiftKey
-      data.me = event.metaKey
+      const decodeMsg = msgAttr(attr)
+      if (!decodeMsg) { return }
+      const payload = f(decodeMsg, event)
+      if (!payload) { return }
+      socket.send(JSON.stringify(payload))
+    }))
+  }
+
+  function msgAttr(attr: string): string | JSON | undefined {
+      const value = element.getAttribute(attr)
+      if (!value) { return }
+      try {
+        return JSON.parse(value)
+      } catch {
+        return value
+      }
+  }
+
+  function delayOrThrottle<In extends unknown[]>(f: Fn<In>): Fn<In> {
+    var delayMs = numberAttr(element, "axm-debounce")
+    if (delayMs) {
+      return debounce(f, delayMs)
     }
 
-    socketSend(socket, liveViewId, `axum/${attr}`, data)
-  }
-
-  var delayMs = numberAttr(element, "axm-debounce")
-  if (delayMs) {
-    f = debounce(f, delayMs)
-  }
-
-  var delayMs = numberAttr(element, "axm-throttle")
-  if (delayMs) {
-    f = throttle(f, delayMs)
-  }
-
-  actualBindEventTo.addEventListener(eventName, (event) => {
-    if (!(event instanceof KeyboardEvent)) {
-      event.preventDefault()
+    var delayMs = numberAttr(element, "axm-throttle")
+    if (delayMs) {
+      return throttle(f, delayMs)
     }
-    f(event)
-  })
+
+    return f
+  }
 }
 
-interface FormData {
-  [index: string]: any;
+type MessageToView =
+  Click
+  | FormSubmit
+  | FormChange
+  | InputChange
+  | Key
+  | InputFocus
+  | InputBlur
+  | WindowFocus
+  | WindowBlur
+  | Mouse
+  | Scroll
+
+interface Click { t: "click", m: string | JSON }
+
+interface WindowFocus { t: "window_focus", m: string | JSON }
+interface WindowBlur { t: "window_blur", m: string | JSON }
+
+interface InputFocus { t: "input_focus", m: string | JSON, d: { v: string } }
+interface InputBlur { t: "input_blur", m: string | JSON, d: { v: string } }
+
+interface Scroll {
+  t: "scroll",
+  m: string | JSON,
+  d: {
+    sx: number,
+    sy: number,
+  }
 }
 
-function serializeForm(element: Element): FormData {
-  var formData: FormData = {}
+interface FormSubmit {
+  t: "form_submit",
+  m: string | JSON,
+  d: {
+    q: string
+  }
+}
 
-  element.querySelectorAll("textarea").forEach((child) => {
-    const name = child.getAttribute("name")
-    if (!name) { return }
+interface FormChange {
+  t: "form_change",
+  m: string | JSON,
+  d: {
+    q: string
+  }
+}
 
-    formData[name] = child.value
-  })
+interface InputChange {
+  t: "input_change",
+  m: string | JSON,
+  d: {
+    v: InputValue
+  }
+}
 
-  element.querySelectorAll("input").forEach((child) => {
-    const name = child.getAttribute("name")
-    if (!name) { return }
+interface Key {
+  t: "key",
+  m: string | JSON,
+  d: KeyData,
+}
 
-    if (child.getAttribute("type") === "radio") {
-      if (child.checked) {
-        formData[name] = child.value
-      }
-    } else if (child.getAttribute("type") === "checkbox") {
-      if (!formData[name]) {
-        formData[name] = {}
-      }
-      formData[name][child.value] = child.checked
-    } else {
-      formData[name] = child.value
-    }
-  })
+interface KeyData {
+  k: string,
+  kc: string,
+  a: boolean,
+  c: boolean,
+  s: boolean,
+  me: boolean,
+}
 
-  element.querySelectorAll("select").forEach((child) => {
-    const name = child.getAttribute("name")
-    if (!name) return
+interface Mouse {
+  t: "mouse",
+  m: string | JSON,
+  d: MouseData,
+}
 
-      if (child.hasAttribute("multiple")) {
-        const values = Array.from(child.selectedOptions).map((opt) => opt.value)
-        formData[name] = values
-      } else {
-        formData[name] = child.value
-      }
-  })
-
-  return formData
+interface MouseData {
+  cx: number,
+  cy: number,
+  px: number,
+  py: number,
+  ox: number,
+  oy: number,
+  mx: number,
+  my: number,
+  sx: number,
+  sy: number,
 }
 
 type InputValue = string | string[] | boolean
 
-function inputValue(element: Element): InputValue | null {
+function inputValue(element: Element): InputValue {
   if (element instanceof HTMLTextAreaElement) {
     return element.value
 
@@ -370,7 +454,7 @@ function inputValue(element: Element): InputValue | null {
     }
 
   } else {
-    return null
+    throw "Input has no input value"
   }
 }
 
@@ -385,75 +469,83 @@ function numberAttr(element: Element, attr: string): number | null {
   return null
 }
 
-const fixed = "f";
+function updateDomFromState(socket: WebSocket, state: State) {
+  if (!state.viewState) { return }
+  const html = buildHtml(state.viewState)
+  const container = document.querySelector("#live-view-container")
+  if (!container) { return }
+  patchDom(socket, container, html)
 
-function buildHtmlFromState(state: ViewState): string {
-    var combined = ""
+  function buildHtml(state: ViewState): string {
+      var combined = ""
 
-    const f = state[fixed]
-    if (!Array.isArray(f)) {
-      throw "fixed is not an array"
-    }
-
-    f.forEach((value, i) => {
-      combined = combined.concat(value)
-      const variable = state[i]
-
-      if (variable === undefined || variable === null) {
-        return
+      const f = state[fixed]
+      if (!Array.isArray(f)) {
+        throw "fixed is not an array"
       }
 
-      if (typeof variable === "string") {
-        combined = combined.concat(variable)
+      f.forEach((value, i) => {
+        combined = combined.concat(value)
+        const variable = state[i]
 
-      } else if (Array.isArray(variable)) {
-        throw "wat"
+        if (variable === undefined || variable === null) {
+          return
+        }
 
-      } else {
-        combined = combined.concat(buildHtmlFromState(variable))
-      }
-    })
+        if (typeof variable === "string") {
+          combined = combined.concat(variable)
 
-    return combined
-}
+        } else if (Array.isArray(variable)) {
+          throw "wat"
 
-function updateDom(socket: WebSocket, element: Element, html: string) {
-    morphdom(element, html, {
-        onNodeAdded: (node) => {
-          if (node instanceof Element) {
-            addEventListeners(socket, node)
-          }
-          return node
-        },
-        onBeforeElUpdated: (fromEl, toEl) => {
-          const tag = toEl.tagName
+        } else {
+          combined = combined.concat(buildHtml(variable))
+        }
+      })
 
-          if (fromEl instanceof HTMLInputElement && toEl instanceof HTMLInputElement) {
-            if (toEl.getAttribute("type") === "radio" || toEl.getAttribute("type") === "checkbox") {
-              toEl.checked = fromEl.checked;
-            } else {
+      return combined
+  }
+
+  function patchDom(socket: WebSocket, element: Element, html: string) {
+      morphdom(element, html, {
+          onNodeAdded: (node) => {
+            if (node instanceof Element) {
+              addEventListeners(socket, node)
+            }
+            return node
+          },
+          onBeforeElUpdated: (fromEl, toEl) => {
+            const tag = toEl.tagName
+
+            if (fromEl instanceof HTMLInputElement && toEl instanceof HTMLInputElement) {
+              if (toEl.getAttribute("type") === "radio" || toEl.getAttribute("type") === "checkbox") {
+                toEl.checked = fromEl.checked;
+              } else {
+                toEl.value = fromEl.value;
+              }
+            }
+
+            if (fromEl instanceof HTMLTextAreaElement && toEl instanceof HTMLTextAreaElement) {
               toEl.value = fromEl.value;
             }
-          }
 
-          if (fromEl instanceof HTMLTextAreaElement && toEl instanceof HTMLTextAreaElement) {
-            toEl.value = fromEl.value;
-          }
-
-          if (fromEl instanceof HTMLOptionElement && toEl instanceof HTMLOptionElement) {
-            if (toEl.closest("select")?.hasAttribute("multiple")) {
-              toEl.selected = fromEl.selected
+            if (fromEl instanceof HTMLOptionElement && toEl instanceof HTMLOptionElement) {
+              if (toEl.closest("select")?.hasAttribute("multiple")) {
+                toEl.selected = fromEl.selected
+              }
             }
-          }
 
-          if (fromEl instanceof HTMLSelectElement && toEl instanceof HTMLSelectElement && !toEl.hasAttribute("multiple")) {
-            toEl.value = fromEl.value
-          }
+            if (fromEl instanceof HTMLSelectElement && toEl instanceof HTMLSelectElement && !toEl.hasAttribute("multiple")) {
+              toEl.value = fromEl.value
+            }
 
-          return true
-        },
-    })
+            return true
+          },
+      })
+  }
 }
+
+const fixed = "f";
 
 function patchViewState(state: ViewState, diff: ViewStateDiff) {
   for (const [key, val] of Object.entries(diff)) {
@@ -485,61 +577,61 @@ function patchViewState(state: ViewState, diff: ViewStateDiff) {
   }
 }
 
-interface JsCommandData {
+interface JsCommand {
   delay_ms: number | null,
   kind: JsCommandKind,
 }
 
 type JsCommandKind =
-  { AddClass: { selector: string, klass: string } }
-  | { RemoveClass: { selector: string, klass: string } }
-  | { ToggleClass: { selector: string, klass: string } }
-  | { NavigateTo: { uri: string } }
-  | { ClearValue: { selector: string } }
-  | { SetTitle: { title: string } }
-  | { HistoryPushState: { uri: string } }
+  { t: "navigate_to", uri: string }
+  | { t: "add_class", selector: string, klass: string }
+  | { t: "remove_class", selector: string, klass: string }
+  | { t: "toggle_class", selector: string, klass: string }
+  | { t: "clear_value", selector: string }
+  | { t: "set_title", title: string }
+  | { t: "history_push_state", uri: string }
 
-function handleJsCommand(cmd: JsCommandData) {
+function handleJsCommand(cmd: JsCommand) {
   const run = () => {
-    if ("AddClass" in cmd.kind) {
-      const { selector, klass } = cmd.kind.AddClass
-      document.querySelectorAll(selector).forEach((element) => {
-        element.classList.add(klass)
-      })
-
-    } else if ("RemoveClass" in cmd.kind) {
-      const { selector, klass } = cmd.kind.RemoveClass
-      document.querySelectorAll(selector).forEach((element) => {
-        element.classList.remove(klass)
-      })
-
-    } else if ("ToggleClass" in cmd.kind) {
-      const { selector, klass } = cmd.kind.ToggleClass
-      document.querySelectorAll(selector).forEach((element) => {
-        element.classList.toggle(klass)
-      })
-
-    } else if ("NavigateTo" in cmd.kind) {
-      const { uri } = cmd.kind.NavigateTo
+    if (cmd.kind.t === "navigate_to") {
+      const uri = cmd.kind.uri
       if (uri.startsWith("http")) {
         window.location.href = uri
       } else {
         window.location.pathname = uri
       }
 
-    } else if ("ClearValue" in cmd.kind) {
-      const { selector } = cmd.kind.ClearValue
+    } else if (cmd.kind.t === "add_class") {
+      const { selector, klass } = cmd.kind
+      document.querySelectorAll(selector).forEach((element) => {
+        element.classList.add(klass)
+      })
+
+    } else if (cmd.kind.t === "remove_class") {
+      const { selector, klass } = cmd.kind
+      document.querySelectorAll(selector).forEach((element) => {
+        element.classList.remove(klass)
+      })
+
+    } else if (cmd.kind.t === "toggle_class") {
+      const { selector, klass } = cmd.kind
+      document.querySelectorAll(selector).forEach((element) => {
+        element.classList.toggle(klass)
+      })
+
+    } else if (cmd.kind.t === "clear_value") {
+      const { selector } = cmd.kind
       document.querySelectorAll(selector).forEach((element) => {
         if (element instanceof HTMLInputElement || element instanceof HTMLSelectElement || element instanceof HTMLTextAreaElement) {
           element.value = ""
         }
       })
 
-    } else if ("SetTitle" in cmd.kind) {
-      document.title = cmd.kind.SetTitle.title
+    } else if (cmd.kind.t === "set_title") {
+      document.title = cmd.kind.title
 
-    } else if ("HistoryPushState" in cmd.kind) {
-      window.history.pushState({}, "", cmd.kind.HistoryPushState.uri);
+    } else if (cmd.kind.t === "history_push_state") {
+      window.history.pushState({}, "", cmd.kind.uri);
 
     } else {
       const _: never = cmd.kind

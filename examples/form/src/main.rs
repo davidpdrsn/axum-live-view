@@ -5,56 +5,46 @@ use axum::{
     routing::{get, get_service},
     Router,
 };
-use axum_live_view::{
-    html,
-    live_view::{EmbedLiveView, EventData, LiveView, Subscriptions, Updated},
-    pubsub::InProcess,
-    Html,
-};
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
-use std::{collections::HashMap, env, net::SocketAddr, path::PathBuf};
+use axum_live_view::{html, EventData, Html, LiveView, LiveViewUpgrade, Updated};
+use serde::{Deserialize, Serialize};
+use std::{collections::HashMap, convert::Infallible, env, net::SocketAddr, path::PathBuf};
 use tower_http::services::ServeFile;
 
 #[tokio::main]
 async fn main() {
     tracing_subscriber::fmt::init();
 
-    let pubsub = axum_live_view::pubsub::InProcess::new();
-    let (live_view_routes, live_view_layer) = axum_live_view::router_parts(pubsub);
+    let app = Router::new().route("/", get(root)).route(
+        "/bundle.js",
+        get_service(ServeFile::new(
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("dist/bundle.js"),
+        ))
+        .handle_error(|_| async { StatusCode::INTERNAL_SERVER_ERROR }),
+    );
 
-    let app = Router::new()
-        .route("/", get(root))
-        .route(
-            "/bundle.js",
-            get_service(ServeFile::new(
-                PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap()).join("dist/bundle.js"),
-            ))
-            .handle_error(|_| async { StatusCode::INTERNAL_SERVER_ERROR }),
-        )
-        .merge(live_view_routes)
-        .layer(live_view_layer);
-
-    let addr = SocketAddr::from(([0, 0, 0, 0], 4000));
+    let addr = SocketAddr::from(([0, 0, 0, 0], 3000));
     axum::Server::bind(&addr)
         .serve(app.into_make_service())
         .await
         .unwrap();
 }
 
-async fn root(embed_live_view: EmbedLiveView<InProcess>) -> impl IntoResponse {
-    let form = FormView::default();
+async fn root(live: LiveViewUpgrade) -> impl IntoResponse {
+    let view = FormView::default();
 
-    html! {
-        <!DOCTYPE html>
-        <html>
-            <head>
-                <script src="/bundle.js"></script>
-            </head>
-            <body>
-                { embed_live_view.embed(form) }
-            </body>
-        </html>
-    }
+    live.response(move |embed| {
+        html! {
+            <!DOCTYPE html>
+            <html>
+                <head>
+                </head>
+                <body>
+                    { embed.embed(view) }
+                    <script src="/bundle.js"></script>
+                </body>
+            </html>
+        }
+    })
 }
 
 #[derive(Default, Clone)]
@@ -68,18 +58,22 @@ struct FormView {
 #[async_trait]
 impl LiveView for FormView {
     type Message = Msg;
+    type Error = Infallible;
 
-    fn init(&self, _subscriptions: &mut Subscriptions<Self>) {}
-
-    async fn update(mut self, msg: Msg, data: EventData) -> Updated<Self> {
+    async fn update(
+        mut self,
+        msg: Msg,
+        data: Option<EventData>,
+    ) -> Result<Updated<Self>, Infallible> {
         match msg {
             Msg::Validate => {
-                let values: FormValues = transcode(&data.as_form().unwrap());
+                let values: FormValues = data.unwrap().as_form().unwrap().deserialize().unwrap();
                 self.perform_validations(&values);
             }
             Msg::Submit => {
-                let values: FormValues = transcode(&data.as_form().unwrap());
+                let values: FormValues = data.unwrap().as_form().unwrap().deserialize().unwrap();
                 self.perform_validations(&values);
+
                 if self.errors.is_empty() {
                     tracing::info!("submitting");
                 } else {
@@ -88,22 +82,37 @@ impl LiveView for FormView {
                 self.values = Some(values);
             }
             Msg::TextInputChanged => {
-                self.text_input_value = transcode(&data.as_form().unwrap());
+                self.text_input_value = data
+                    .unwrap()
+                    .as_input()
+                    .unwrap()
+                    .as_str()
+                    .unwrap()
+                    .to_owned();
             }
             Msg::TextAreaChanged => {
-                self.textarea_value = transcode(&data.as_form().unwrap());
+                self.textarea_value = data
+                    .unwrap()
+                    .as_input()
+                    .unwrap()
+                    .as_str()
+                    .unwrap()
+                    .to_owned();
             }
             Msg::Changed(msg) => {
                 println!("change: {:?}", msg);
             }
         }
 
-        Updated::new(self)
+        Ok(Updated::new(self))
     }
 
     fn render(&self) -> Html<Self::Message> {
         html! {
-            <form axm-change={ Msg::Validate } axm-submit={ Msg::Submit }>
+            <form
+                axm-change={ Msg::Validate }
+                axm-submit={ Msg::Submit }
+            >
                 <label>
                     <div>"Text input"</div>
                     <input type="text" name="input" axm-input={ Msg::TextInputChanged } axm-debounce="1000" />
@@ -133,7 +142,7 @@ impl LiveView for FormView {
 
                 <label>
                     <div>"Multi select"</div>
-                    <select name="numbers" size="6" multiple axm-change={ Msg::Changed(Input::MultiSelect) }>
+                    <select name="numbers[]" size="6" multiple axm-change={ Msg::Changed(Input::MultiSelect) }>
                         for n in 0..5 {
                             <option value={ n }>{ n }</option>
                         }
@@ -164,8 +173,8 @@ impl LiveView for FormView {
                             <label>
                                 <input
                                     type="checkbox"
-                                    name="checkboxes"
-                                    value={ n }
+                                    name={ format!("checkboxes[{}]", n) }
+                                    value="true"
                                     axm-change={ Msg::Changed(Input::Checkbox(n)) }
                                 />
                                 { n }
@@ -274,17 +283,12 @@ struct FormValues {
     input: String,
     textarea: String,
     number: String,
+    #[serde(default)]
     numbers: Vec<String>,
+    #[serde(default)]
     radio: Option<String>,
+    #[serde(default)]
     checkboxes: HashMap<String, bool>,
-}
-
-fn transcode<A, B>(from: &A) -> B
-where
-    A: Serialize + std::fmt::Debug,
-    B: DeserializeOwned,
-{
-    serde_json::from_value(serde_json::json!(from)).unwrap()
 }
 
 const TEXTAREA_MAX_LEN: i32 = 10;

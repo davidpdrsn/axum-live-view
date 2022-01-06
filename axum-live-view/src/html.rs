@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::{collections::HashMap, fmt};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Html<T> {
     fixed: Vec<String>,
     dynamic: Vec<DynamicFragment<T>>,
@@ -36,7 +36,7 @@ pub mod __private {
         html.dynamic.push(DynamicFragment::Message(msg));
     }
 
-    #[derive(Debug)]
+    #[derive(Debug, Clone)]
     pub enum DynamicFragment<T> {
         String(String),
         Message(T),

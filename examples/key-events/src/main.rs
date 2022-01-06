@@ -5,61 +5,46 @@ use axum::{
     routing::{get, get_service},
     Router,
 };
-use axum_live_view::{
-    html,
-    live_view::{EmbedLiveView, EventData, LiveView, Subscriptions, Updated},
-    pubsub::InProcess,
-    Html,
-};
+use axum_live_view::{html, EventData, Html, LiveView, LiveViewUpgrade, Updated};
 use serde::{Deserialize, Serialize};
-use std::{env, net::SocketAddr, path::PathBuf};
+use std::{convert::Infallible, env, net::SocketAddr, path::PathBuf};
 use tower_http::services::ServeFile;
 
 #[tokio::main]
 async fn main() {
     tracing_subscriber::fmt::init();
 
-    let pubsub = InProcess::new();
-    let (live_view_routes, live_view_layer) = axum_live_view::router_parts(pubsub);
+    let app = Router::new().route("/", get(root)).route(
+        "/bundle.js",
+        get_service(ServeFile::new(
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("dist/bundle.js"),
+        ))
+        .handle_error(|_| async { StatusCode::INTERNAL_SERVER_ERROR }),
+    );
 
-    let app = Router::new()
-        .route("/", get(root))
-        .route(
-            "/bundle.js",
-            get_service(ServeFile::new(
-                PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap()).join("dist/bundle.js"),
-            ))
-            .handle_error(|_| async { StatusCode::INTERNAL_SERVER_ERROR }),
-        )
-        .merge(live_view_routes)
-        .layer(live_view_layer);
-
-    let addr = SocketAddr::from(([0, 0, 0, 0], 4000));
+    let addr = SocketAddr::from(([0, 0, 0, 0], 3000));
     axum::Server::bind(&addr)
         .serve(app.into_make_service())
         .await
         .unwrap();
 }
 
-async fn root(embed_live_view: EmbedLiveView<InProcess>) -> impl IntoResponse {
-    let counter = View::default();
+async fn root(live: LiveViewUpgrade) -> impl IntoResponse {
+    let view = View::default();
 
-    html! {
-        <!DOCTYPE html>
-        <html>
-            <head>
-                <script src="/bundle.js"></script>
-                <style>
-                    r#"
-                    body { background: black; color: white; }
-                    "#
-                </style>
-            </head>
-            <body>
-                { embed_live_view.embed(counter) }
-            </body>
-        </html>
-    }
+    live.response(move |embed| {
+        html! {
+            <!DOCTYPE html>
+            <html>
+                <head>
+                </head>
+                <body>
+                    { embed.embed(view) }
+                    <script src="/bundle.js"></script>
+                </body>
+            </html>
+        }
+    })
 }
 
 #[derive(Default, Clone)]
@@ -71,18 +56,21 @@ struct View {
 #[async_trait]
 impl LiveView for View {
     type Message = Msg;
+    type Error = Infallible;
 
-    fn init(&self, _subscriptions: &mut Subscriptions<Self>) {}
-
-    async fn update(mut self, msg: Msg, _data: EventData) -> Updated<Self> {
+    async fn update(
+        mut self,
+        msg: Msg,
+        _data: Option<EventData>,
+    ) -> Result<Updated<Self>, Self::Error> {
         self.count += 1;
         self.prev = Some(msg);
-        Updated::new(self)
+        Ok(Updated::new(self))
     }
 
     fn render(&self) -> Html<Self::Message> {
         html! {
-            <div axm-window-keyup={ Msg::Key("window-keyup".to_owned()) } axm-key="escape">
+            <div axm-window-keyup={ Msg::Key("window-keyup".to_owned()) } axm-key="escape" >
                 <div>
                     "Keydown"
                     <br />
@@ -122,11 +110,6 @@ impl LiveView for View {
             </div>
         }
     }
-}
-
-#[derive(Deserialize, Debug)]
-struct Data {
-    id: String,
 }
 
 #[derive(Deserialize, Serialize, Debug, PartialEq, Clone)]

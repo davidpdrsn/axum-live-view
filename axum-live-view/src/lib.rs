@@ -39,41 +39,20 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![cfg_attr(test, allow(clippy::float_cmp))]
 
-#[macro_use]
-mod macros;
-
 #[doc(hidden)]
 pub mod html;
 
+pub mod event_data;
 pub mod js_command;
+pub mod life_cycle;
 pub mod live_view;
-pub mod middleware;
-pub mod pubsub;
 
-mod topics;
 mod util;
-mod ws;
 
 pub use self::{
+    event_data::EventData,
     html::Html,
-    live_view::{EmbedLiveView, EventData, LiveView, Updated},
-    middleware::LiveViewLayer,
+    life_cycle::{LiveViewUpgrade, SelfHandle},
+    live_view::{LiveView, Updated},
 };
 pub use axum_live_view_macros::html;
-
-pub fn router_parts<P, B>(pubsub: P) -> (axum::Router<B>, LiveViewLayer<P>)
-where
-    P: pubsub::PubSub + Clone,
-    B: Send + 'static,
-{
-    let routes = ws::routes::<P, B>();
-    let layer = LiveViewLayer::new(pubsub);
-    (routes, layer)
-}
-
-fn spawn_unit<F>(future: F) -> tokio::task::JoinHandle<()>
-where
-    F: std::future::Future<Output = ()> + Send + 'static,
-{
-    tokio::spawn(future)
-}

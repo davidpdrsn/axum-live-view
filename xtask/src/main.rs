@@ -195,22 +195,30 @@ fn examples_build(opt: ExamplesBuild) -> Result {
 
 #[derive(Debug, StructOpt)]
 struct ExamplesRun {
+    #[structopt(long)]
+    release: bool,
+
     #[structopt(flatten)]
     build: ExamplesBuild,
 }
 
 fn examples_run(opt: ExamplesRun) -> Result {
-    let which = if let Some(which) = opt.build.which.as_ref() {
+    let ExamplesRun { release, build } = opt;
+
+    let which = if let Some(which) = build.which.as_ref() {
         which.to_owned()
     } else {
         Err("Must specify which example to run")?
     };
 
-    examples_build(opt.build)?;
+    examples_build(build)?;
 
     let mut cmd = Command::new("cargo");
     cmd.current_dir(project_root());
     cmd.args(&["run", "-p", &format!("example-{}", which)]);
+    if release {
+        cmd.arg("--release");
+    }
     cmd.env(
         "RUST_LOG",
         format!("axum_live_view=trace,example_{}=trace", which),
