@@ -7,7 +7,8 @@ use crate::{
 };
 use futures_util::{
     sink::{Sink, SinkExt},
-    stream::{Stream, StreamExt},
+    stream::StreamExt,
+    TryStream, TryStreamExt,
 };
 use http::{HeaderMap, Uri};
 use serde::{Deserialize, Serialize};
@@ -52,7 +53,7 @@ impl<'a, M> fmt::Debug for EmbedLiveView<'a, M> {
     }
 }
 
-pub(crate) async fn run_view<W, R, RE, L>(
+pub(crate) async fn run_view<W, R, L>(
     mut write: W,
     read: R,
     view: L,
@@ -63,8 +64,8 @@ where
     L: LiveView,
     W: Sink<MessageToSocket> + Unpin,
     W::Error: Into<anyhow::Error>,
-    R: Stream<Item = Result<MessageFromSocket<L::Message>, RE>> + Unpin,
-    RE: Into<anyhow::Error>,
+    R: TryStream<Ok = MessageFromSocket<L::Message>> + Unpin,
+    R::Error: Into<anyhow::Error>,
 {
     let view = spawn_view(view);
 
@@ -83,7 +84,7 @@ where
             data: MessageFromSocketData::None,
         })
     });
-    let mut stream = tokio_stream::StreamExt::merge(read, rx_stream);
+    let mut stream = tokio_stream::StreamExt::merge(read.into_stream(), rx_stream);
 
     loop {
         let MessageFromSocket {
