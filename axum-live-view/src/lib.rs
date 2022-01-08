@@ -30,7 +30,7 @@
     rust_2018_idioms,
     future_incompatible,
     nonstandard_style,
-    missing_debug_implementations,
+    // missing_debug_implementations,
     // missing_docs
 )]
 #![deny(unreachable_pub, private_in_public)]
@@ -39,10 +39,14 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![cfg_attr(test, allow(clippy::float_cmp))]
 
+#[macro_use]
+mod macros;
+
 pub mod event_data;
 pub mod extract;
 pub mod js_command;
 pub mod live_view;
+pub mod test;
 
 mod html;
 mod life_cycle;
@@ -55,5 +59,6 @@ pub use axum_live_view_macros::html;
 #[doc(hidden)]
 pub mod __private {
     //! Private API. Do _not_ use anything from this module!
+
     pub use crate::html::private::*;
 }

@@ -12,7 +12,7 @@ use futures_util::{
 };
 use http::{HeaderMap, Uri};
 use serde::{Deserialize, Serialize};
-use std::fmt::{self, Debug};
+use std::fmt;
 use tokio::sync::{mpsc, oneshot};
 use tokio_stream::wrappers::ReceiverStream;
 
@@ -59,24 +59,27 @@ pub(crate) async fn run_view<W, R, L>(
     view: L,
     uri: Uri,
     headers: HeaderMap,
-) -> anyhow::Result<()>
+) -> Result<(), String>
 where
     L: LiveView,
     W: Sink<MessageToSocket> + Unpin,
-    W::Error: Into<anyhow::Error>,
+    W::Error: fmt::Display + Send + Sync + 'static,
     R: TryStream<Ok = MessageFromSocket<L::Message>> + Unpin,
-    R::Error: Into<anyhow::Error>,
+    R::Error: fmt::Display + Send + Sync + 'static,
 {
     let view = spawn_view(view);
 
-    let (tx, rx) = mpsc::channel(1024);
-    let handle = ViewHandle::new(tx);
+    let (handle, rx) = ViewHandle::new();
 
-    view.mount(uri, headers, handle).await?;
+    view.mount(uri, headers, handle)
+        .await
+        .map_err(|err| err.to_string())?;
 
-    let markup = view.render().await?;
+    let markup = view.render().await.map_err(|err| err.to_string())?;
 
-    write_message(&mut write, MessageToSocketData::InitialRender(markup)).await?;
+    write_message(&mut write, MessageToSocketData::InitialRender(markup))
+        .await
+        .map_err(|err| err.to_string())?;
 
     let rx_stream = ReceiverStream::new(rx).map(|msg| {
         Ok(MessageFromSocket {
@@ -93,7 +96,7 @@ where
         } = match stream.next().await {
             Some(Ok(msg)) => msg,
             Some(Err(err)) => {
-                let err = err.into();
+                let err = err.to_string();
                 tracing::trace!(%err, "error from socket");
                 break;
             }
@@ -105,16 +108,28 @@ where
 
         let data = Option::<EventData>::from(data);
 
-        match view.update(msg_for_view, data).await? {
+        match view
+            .update(msg_for_view, data)
+            .await
+            .map_err(|err| err.to_string())?
+        {
             UpdateResponse::Diff(diff) => {
-                write_message(&mut write, MessageToSocketData::Render(diff)).await?;
+                write_message(&mut write, MessageToSocketData::Render(diff))
+                    .await
+                    .map_err(|err| err.to_string())?;
             }
             UpdateResponse::JsCommands(commands) => {
-                write_message(&mut write, MessageToSocketData::JsCommands(commands)).await?;
+                write_message(&mut write, MessageToSocketData::JsCommands(commands))
+                    .await
+                    .map_err(|err| err.to_string())?;
             }
             UpdateResponse::DiffAndJsCommands(diff, commands) => {
-                write_message(&mut write, MessageToSocketData::Render(diff)).await?;
-                write_message(&mut write, MessageToSocketData::JsCommands(commands)).await?;
+                write_message(&mut write, MessageToSocketData::Render(diff))
+                    .await
+                    .map_err(|err| err.to_string())?;
+                write_message(&mut write, MessageToSocketData::JsCommands(commands))
+                    .await
+                    .map_err(|err| err.to_string())?;
             }
             UpdateResponse::Empty => {}
         }
@@ -123,7 +138,7 @@ where
     Ok(())
 }
 
-fn spawn_view<L>(mut view: L) -> ViewTaskHandle<L::Message>
+pub(crate) fn spawn_view<L>(mut view: L) -> ViewTaskHandle<L::Message, L::Error>
 where
     L: LiveView,
 {
@@ -139,15 +154,20 @@ where
                     headers,
                     handle,
                     reply_tx,
-                } => {
-                    if let Err(err) = view.mount(uri, &headers, handle).await {
-                        tracing::error!("mount failed with error: {}", err);
+                } => match view.mount(uri, &headers, handle).await {
+                    Ok(value) => {
+                        let _ = reply_tx.send(Ok(value));
+                    }
+                    Err(err) => {
+                        let _ = reply_tx.send(Err(err));
                         break;
                     }
-                    let _ = reply_tx.send(());
-                }
+                },
                 ViewRequest::Render { reply_tx } => {
                     let _ = reply_tx.send(markup.serialize());
+                }
+                ViewRequest::RenderToString { reply_tx } => {
+                    let _ = reply_tx.send(markup.render());
                 }
                 ViewRequest::Update {
                     msg,
@@ -157,7 +177,7 @@ where
                     let (new_view, js_commands) = match view.update(msg, event_data).await {
                         Ok(updated) => updated.into_parts(),
                         Err(err) => {
-                            tracing::error!("View failed with error: {}", err);
+                            let _ = reply_tx.send(Err(err));
                             break;
                         }
                     };
@@ -175,7 +195,7 @@ where
                         (Some(diff), false) => UpdateResponse::DiffAndJsCommands(diff, js_commands),
                     };
 
-                    let _ = reply_tx.send(response);
+                    let _ = reply_tx.send(Ok(response));
                 }
             }
         }
@@ -184,11 +204,11 @@ where
     ViewTaskHandle { tx }
 }
 
-struct ViewTaskHandle<M> {
-    tx: mpsc::Sender<ViewRequest<M>>,
+pub(crate) struct ViewTaskHandle<M, E> {
+    tx: mpsc::Sender<ViewRequest<M, E>>,
 }
 
-impl<M> Clone for ViewTaskHandle<M> {
+impl<M, E> Clone for ViewTaskHandle<M, E> {
     fn clone(&self) -> Self {
         Self {
             tx: self.tx.clone(),
@@ -196,13 +216,13 @@ impl<M> Clone for ViewTaskHandle<M> {
     }
 }
 
-impl<M> ViewTaskHandle<M> {
-    async fn mount(
+impl<M, E> ViewTaskHandle<M, E> {
+    pub(crate) async fn mount(
         &self,
         uri: Uri,
         headers: HeaderMap,
         handle: ViewHandle<M>,
-    ) -> anyhow::Result<()> {
+    ) -> Result<(), ViewRequestError<E>> {
         let (reply_tx, reply_rx) = oneshot::channel();
 
         let request = ViewRequest::Mount {
@@ -215,33 +235,40 @@ impl<M> ViewTaskHandle<M> {
         self.tx
             .send(request)
             .await
-            .map_err(|_| anyhow::anyhow!("live view task ended unexpectedly"))?;
+            .map_err(|_| ViewRequestError::ChannelClosed(ChannelClosed))?;
 
-        reply_rx
-            .await
-            .map_err(|_| anyhow::anyhow!("live view didn't response to mount request"))
+        match reply_rx.await {
+            Ok(Ok(val)) => Ok(val),
+            Ok(Err(err)) => Err(ViewRequestError::ViewError(err)),
+            Err(_) => Err(ViewRequestError::ChannelClosed(ChannelClosed)),
+        }
     }
 
-    async fn render(&self) -> anyhow::Result<html::Serialized> {
+    pub(crate) async fn render(&self) -> Result<html::Serialized, ChannelClosed> {
         let (reply_tx, reply_rx) = oneshot::channel();
 
         let request = ViewRequest::Render { reply_tx };
 
-        self.tx
-            .send(request)
-            .await
-            .map_err(|_| anyhow::anyhow!("live view task ended unexpectedly"))?;
+        self.tx.send(request).await.map_err(|_| ChannelClosed)?;
 
-        reply_rx
-            .await
-            .map_err(|_| anyhow::anyhow!("live view didn't response to render request"))
+        reply_rx.await.map_err(|_| ChannelClosed)
     }
 
-    async fn update(
+    pub(crate) async fn render_to_string(&self) -> Result<String, ChannelClosed> {
+        let (reply_tx, reply_rx) = oneshot::channel();
+
+        let request = ViewRequest::RenderToString { reply_tx };
+
+        self.tx.send(request).await.map_err(|_| ChannelClosed)?;
+
+        reply_rx.await.map_err(|_| ChannelClosed)
+    }
+
+    pub(crate) async fn update(
         &self,
         msg: M,
         event_data: Option<EventData>,
-    ) -> anyhow::Result<UpdateResponse> {
+    ) -> Result<UpdateResponse, ViewRequestError<E>> {
         let (reply_tx, reply_rx) = oneshot::channel();
 
         let request = ViewRequest::Update {
@@ -253,32 +280,78 @@ impl<M> ViewTaskHandle<M> {
         self.tx
             .send(request)
             .await
-            .map_err(|_| anyhow::anyhow!("live view task ended unexpectedly"))?;
+            .map_err(|_| ViewRequestError::ChannelClosed(ChannelClosed))?;
 
-        reply_rx
-            .await
-            .map_err(|_| anyhow::anyhow!("live view didn't response to update request"))
+        match reply_rx.await {
+            Ok(Ok(val)) => Ok(val),
+            Ok(Err(err)) => Err(ViewRequestError::ViewError(err)),
+            Err(_) => Err(ViewRequestError::ChannelClosed(ChannelClosed)),
+        }
     }
 }
 
-enum ViewRequest<M> {
+enum ViewRequest<M, E> {
     Mount {
         uri: Uri,
         headers: HeaderMap,
         handle: ViewHandle<M>,
-        reply_tx: oneshot::Sender<()>,
+        reply_tx: oneshot::Sender<Result<(), E>>,
     },
     Render {
         reply_tx: oneshot::Sender<html::Serialized>,
     },
+    RenderToString {
+        reply_tx: oneshot::Sender<String>,
+    },
     Update {
         msg: M,
         event_data: Option<EventData>,
-        reply_tx: oneshot::Sender<UpdateResponse>,
+        reply_tx: oneshot::Sender<Result<UpdateResponse, E>>,
     },
 }
 
-enum UpdateResponse {
+#[derive(Debug)]
+pub(crate) enum ViewRequestError<E> {
+    ChannelClosed(ChannelClosed),
+    ViewError(E),
+}
+
+impl<E> fmt::Display for ViewRequestError<E>
+where
+    E: fmt::Display,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::ChannelClosed(err) => err.fmt(f),
+            Self::ViewError(err) => err.fmt(f),
+        }
+    }
+}
+
+impl<E> std::error::Error for ViewRequestError<E>
+where
+    E: std::error::Error + 'static,
+{
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::ChannelClosed(_) => None,
+            Self::ViewError(err) => Some(&*err),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct ChannelClosed;
+
+impl fmt::Display for ChannelClosed {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "channel sender or received closed unexpectedly")
+    }
+}
+
+impl std::error::Error for ChannelClosed {}
+
+pub(crate) enum UpdateResponse {
     Diff(html::Diff),
     JsCommands(Vec<JsCommand>),
     DiffAndJsCommands(html::Diff, Vec<JsCommand>),
@@ -302,14 +375,13 @@ enum MessageToSocketData {
     JsCommands(Vec<JsCommand>),
 }
 
-async fn write_message<W>(write: &mut W, data: MessageToSocketData) -> anyhow::Result<()>
+async fn write_message<W>(write: &mut W, data: MessageToSocketData) -> Result<(), W::Error>
 where
     W: Sink<MessageToSocket> + Unpin,
-    W::Error: Into<anyhow::Error>,
 {
     let msg = MessageToSocket { data };
     tracing::trace!(?msg, "sending message to socket");
-    Ok(write.send(msg).await.map_err(Into::into)?)
+    write.send(msg).await
 }
 
 #[derive(Debug, Deserialize, PartialEq)]
@@ -328,25 +400,13 @@ pub(crate) enum MessageFromSocketData {
     Click,
     WindowFocus,
     WindowBlur,
-    FormSubmit {
+    Form {
         #[serde(rename = "q")]
         query: String,
     },
-    FormChange {
-        #[serde(rename = "q")]
-        query: String,
-    },
-    InputChange {
+    Input {
         #[serde(rename = "v")]
         value: InputValue,
-    },
-    InputFocus {
-        #[serde(rename = "v")]
-        value: String,
-    },
-    InputBlur {
-        #[serde(rename = "v")]
-        value: String,
     },
     Key {
         #[serde(rename = "k")]
@@ -488,14 +548,14 @@ mod tests {
         );
 
         let msg = serde_json::from_value::<MessageFromSocket<Msg>>(
-            json!({ "m": "Incr", "t": "form_submit", "d": { "q": "name=bob&age=20" } }),
+            json!({ "m": "Incr", "t": "form", "d": { "q": "name=bob&age=20" } }),
         )
         .unwrap();
         assert_eq!(
             msg,
             MessageFromSocket {
                 msg: Msg::Incr,
-                data: MessageFromSocketData::FormSubmit {
+                data: MessageFromSocketData::Form {
                     query: "name=bob&age=20".to_owned()
                 }
             }

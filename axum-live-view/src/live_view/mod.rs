@@ -14,7 +14,7 @@ pub use self::combine::combine;
 #[async_trait]
 pub trait LiveView: Sized + Send + Sync + 'static {
     type Message: Serialize + DeserializeOwned + PartialEq + Send + Sync + 'static;
-    type Error: fmt::Display;
+    type Error: fmt::Display + Send + Sync + 'static;
 
     async fn mount(
         &mut self,
@@ -36,7 +36,7 @@ pub trait LiveView: Sized + Send + Sync + 'static {
     fn map_err<F, E2>(self, f: F) -> MapErr<Self, F>
     where
         F: Fn(Self::Error) -> E2 + Send + Sync + 'static,
-        E2: std::fmt::Display + Send + Sync + 'static,
+        E2: fmt::Display + Send + Sync + 'static,
     {
         assert_live_view::<_, Self::Message, E2>(MapErr { view: self, f })
     }
@@ -113,7 +113,7 @@ impl<V, F, E2> LiveView for MapErr<V, F>
 where
     V: LiveView,
     F: Fn(V::Error) -> E2 + Send + Sync + 'static,
-    E2: std::fmt::Display + Send + Sync + 'static,
+    E2: fmt::Display + Send + Sync + 'static,
 {
     type Message = V::Message;
     type Error = E2;
@@ -155,8 +155,9 @@ pub struct ViewHandle<M> {
 }
 
 impl<M> ViewHandle<M> {
-    pub(crate) fn new(tx: mpsc::Sender<M>) -> Self {
-        Self { tx }
+    pub(crate) fn new() -> (Self, mpsc::Receiver<M>) {
+        let (tx, rx) = mpsc::channel(1024);
+        (Self { tx }, rx)
     }
 
     pub async fn send(&self, msg: M) -> Result<(), ViewHandleSendError> {
