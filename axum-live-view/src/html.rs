@@ -1,5 +1,5 @@
-use __private::*;
 use axum::response::IntoResponse;
+use private::*;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::{collections::HashMap, fmt};
@@ -10,12 +10,8 @@ pub struct Html<T> {
     dynamic: Vec<DynamicFragment<T>>,
 }
 
-#[doc(hidden)]
-pub mod __private {
-    //! Private API. Do _not_ use anything from this module!
-
+pub(crate) mod private {
     use super::*;
-    use fmt;
 
     pub fn html<T>() -> Html<T> {
         Html {

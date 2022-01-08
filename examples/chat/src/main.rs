@@ -7,7 +7,10 @@ use axum::{
     AddExtensionLayer, Router,
 };
 use axum_live_view::{
-    html, js_command, live_view, EventData, Html, LiveView, LiveViewUpgrade, SelfHandle, Updated,
+    event_data::EventData,
+    html, js_command,
+    live_view::{self, Updated, ViewHandle},
+    Html, LiveView, LiveViewUpgrade,
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -26,18 +29,6 @@ async fn main() {
     tracing_subscriber::fmt::init();
 
     let messages: Messages = Default::default();
-
-    // {
-    //     let pubsub = pubsub.clone();
-    //     let messages = messages.clone();
-    //     let mut new_messages = pubsub.subscribe(&NewMessageTopic).await.unwrap();
-    //     tokio::spawn(async move {
-    //         while let Some(Json(msg)) = new_messages.next().await {
-    //             messages.lock().unwrap().push(msg);
-    //             let _ = pubsub.broadcast(&ReRenderMessageList, ()).await;
-    //         }
-    //     });
-    // }
 
     let (tx, _) = broadcast::channel::<NewMessagePing>(1024);
 
@@ -122,7 +113,7 @@ impl LiveView for MessagesList {
         &mut self,
         _: Uri,
         _: &HeaderMap,
-        handle: SelfHandle<Self::Message>,
+        handle: ViewHandle<Self::Message>,
     ) -> Result<(), Self::Error> {
         let mut rx = self.tx.subscribe();
         tokio::spawn(async move {

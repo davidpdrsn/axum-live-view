@@ -119,7 +119,7 @@ fn live_view_impls() -> TokenStream {
                         &mut self,
                         uri: Uri,
                         request_headers: &HeaderMap,
-                        handle: SelfHandle<Self::Message>,
+                        handle: ViewHandle<Self::Message>,
                     ) -> Result<(), Self::Error> {
                         #mount
                         Ok(())

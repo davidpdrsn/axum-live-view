@@ -2,26 +2,125 @@ use crate::{
     event_data::EventData,
     html::{self, Html},
     js_command::JsCommand,
+    live_view::ViewHandle,
     LiveView,
-};
-use async_trait::async_trait;
-use axum::{
-    extract::{
-        rejection::HeadersAlreadyExtracted,
-        ws::{self, WebSocketUpgrade},
-        FromRequest, RequestParts,
-    },
-    http::{HeaderMap, Uri},
-    response::{IntoResponse, Response},
 };
 use futures_util::{
     sink::{Sink, SinkExt},
-    stream::{Stream, StreamExt, TryStreamExt},
+    stream::{Stream, StreamExt},
 };
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use http::{HeaderMap, Uri};
+use serde::{Deserialize, Serialize};
 use std::fmt::{self, Debug};
 use tokio::sync::{mpsc, oneshot};
 use tokio_stream::wrappers::ReceiverStream;
+
+pub struct EmbedLiveView<'a, L> {
+    view: Option<&'a mut Option<L>>,
+}
+
+impl<'a, L> EmbedLiveView<'a, L> {
+    pub(crate) fn noop() -> Self {
+        Self { view: None }
+    }
+
+    pub(crate) fn new(view: &'a mut Option<L>) -> Self {
+        Self { view: Some(view) }
+    }
+
+    pub fn embed(self, view: L) -> Html<L::Message>
+    where
+        L: LiveView,
+    {
+        let html = wrap_in_live_view_container(view.render());
+
+        if let Some(view_handle) = self.view {
+            *view_handle = Some(view);
+        }
+
+        html
+    }
+
+    pub fn connected(&self) -> bool {
+        self.view.is_some()
+    }
+}
+
+impl<'a, M> fmt::Debug for EmbedLiveView<'a, M> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("EmbedLiveView").finish()
+    }
+}
+
+pub(crate) async fn run_view<W, R, RE, L>(
+    mut write: W,
+    read: R,
+    view: L,
+    uri: Uri,
+    headers: HeaderMap,
+) -> anyhow::Result<()>
+where
+    L: LiveView,
+    W: Sink<MessageToSocket> + Unpin,
+    W::Error: Into<anyhow::Error>,
+    R: Stream<Item = Result<MessageFromSocket<L::Message>, RE>> + Unpin,
+    RE: Into<anyhow::Error>,
+{
+    let view = spawn_view(view);
+
+    let (tx, rx) = mpsc::channel(1024);
+    let handle = ViewHandle::new(tx);
+
+    view.mount(uri, headers, handle).await?;
+
+    let markup = view.render().await?;
+
+    write_message(&mut write, MessageToSocketData::InitialRender(markup)).await?;
+
+    let rx_stream = ReceiverStream::new(rx).map(|msg| {
+        Ok(MessageFromSocket {
+            msg,
+            data: MessageFromSocketData::None,
+        })
+    });
+    let mut stream = tokio_stream::StreamExt::merge(read, rx_stream);
+
+    loop {
+        let MessageFromSocket {
+            msg: msg_for_view,
+            data,
+        } = match stream.next().await {
+            Some(Ok(msg)) => msg,
+            Some(Err(err)) => {
+                let err = err.into();
+                tracing::trace!(%err, "error from socket");
+                break;
+            }
+            None => {
+                tracing::trace!("no more messages on socket");
+                break;
+            }
+        };
+
+        let data = Option::<EventData>::from(data);
+
+        match view.update(msg_for_view, data).await? {
+            UpdateResponse::Diff(diff) => {
+                write_message(&mut write, MessageToSocketData::Render(diff)).await?;
+            }
+            UpdateResponse::JsCommands(commands) => {
+                write_message(&mut write, MessageToSocketData::JsCommands(commands)).await?;
+            }
+            UpdateResponse::DiffAndJsCommands(diff, commands) => {
+                write_message(&mut write, MessageToSocketData::Render(diff)).await?;
+                write_message(&mut write, MessageToSocketData::JsCommands(commands)).await?;
+            }
+            UpdateResponse::Empty => {}
+        }
+    }
+
+    Ok(())
+}
 
 fn spawn_view<L>(mut view: L) -> ViewTaskHandle<L::Message>
 where
@@ -101,7 +200,7 @@ impl<M> ViewTaskHandle<M> {
         &self,
         uri: Uri,
         headers: HeaderMap,
-        handle: SelfHandle<M>,
+        handle: ViewHandle<M>,
     ) -> anyhow::Result<()> {
         let (reply_tx, reply_rx) = oneshot::channel();
 
@@ -165,7 +264,7 @@ enum ViewRequest<M> {
     Mount {
         uri: Uri,
         headers: HeaderMap,
-        handle: SelfHandle<M>,
+        handle: ViewHandle<M>,
         reply_tx: oneshot::Sender<()>,
     },
     Render {
@@ -185,276 +284,8 @@ enum UpdateResponse {
     Empty,
 }
 
-#[derive(Debug)]
-pub struct LiveViewUpgrade {
-    inner: LiveViewUpgradeInner,
-}
-
-#[derive(Debug)]
-enum LiveViewUpgradeInner {
-    Http,
-    Ws(Box<(WebSocketUpgrade, Uri, HeaderMap)>),
-}
-
-#[async_trait]
-impl<B> FromRequest<B> for LiveViewUpgrade
-where
-    B: Send,
-{
-    type Rejection = LiveViewUpgradeRejection;
-
-    async fn from_request(req: &mut RequestParts<B>) -> Result<Self, Self::Rejection> {
-        if let Ok(ws) = WebSocketUpgrade::from_request(req).await {
-            let uri = req.uri().clone();
-            let headers = req.headers().cloned().ok_or_else(|| {
-                LiveViewUpgradeRejection::HeadersAlreadyExtracted(Default::default())
-            })?;
-
-            Ok(Self {
-                inner: LiveViewUpgradeInner::Ws(Box::new((ws, uri, headers))),
-            })
-        } else {
-            Ok(Self {
-                inner: LiveViewUpgradeInner::Http,
-            })
-        }
-    }
-}
-
-#[derive(Debug)]
-#[non_exhaustive]
-pub enum LiveViewUpgradeRejection {
-    HeadersAlreadyExtracted(HeadersAlreadyExtracted),
-}
-
-impl IntoResponse for LiveViewUpgradeRejection {
-    fn into_response(self) -> Response {
-        match self {
-            Self::HeadersAlreadyExtracted(inner) => inner.into_response(),
-        }
-    }
-}
-
-impl LiveViewUpgrade {
-    pub fn response<F, M>(self, gather_view: F) -> Response
-    where
-        F: FnOnce(EmbedLiveView<'_, M>) -> Html<M>,
-        M: Serialize + DeserializeOwned + Send + 'static,
-    {
-        let (ws, uri, headers) = match self.inner {
-            LiveViewUpgradeInner::Http => {
-                let embed = EmbedLiveView { view: None };
-                return gather_view(embed).into_response();
-            }
-            LiveViewUpgradeInner::Ws(data) => *data,
-        };
-
-        let mut view = None;
-        let (tx, rx) = mpsc::channel(1024);
-
-        let embed = EmbedLiveView {
-            view: Some(&mut view),
-        };
-
-        gather_view(embed);
-
-        let view = if let Some(view) = view {
-            view
-        } else {
-            return ws.on_upgrade(|_| async {}).into_response();
-        };
-
-        ws.on_upgrade(move |socket| async move {
-            let (write, read) = socket.split();
-
-            let write = write.with(|msg| async move {
-                let encoded_msg = ws::Message::Text(serde_json::to_string(&msg)?);
-                Ok::<_, anyhow::Error>(encoded_msg)
-            });
-            futures_util::pin_mut!(write);
-
-            let read = read
-                .map_err(anyhow::Error::from)
-                .and_then(|msg| async move {
-                    if let ws::Message::Text(text) = msg {
-                        serde_json::from_str(&text).map_err(Into::into)
-                    } else {
-                        anyhow::bail!("received message from socket that wasn't text")
-                    }
-                });
-            futures_util::pin_mut!(read);
-
-            let handle = SelfHandle { tx };
-
-            if let Err(err) =
-                process_view_messages(write, read, view, handle, rx, uri, headers).await
-            {
-                tracing::error!(%err, "encountered while processing socket");
-            }
-        })
-        .into_response()
-    }
-}
-
-pub struct EmbedLiveView<'a, M> {
-    view: Option<&'a mut Option<ViewTaskHandle<M>>>,
-}
-
-impl<'a, M> EmbedLiveView<'a, M> {
-    pub fn embed<L>(self, view: L) -> Html<M>
-    where
-        L: LiveView<Message = M>,
-    {
-        let html = wrap_in_live_view_container(view.render());
-
-        if let Some(view_handle) = self.view {
-            *view_handle = Some(spawn_view(view));
-        }
-
-        html
-    }
-
-    pub fn connected(&self) -> bool {
-        self.view.is_some()
-    }
-}
-
-impl<'a, M> fmt::Debug for EmbedLiveView<'a, M> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("EmbedLiveView").finish()
-    }
-}
-
-pub struct SelfHandle<M> {
-    tx: mpsc::Sender<M>,
-}
-
-impl<M> SelfHandle<M> {
-    pub async fn send(&self, msg: M) -> Result<(), SelfHandleSendError> {
-        self.tx.send(msg).await.map_err(|_| SelfHandleSendError)?;
-        Ok(())
-    }
-
-    pub(crate) fn with<F, M2>(self, f: F) -> SelfHandle<M2>
-    where
-        F: Fn(M2) -> M + Send + Sync + 'static,
-        M2: Send + 'static,
-        M: Send + 'static,
-    {
-        let (tx, mut rx) = mpsc::channel::<M2>(1024);
-        let old_tx = self.tx;
-
-        // probably not the most effecient thing to spawn here
-        // might be worth moving to using a `Sink` and using `SinkExt::with`
-        // will probably require boxing since `SelfHandle` should only
-        // be generic over the message
-        crate::util::spawn_unit(async move {
-            while let Some(msg) = rx.recv().await {
-                if old_tx.send(f(msg)).await.is_err() {
-                    break;
-                }
-            }
-        });
-
-        SelfHandle { tx }
-    }
-}
-
-impl<M> Clone for SelfHandle<M> {
-    fn clone(&self) -> Self {
-        Self {
-            tx: self.tx.clone(),
-        }
-    }
-}
-
-impl<M> fmt::Debug for SelfHandle<M> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("ViewHandle").finish()
-    }
-}
-
-#[non_exhaustive]
-#[derive(Debug)]
-pub struct SelfHandleSendError;
-
-impl fmt::Display for SelfHandleSendError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "failed to send message to view")
-    }
-}
-
-impl std::error::Error for SelfHandleSendError {}
-
-async fn process_view_messages<W, R, RE, M>(
-    mut write: W,
-    read: R,
-    view: ViewTaskHandle<M>,
-    handle: SelfHandle<M>,
-    rx: mpsc::Receiver<M>,
-    uri: Uri,
-    headers: HeaderMap,
-) -> anyhow::Result<()>
-where
-    W: Sink<MessageToSocket> + Unpin,
-    W::Error: Into<anyhow::Error>,
-    R: Stream<Item = Result<MessageFromSocket<M>, RE>> + Unpin,
-    RE: Into<anyhow::Error>,
-    M: DeserializeOwned,
-{
-    view.mount(uri, headers, handle).await?;
-
-    let markup = view.render().await?;
-
-    write_message(&mut write, MessageToSocketData::InitialRender(markup)).await?;
-
-    let rx_stream = ReceiverStream::new(rx).map(|msg| {
-        Ok(MessageFromSocket {
-            msg,
-            data: MessageFromSocketData::None,
-        })
-    });
-    let mut stream = tokio_stream::StreamExt::merge(read, rx_stream);
-
-    loop {
-        let MessageFromSocket {
-            msg: msg_for_view,
-            data,
-        } = match stream.next().await {
-            Some(Ok(msg)) => msg,
-            Some(Err(err)) => {
-                let err = err.into();
-                tracing::trace!(%err, "error from socket");
-                break;
-            }
-            None => {
-                tracing::trace!("no more messages on socket");
-                break;
-            }
-        };
-
-        let data = Option::<EventData>::from(data);
-
-        match view.update(msg_for_view, data).await? {
-            UpdateResponse::Diff(diff) => {
-                write_message(&mut write, MessageToSocketData::Render(diff)).await?;
-            }
-            UpdateResponse::JsCommands(commands) => {
-                write_message(&mut write, MessageToSocketData::JsCommands(commands)).await?;
-            }
-            UpdateResponse::DiffAndJsCommands(diff, commands) => {
-                write_message(&mut write, MessageToSocketData::Render(diff)).await?;
-                write_message(&mut write, MessageToSocketData::JsCommands(commands)).await?;
-            }
-            UpdateResponse::Empty => {}
-        }
-    }
-
-    Ok(())
-}
-
 #[derive(Serialize, Debug)]
-struct MessageToSocket {
+pub(crate) struct MessageToSocket {
     #[serde(flatten)]
     data: MessageToSocketData,
 }
@@ -481,7 +312,7 @@ where
 }
 
 #[derive(Debug, Deserialize, PartialEq)]
-struct MessageFromSocket<M> {
+pub(crate) struct MessageFromSocket<M> {
     #[serde(rename = "m")]
     msg: M,
     #[serde(flatten)]
@@ -579,7 +410,7 @@ fn wrap_in_live_view_container<T>(markup: Html<T>) -> Html<T> {
 mod tests {
     use super::*;
     use crate as axum_live_view;
-    use crate::Html;
+    use crate::html::Html;
     use axum_live_view_macros::html;
     use serde::{Deserialize, Serialize};
     use serde_json::json;

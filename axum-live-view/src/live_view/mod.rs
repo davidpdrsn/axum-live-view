@@ -1,10 +1,11 @@
-use crate::{event_data::EventData, html::Html, js_command::JsCommand, life_cycle::SelfHandle};
+use crate::{event_data::EventData, html::Html, js_command::JsCommand};
 use axum::{
     async_trait,
     http::{HeaderMap, Uri},
 };
 use serde::{de::DeserializeOwned, Serialize};
 use std::fmt;
+use tokio::sync::mpsc;
 
 mod combine;
 
@@ -19,7 +20,7 @@ pub trait LiveView: Sized + Send + Sync + 'static {
         &mut self,
         _uri: Uri,
         _request_headers: &HeaderMap,
-        _handle: SelfHandle<Self::Message>,
+        _handle: ViewHandle<Self::Message>,
     ) -> Result<(), Self::Error> {
         Ok(())
     }
@@ -121,7 +122,7 @@ where
         &mut self,
         uri: Uri,
         request_headers: &HeaderMap,
-        handle: SelfHandle<Self::Message>,
+        handle: ViewHandle<Self::Message>,
     ) -> Result<(), Self::Error> {
         self.view
             .mount(uri, request_headers, handle)
@@ -148,3 +149,68 @@ where
         self.view.render()
     }
 }
+
+pub struct ViewHandle<M> {
+    tx: mpsc::Sender<M>,
+}
+
+impl<M> ViewHandle<M> {
+    pub(crate) fn new(tx: mpsc::Sender<M>) -> Self {
+        Self { tx }
+    }
+
+    pub async fn send(&self, msg: M) -> Result<(), ViewHandleSendError> {
+        self.tx.send(msg).await.map_err(|_| ViewHandleSendError)?;
+        Ok(())
+    }
+
+    pub(crate) fn with<F, M2>(self, f: F) -> ViewHandle<M2>
+    where
+        F: Fn(M2) -> M + Send + Sync + 'static,
+        M2: Send + 'static,
+        M: Send + 'static,
+    {
+        let (tx, mut rx) = mpsc::channel::<M2>(1024);
+        let old_tx = self.tx;
+
+        // probably not the most effecient thing to spawn here
+        // might be worth moving to using a `Sink` and using `SinkExt::with`
+        // will probably require boxing since `ViewHandle` should only
+        // be generic over the message
+        crate::util::spawn_unit(async move {
+            while let Some(msg) = rx.recv().await {
+                if old_tx.send(f(msg)).await.is_err() {
+                    break;
+                }
+            }
+        });
+
+        ViewHandle { tx }
+    }
+}
+
+impl<M> Clone for ViewHandle<M> {
+    fn clone(&self) -> Self {
+        Self {
+            tx: self.tx.clone(),
+        }
+    }
+}
+
+impl<M> fmt::Debug for ViewHandle<M> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ViewHandle").finish()
+    }
+}
+
+#[non_exhaustive]
+#[derive(Debug)]
+pub struct ViewHandleSendError;
+
+impl fmt::Display for ViewHandleSendError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "failed to send message to view")
+    }
+}
+
+impl std::error::Error for ViewHandleSendError {}
