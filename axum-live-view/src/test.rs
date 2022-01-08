@@ -172,9 +172,10 @@ mod tests {
         }
 
         fn render(&self) -> Html<Self::Message> {
-            html! {
-                { self.count }
-            }
+            todo!()
+            // html! {
+            //     { self.count }
+            // }
         }
     }
 

@@ -461,10 +461,11 @@ pub(crate) enum InputValue {
 }
 
 fn wrap_in_live_view_container<T>(markup: Html<T>) -> Html<T> {
-    use crate as axum_live_view;
-    axum_live_view_macros::html! {
-        <div id="live-view-container">{ markup }</div>
-    }
+    todo!()
+    // use crate as axum_live_view;
+    // axum_live_view_macros::html! {
+    //     <div id="live-view-container">{ markup }</div>
+    // }
 }
 
 #[cfg(test)]
@@ -480,7 +481,8 @@ mod tests {
     #[test]
     fn serialize_message_to_socket() {
         fn make_html(value: &'static str) -> Html<()> {
-            html! { <div>{ value }</div> }
+            todo!()
+            // html! { <div>{ value }</div> }
         }
 
         let html = make_html("foo");

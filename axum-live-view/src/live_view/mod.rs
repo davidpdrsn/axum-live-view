@@ -4,7 +4,7 @@ use axum::{
     http::{HeaderMap, Uri},
 };
 use serde::{de::DeserializeOwned, Serialize};
-use std::fmt;
+use std::{fmt, time::Instant};
 use tokio::sync::mpsc;
 
 mod combine;
@@ -67,6 +67,16 @@ impl<T> Updated<T> {
     {
         self.extend(commands);
         self
+    }
+
+    pub fn map<F, K>(self, f: F) -> Updated<K>
+    where
+        F: FnOnce(T) -> K,
+    {
+        Updated {
+            live_view: f(self.live_view),
+            js_commands: self.js_commands,
+        }
     }
 
     pub(crate) fn into_parts(self) -> (T, Vec<JsCommand>) {
@@ -215,3 +225,50 @@ impl fmt::Display for ViewHandleSendError {
 }
 
 impl std::error::Error for ViewHandleSendError {}
+
+// useful for debugging how long time mount, update, and render takes
+#[allow(dead_code)]
+pub(crate) struct Logging<V>(pub(crate) V);
+
+#[async_trait]
+impl<V> LiveView for Logging<V>
+where
+    V: LiveView,
+{
+    type Message = V::Message;
+    type Error = V::Error;
+
+    async fn mount(
+        &mut self,
+        uri: Uri,
+        request_headers: &HeaderMap,
+        handle: ViewHandle<Self::Message>,
+    ) -> Result<(), Self::Error> {
+        let start = Instant::now();
+        let result = self.0.mount(uri, request_headers, handle).await;
+        tracing::trace!("mount finished in {:?}", start.elapsed());
+        result
+    }
+
+    async fn update(
+        mut self,
+        msg: Self::Message,
+        data: Option<EventData>,
+    ) -> Result<Updated<Self>, Self::Error> {
+        let start = Instant::now();
+        let result = self
+            .0
+            .update(msg, data)
+            .await
+            .map(|updated| updated.map(Self));
+        tracing::trace!("update finished in {:?}", start.elapsed());
+        result
+    }
+
+    fn render(&self) -> Html<Self::Message> {
+        let start = Instant::now();
+        let result = self.0.render();
+        tracing::trace!("render finished in {:?}", start.elapsed());
+        result
+    }
+}

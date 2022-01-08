@@ -58,7 +58,7 @@ pub fn html(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let tokens = tree.into_token_stream();
 
     // useful for debugging:
-    // println!("{}", tokens);
+    println!("{}", tokens);
 
     tokens.into()
 }
@@ -508,23 +508,38 @@ impl Parse for Close {
     }
 }
 
-// like `std::write` but infallible
-macro_rules! write {
-    ( $($tt:tt)* ) => {
-        std::write!($($tt)*).unwrap()
-    };
+trait NodeToTokens {
+    fn node_to_tokens(&self, fixed: &mut FixedParts, out: &mut TokenStream);
 }
 
-trait NodeToTokens {
-    fn node_to_tokens(&self, buf: &mut String, out: &mut TokenStream);
+#[derive(Default, Debug)]
+struct FixedParts {
+    parts: Vec<String>,
+}
+
+impl FixedParts {
+    fn append(&mut self, part: impl AsRef<str>) {
+        loop {
+            if let Some(last) = self.parts.last_mut() {
+                last.push_str(part.as_ref());
+                return;
+            } else {
+                self.parts.push(String::new());
+            }
+        }
+    }
+
+    fn start_new_part(&mut self) {
+        self.parts.push(String::new());
+    }
 }
 
 impl<T> NodeToTokens for &T
 where
     T: NodeToTokens,
 {
-    fn node_to_tokens(&self, buf: &mut String, out: &mut TokenStream) {
-        NodeToTokens::node_to_tokens(*self, buf, out)
+    fn node_to_tokens(&self, fixed: &mut FixedParts, out: &mut TokenStream) {
+        NodeToTokens::node_to_tokens(*self, fixed, out)
     }
 }
 
@@ -532,8 +547,8 @@ impl<T> NodeToTokens for Box<T>
 where
     T: NodeToTokens,
 {
-    fn node_to_tokens(&self, buf: &mut String, out: &mut TokenStream) {
-        NodeToTokens::node_to_tokens(&**self, buf, out)
+    fn node_to_tokens(&self, fixed: &mut FixedParts, out: &mut TokenStream) {
+        NodeToTokens::node_to_tokens(&**self, fixed, out)
     }
 }
 
@@ -541,9 +556,9 @@ impl<T> NodeToTokens for Vec<T>
 where
     T: NodeToTokens,
 {
-    fn node_to_tokens(&self, buf: &mut String, out: &mut TokenStream) {
+    fn node_to_tokens(&self, fixed: &mut FixedParts, out: &mut TokenStream) {
         for node in self {
-            node.node_to_tokens(buf, out)
+            node.node_to_tokens(fixed, out)
         }
     }
 }
@@ -558,19 +573,27 @@ where
         let mut inside_braces = TokenStream::new();
 
         inside_braces.extend(quote! {
-            let mut html = axum_live_view::__private::html();
+            let mut __dynamic = std::vec::Vec::<axum_live_view::__private::DynamicFragment<_>>::new();
         });
 
-        let mut buf = String::new();
-        self.0.node_to_tokens(&mut buf, &mut inside_braces);
-        inside_braces.extend(quote! {
-            axum_live_view::__private::fixed(&mut html, #buf);
-        });
+        let mut fixed = FixedParts::default();
+        self.0.node_to_tokens(&mut fixed, &mut inside_braces);
+        let FixedParts { parts } = fixed;
+        // inside_braces.extend(quote! {
+        //     // axum_live_view::__private::fixed(
+        //     //     &mut html,
+        //     //     &[#(#parts),*],
+        //     // );
+        // });
 
         out.extend(quote! {
             {
+                use axum_live_view::__private::DynamicFragmentVecExt;
                 #inside_braces
-                html
+                axum_live_view::__private::HtmlBuilder {
+                    dynamic: __dynamic,
+                    fixed: &[#(#parts),*],
+                }.into_html()
             }
         });
     }
@@ -583,81 +606,75 @@ impl ToTokens for Tree {
 }
 
 impl NodeToTokens for Tree {
-    fn node_to_tokens(&self, buf: &mut String, out: &mut TokenStream) {
+    fn node_to_tokens(&self, fixed: &mut FixedParts, out: &mut TokenStream) {
         for node in &self.nodes {
-            node.node_to_tokens(buf, out)
+            node.node_to_tokens(fixed, out)
         }
     }
 }
 
 impl NodeToTokens for HtmlNode {
-    fn node_to_tokens(&self, buf: &mut String, out: &mut TokenStream) {
+    fn node_to_tokens(&self, fixed: &mut FixedParts, out: &mut TokenStream) {
         match self {
-            HtmlNode::Doctype(inner) => inner.node_to_tokens(buf, out),
-            HtmlNode::TagNode(inner) => inner.node_to_tokens(buf, out),
-            HtmlNode::LitStr(inner) => inner.node_to_tokens(buf, out),
-            HtmlNode::Block(inner) => inner.node_to_tokens(buf, out),
-            HtmlNode::If(inner) => inner.node_to_tokens(buf, out),
-            HtmlNode::For(inner) => inner.node_to_tokens(buf, out),
-            HtmlNode::Match(inner) => inner.node_to_tokens(buf, out),
+            HtmlNode::Doctype(inner) => inner.node_to_tokens(fixed, out),
+            HtmlNode::TagNode(inner) => inner.node_to_tokens(fixed, out),
+            HtmlNode::LitStr(inner) => inner.node_to_tokens(fixed, out),
+            HtmlNode::Block(inner) => inner.node_to_tokens(fixed, out),
+            HtmlNode::If(inner) => inner.node_to_tokens(fixed, out),
+            HtmlNode::For(inner) => inner.node_to_tokens(fixed, out),
+            HtmlNode::Match(inner) => inner.node_to_tokens(fixed, out),
         }
     }
 }
 
 impl NodeToTokens for Doctype {
-    fn node_to_tokens(&self, buf: &mut String, _out: &mut TokenStream) {
-        write!(buf, "<!DOCTYPE html>");
+    fn node_to_tokens(&self, fixed: &mut FixedParts, _out: &mut TokenStream) {
+        fixed.append("<!DOCTYPE html>".to_owned());
     }
 }
 
 impl NodeToTokens for TagNode {
-    fn node_to_tokens(&self, buf: &mut String, out: &mut TokenStream) {
+    fn node_to_tokens(&self, fixed: &mut FixedParts, out: &mut TokenStream) {
         let Self { open, attrs, close } = self;
 
-        write!(buf, "<{}", open);
+        fixed.append(format!("<{}", open));
 
         if !attrs.is_empty() {
-            attrs.node_to_tokens(buf, out);
+            attrs.node_to_tokens(fixed, out);
         }
 
-        write!(buf, ">");
+        fixed.append(">".to_owned());
         if let Some(TagClose {
             inner: inner_nodes,
             close,
         }) = close
         {
             for node in inner_nodes {
-                node.node_to_tokens(buf, out);
+                node.node_to_tokens(fixed, out);
             }
 
-            close.node_to_tokens(buf, out);
+            close.node_to_tokens(fixed, out);
         }
     }
 }
 
 impl NodeToTokens for Attr {
-    fn node_to_tokens(&self, buf: &mut String, out: &mut TokenStream) {
+    fn node_to_tokens(&self, fixed: &mut FixedParts, out: &mut TokenStream) {
         match self {
             Attr::Normal { ident, value } => match value {
                 NormalAttrValue::LitStr(lit_str) => {
-                    write!(buf, " ");
-                    ident.node_to_tokens(buf, out);
-                    write!(buf, "={:?}", lit_str.value());
+                    fixed.append(" ".to_owned());
+                    ident.node_to_tokens(fixed, out);
+                    fixed.append(format!("={:?}", lit_str.value()));
                 }
                 NormalAttrValue::Block(block) => {
-                    write!(buf, " ");
-                    ident.node_to_tokens(buf, out);
-                    write!(buf, "=");
-                    out.extend(quote! {
-                        axum_live_view::__private::fixed(&mut html, #buf);
-                    });
-                    buf.clear();
+                    fixed.append(" ".to_owned());
+                    ident.node_to_tokens(fixed, out);
+                    fixed.append("=".to_owned());
+                    fixed.start_new_part();
                     out.extend(quote! {
                         #[allow(unused_braces)]
-                        axum_live_view::__private::string(
-                            &mut html,
-                            format!("{:?}", #block),
-                        );
+                        __dynamic.push_fragment(format!("{:?}", #block));
                     });
                 }
                 NormalAttrValue::If(if_) => {
@@ -665,29 +682,23 @@ impl NodeToTokens for Attr {
                         ident: ident.clone(),
                         value: *attr_value,
                     });
-                    if_.node_to_tokens(buf, out);
+                    if_.node_to_tokens(fixed, out);
                 }
                 NormalAttrValue::Unit(_) => {
-                    write!(buf, " ");
-                    ident.node_to_tokens(buf, out);
+                    fixed.append(" ".to_owned());
+                    ident.node_to_tokens(fixed, out);
                 }
                 NormalAttrValue::None => {}
             },
             Attr::Axm { ident, value } => match value {
                 AxmAttrValue::Block(block) => {
-                    write!(buf, " ");
-                    ident.node_to_tokens(buf, out);
-                    write!(buf, "=");
-                    out.extend(quote! {
-                        axum_live_view::__private::fixed(&mut html, #buf);
-                    });
-                    buf.clear();
+                    fixed.append(" ".to_owned());
+                    ident.node_to_tokens(fixed, out);
+                    fixed.append("=".to_owned());
+                    fixed.start_new_part();
                     out.extend(quote! {
                         #[allow(unused_braces)]
-                        axum_live_view::__private::message(
-                            &mut html,
-                            #block,
-                        );
+                        __dynamic.push_message(#block);
                     });
                 }
                 AxmAttrValue::If(if_) => {
@@ -695,7 +706,7 @@ impl NodeToTokens for Attr {
                         ident: ident.clone(),
                         value: *attr_value,
                     });
-                    if_.node_to_tokens(buf, out);
+                    if_.node_to_tokens(fixed, out);
                 }
             },
         }
@@ -703,30 +714,27 @@ impl NodeToTokens for Attr {
 }
 
 impl NodeToTokens for AttrIdent {
-    fn node_to_tokens(&self, buf: &mut String, _out: &mut TokenStream) {
+    fn node_to_tokens(&self, fixed: &mut FixedParts, _out: &mut TokenStream) {
         match self {
-            AttrIdent::Lit(ident) => write!(buf, "{}", ident),
-            AttrIdent::Axm(ident) => write!(buf, "{}", ident),
+            AttrIdent::Lit(ident) => fixed.append(ident.to_string()),
+            AttrIdent::Axm(ident) => fixed.append(ident.to_string()),
         }
     }
 }
 
 impl NodeToTokens for LitStr {
-    fn node_to_tokens(&self, buf: &mut String, _out: &mut TokenStream) {
-        write!(buf, "{}", self.value());
+    fn node_to_tokens(&self, fixed: &mut FixedParts, _out: &mut TokenStream) {
+        fixed.append(self.value());
     }
 }
 
 impl NodeToTokens for Block {
-    fn node_to_tokens(&self, buf: &mut String, out: &mut TokenStream) {
-        out.extend(quote! {
-            axum_live_view::__private::fixed(&mut html, #buf);
-        });
-        buf.clear();
+    fn node_to_tokens(&self, fixed: &mut FixedParts, out: &mut TokenStream) {
+        fixed.start_new_part();
 
         out.extend(quote! {
             #[allow(unused_braces)]
-            axum_live_view::__private::string(&mut html, #self);
+            __dynamic.push_fragment(#self);
         });
     }
 }
@@ -735,17 +743,14 @@ impl<T> NodeToTokens for If<T>
 where
     T: NodeToTokens,
 {
-    fn node_to_tokens(&self, buf: &mut String, out: &mut TokenStream) {
+    fn node_to_tokens(&self, fixed: &mut FixedParts, out: &mut TokenStream) {
         let Self {
             cond,
             then_tree,
             else_tree,
         } = self;
 
-        out.extend(quote! {
-            axum_live_view::__private::fixed(&mut html, #buf);
-        });
-        buf.clear();
+        fixed.start_new_part();
 
         let then_tree = ToTokensViaNodeToTokens(then_tree);
 
@@ -755,9 +760,9 @@ where
                     let else_if = ToTokensViaNodeToTokens(else_if);
                     out.extend(quote! {
                         if #cond {
-                            axum_live_view::__private::string(&mut html, #then_tree);
+                            __dynamic.push_fragment(#then_tree);
                         } else {
-                            axum_live_view::__private::string(&mut html, #else_if);
+                            __dynamic.push_fragment(#else_if);
                         }
                     });
                 }
@@ -765,9 +770,9 @@ where
                     let else_ = ToTokensViaNodeToTokens(else_);
                     out.extend(quote! {
                         if #cond {
-                            axum_live_view::__private::string(&mut html, #then_tree);
+                            __dynamic.push_fragment(#then_tree);
                         } else {
-                            axum_live_view::__private::string(&mut html, #else_);
+                            __dynamic.push_fragment(#else_);
                         }
                     });
                 }
@@ -775,9 +780,9 @@ where
         } else {
             out.extend(quote! {
                 if #cond {
-                    axum_live_view::__private::string(&mut html, #then_tree);
+                    __dynamic.push_fragment(#then_tree);
                 } else {
-                    axum_live_view::__private::string(&mut html, "");
+                    __dynamic.push_fragment("");
                 }
             });
         }
@@ -785,44 +790,48 @@ where
 }
 
 impl NodeToTokens for For {
-    fn node_to_tokens(&self, buf: &mut String, out: &mut TokenStream) {
+    fn node_to_tokens(&self, fixed: &mut FixedParts, out: &mut TokenStream) {
         let Self { pat, expr, tree } = self;
 
-        out.extend(quote! {
-            axum_live_view::__private::fixed(&mut html, #buf);
-        });
-        buf.clear();
+        fixed.start_new_part();
 
-        out.extend(quote! {
-            let mut __first = true;
-            for #pat in #expr {
-                axum_live_view::__private::string(&mut html, #tree);
+        {
+            let mut out = TokenStream::new();
+            let mut fixed = FixedParts::default();
+            tree.node_to_tokens(&mut fixed, &mut out);
+            eprintln!("{}", out);
+            dbg!(&fixed);
+        }
 
-                // add some empty segments so the number of placeholders matches up
-                if !__first {
-                    axum_live_view::__private::fixed(&mut html, "");
-                }
-                __first = false;
-            }
-        })
+        todo!()
+
+        // out.extend(quote! {
+        //     let mut __first = true;
+        //     for #pat in #expr {
+        //         axum_live_view::__private::string(&mut html, #tree);
+
+        //         // add some empty segments so the number of placeholders matches up
+        //         if !__first {
+        //             // axum_live_view::__private::fixed(&mut html, "");
+        //         }
+        //         __first = false;
+        //     }
+        // })
     }
 }
 
 impl NodeToTokens for Match {
-    fn node_to_tokens(&self, buf: &mut String, out: &mut TokenStream) {
+    fn node_to_tokens(&self, fixed: &mut FixedParts, out: &mut TokenStream) {
         let Match { expr, arms } = self;
 
-        out.extend(quote! {
-            axum_live_view::__private::fixed(&mut html, #buf);
-        });
-        buf.clear();
+        fixed.start_new_part();
 
         let arms = arms
             .iter()
             .map(|Arm { pat, guard, tree }| {
                 let guard = guard.as_ref().map(|guard| quote! { if #guard });
                 quote! {
-                    #pat #guard => axum_live_view::__private::string(&mut html, #tree),
+                    #pat #guard => __dynamic.push_fragment(#tree),
                 }
             })
             .collect::<TokenStream>();
@@ -836,7 +845,7 @@ impl NodeToTokens for Match {
 }
 
 impl NodeToTokens for Close {
-    fn node_to_tokens(&self, buf: &mut String, _out: &mut TokenStream) {
-        write!(buf, "</{}>", self.0);
+    fn node_to_tokens(&self, fixed: &mut FixedParts, _out: &mut TokenStream) {
+        fixed.append(format!("</{}>", self.0));
     }
 }
