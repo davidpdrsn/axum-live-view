@@ -101,8 +101,14 @@ impl LiveView for FormView {
                     .unwrap()
                     .to_owned();
             }
+            Msg::Focus => {
+                tracing::info!(?data, "focus");
+            }
+            Msg::Blur => {
+                tracing::info!(?data, "blur");
+            }
             Msg::Changed(msg) => {
-                println!("change: {:?}", msg);
+                tracing::info!("change: {:?}", msg);
             }
         }
 
@@ -117,7 +123,7 @@ impl LiveView for FormView {
             >
                 <label>
                     <div>"Text input"</div>
-                    <input type="text" name="input" axm-input={ Msg::TextInputChanged } axm-debounce="1000" />
+                    <input type="text" name="input" axm-focus={ Msg::Focus } axm-blur={ Msg::Blur } axm-input={ Msg::TextInputChanged } axm-debounce="1000" />
                     if !self.text_input_value.is_empty() {
                         <div>
                             "Value: " { &self.text_input_value }
@@ -127,7 +133,7 @@ impl LiveView for FormView {
 
                 <label>
                     <div>"Textarea"</div>
-                    <textarea name="textarea" axm-input={ Msg::TextAreaChanged }></textarea>
+                    <textarea name="textarea" axm-focus={ Msg::Focus } axm-blur={ Msg::Blur } axm-input={ Msg::TextAreaChanged }></textarea>
                     <div>
                         "Chars remaining: " { TEXTAREA_MAX_LEN - self.textarea_value.len() as i32 }
                     </div>
@@ -135,7 +141,7 @@ impl LiveView for FormView {
 
                 <label>
                     <div>"Select"</div>
-                    <select name="number" axm-change={ Msg::Changed(Input::Select) }>
+                    <select name="number" axm-focus={ Msg::Focus } axm-blur={ Msg::Blur } axm-change={ Msg::Changed(Input::Select) }>
                         for n in 0..5 {
                             <option value={ n }>{ n }</option>
                         }
@@ -144,7 +150,7 @@ impl LiveView for FormView {
 
                 <label>
                     <div>"Multi select"</div>
-                    <select name="numbers[]" size="6" multiple axm-change={ Msg::Changed(Input::MultiSelect) }>
+                    <select name="numbers[]" size="6" multiple axm-focus={ Msg::Focus } axm-blur={ Msg::Blur } axm-change={ Msg::Changed(Input::MultiSelect) }>
                         for n in 0..5 {
                             <option value={ n }>{ n }</option>
                         }
@@ -161,6 +167,8 @@ impl LiveView for FormView {
                                     name="radio"
                                     value={ n }
                                     axm-change={ Msg::Changed(Input::Radio(n)) }
+                                    axm-focus={ Msg::Focus }
+                                    axm-blur={ Msg::Blur }
                                 />
                                 { n }
                             </label>
@@ -178,6 +186,8 @@ impl LiveView for FormView {
                                     name={ format!("checkboxes[{}]", n) }
                                     value="true"
                                     axm-change={ Msg::Changed(Input::Checkbox(n)) }
+                                    axm-focus={ Msg::Focus }
+                                    axm-blur={ Msg::Blur }
                                 />
                                 { n }
                             </label>
@@ -213,6 +223,8 @@ enum Msg {
     TextInputChanged,
     TextAreaChanged,
     Changed(Input),
+    Focus,
+    Blur,
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]

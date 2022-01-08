@@ -11,6 +11,8 @@ pub struct Html<T> {
 }
 
 pub(crate) mod private {
+    //! Private API. Do _not_ use anything from this module!
+
     use super::*;
 
     pub fn html<T>() -> Html<T> {
@@ -201,18 +203,27 @@ impl<T> Html<T> {
         Serialized(out)
     }
 
-    pub(crate) fn render(self) -> String
+    pub(crate) fn render(&self) -> String
     where
         T: Serialize,
     {
-        let a = self.fixed.into_iter();
-        let b = self.dynamic.into_iter().map(|dynamic| match dynamic {
-            DynamicFragment::Message(msg) => serde_json::to_string(&msg).unwrap(),
-            DynamicFragment::Html(inner) => inner.render(),
-            DynamicFragment::String(s) => s,
+        use std::borrow::Cow;
+
+        let fixed_rendered = self.fixed.iter().map(|s| Cow::Borrowed(s));
+
+        let dynamic_rendered = self.dynamic.iter().map(|dynamic| match dynamic {
+            DynamicFragment::Message(msg) => Cow::Owned(serde_json::to_string(msg).unwrap()),
+            DynamicFragment::Html(inner) => Cow::Owned(inner.render()),
+            DynamicFragment::String(s) => Cow::Borrowed(s),
         });
 
-        crate::util::interleave::interleave(a, b).collect::<String>()
+        crate::util::interleave::interleave(fixed_rendered, dynamic_rendered).fold(
+            String::new(),
+            |mut s, a| {
+                s.push_str(a.as_str());
+                s
+            },
+        )
     }
 }
 

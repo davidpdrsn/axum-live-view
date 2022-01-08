@@ -121,41 +121,28 @@ function addEventListeners(socket: WebSocket, element: Element) {
     if (element.hasAttribute(axm.input)) {
       on(element, "input", axm.input, (msg) => {
         const value = inputValue(element)
-        return { t: "input_change", m: msg, d: { v: value } }
+        return { t: "input", m: msg, d: { v: value } }
       })
     }
 
     if (element.hasAttribute(axm.change)) {
       on(element, "change", axm.change, (msg) => {
         const value = inputValue(element)
-        return { t: "input_change", m: msg, d: { v: value } }
+        return { t: "input", m: msg, d: { v: value } }
       })
     }
-  }
 
-  if (
-    element instanceof HTMLInputElement ||
-      element instanceof HTMLTextAreaElement
-  ) {
     if (element.hasAttribute(axm.focus)) {
       on(element, "focus", axm.focus, (msg) => {
         const value = inputValue(element)
-        if (typeof value === "string") {
-          return { t: "input_focus", m: msg, d: { v: value } }
-        } else {
-          return
-        }
+        return { t: "input", m: msg, d: { v: value } }
       })
     }
 
     if (element.hasAttribute(axm.blur)) {
       on(element, "blur", axm.blur, (msg) => {
         const value = inputValue(element)
-        if (typeof value === "string") {
-          return { t: "input_blur", m: msg, d: { v: value } }
-        } else {
-          return
-        }
+        return { t: "input", m: msg, d: { v: value } }
       })
     }
   }
@@ -166,7 +153,7 @@ function addEventListeners(socket: WebSocket, element: Element) {
         // workaround for https://github.com/microsoft/TypeScript/issues/30584
         const form = new FormData(element) as any
         const query = new URLSearchParams(form).toString()
-        return { t: "form_change", m: msg, d: { q: query } }
+        return { t: "form", m: msg, d: { q: query } }
       })
     }
 
@@ -175,7 +162,7 @@ function addEventListeners(socket: WebSocket, element: Element) {
         // workaround for https://github.com/microsoft/TypeScript/issues/30584
         const form = new FormData(element) as any
         const query = new URLSearchParams(form).toString()
-        return { t: "form_submit", m: msg, d: { q: query } }
+        return { t: "form", m: msg, d: { q: query } }
       })
     }
   }
@@ -347,12 +334,9 @@ function addEventListeners(socket: WebSocket, element: Element) {
 
 type MessageToView =
   Click
-  | FormSubmit
-  | FormChange
-  | InputChange
+  | Form
+  | Input
   | Key
-  | InputFocus
-  | InputBlur
   | WindowFocus
   | WindowBlur
   | Mouse
@@ -363,9 +347,6 @@ interface Click { t: "click", m: string | JSON }
 interface WindowFocus { t: "window_focus", m: string | JSON }
 interface WindowBlur { t: "window_blur", m: string | JSON }
 
-interface InputFocus { t: "input_focus", m: string | JSON, d: { v: string } }
-interface InputBlur { t: "input_blur", m: string | JSON, d: { v: string } }
-
 interface Scroll {
   t: "scroll",
   m: string | JSON,
@@ -375,24 +356,16 @@ interface Scroll {
   }
 }
 
-interface FormSubmit {
-  t: "form_submit",
+interface Form {
+  t: "form",
   m: string | JSON,
   d: {
     q: string
   }
 }
 
-interface FormChange {
-  t: "form_change",
-  m: string | JSON,
-  d: {
-    q: string
-  }
-}
-
-interface InputChange {
-  t: "input_change",
+interface Input {
+  t: "input",
   m: string | JSON,
   d: {
     v: InputValue

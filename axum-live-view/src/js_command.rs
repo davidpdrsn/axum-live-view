@@ -2,7 +2,7 @@ use axum::http::Uri;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct JsCommand {
     pub(crate) kind: JsCommandKind,
     pub(crate) delay_ms: Option<u64>,
@@ -15,7 +15,7 @@ impl JsCommand {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 #[serde(tag = "t")]
 pub(crate) enum JsCommandKind {
