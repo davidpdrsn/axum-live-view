@@ -4,24 +4,52 @@ use crate::{
     js_command::JsCommand,
     LiveView,
 };
-use async_trait::async_trait;
-use axum::{
-    extract::{
-        rejection::HeadersAlreadyExtracted,
-        ws::{self, WebSocketUpgrade},
-        FromRequest, RequestParts,
-    },
-    http::{HeaderMap, Uri},
-    response::{IntoResponse, Response},
-};
 use futures_util::{
     sink::{Sink, SinkExt},
-    stream::{Stream, StreamExt, TryStreamExt},
+    stream::{Stream, StreamExt},
 };
+use http::{HeaderMap, Uri};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::fmt::{self, Debug};
 use tokio::sync::{mpsc, oneshot};
 use tokio_stream::wrappers::ReceiverStream;
+
+pub struct EmbedLiveView<'a, M> {
+    view: Option<&'a mut Option<ViewTaskHandle<M>>>,
+}
+
+impl<'a, M> EmbedLiveView<'a, M> {
+    pub(crate) fn noop() -> Self {
+        Self { view: None }
+    }
+
+    pub(crate) fn new(view: &'a mut Option<ViewTaskHandle<M>>) -> Self {
+        Self { view: Some(view) }
+    }
+
+    pub fn embed<L>(self, view: L) -> Html<M>
+    where
+        L: LiveView<Message = M>,
+    {
+        let html = wrap_in_live_view_container(view.render());
+
+        if let Some(view_handle) = self.view {
+            *view_handle = Some(spawn_view(view));
+        }
+
+        html
+    }
+
+    pub fn connected(&self) -> bool {
+        self.view.is_some()
+    }
+}
+
+impl<'a, M> fmt::Debug for EmbedLiveView<'a, M> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("EmbedLiveView").finish()
+    }
+}
 
 fn spawn_view<L>(mut view: L) -> ViewTaskHandle<L::Message>
 where
@@ -84,7 +112,7 @@ where
     ViewTaskHandle { tx }
 }
 
-struct ViewTaskHandle<M> {
+pub(crate) struct ViewTaskHandle<M> {
     tx: mpsc::Sender<ViewRequest<M>>,
 }
 
@@ -185,151 +213,15 @@ enum UpdateResponse {
     Empty,
 }
 
-#[derive(Debug)]
-pub struct LiveViewUpgrade {
-    inner: LiveViewUpgradeInner,
-}
-
-#[derive(Debug)]
-enum LiveViewUpgradeInner {
-    Http,
-    Ws(Box<(WebSocketUpgrade, Uri, HeaderMap)>),
-}
-
-#[async_trait]
-impl<B> FromRequest<B> for LiveViewUpgrade
-where
-    B: Send,
-{
-    type Rejection = LiveViewUpgradeRejection;
-
-    async fn from_request(req: &mut RequestParts<B>) -> Result<Self, Self::Rejection> {
-        if let Ok(ws) = WebSocketUpgrade::from_request(req).await {
-            let uri = req.uri().clone();
-            let headers = req.headers().cloned().ok_or_else(|| {
-                LiveViewUpgradeRejection::HeadersAlreadyExtracted(Default::default())
-            })?;
-
-            Ok(Self {
-                inner: LiveViewUpgradeInner::Ws(Box::new((ws, uri, headers))),
-            })
-        } else {
-            Ok(Self {
-                inner: LiveViewUpgradeInner::Http,
-            })
-        }
-    }
-}
-
-#[derive(Debug)]
-#[non_exhaustive]
-pub enum LiveViewUpgradeRejection {
-    HeadersAlreadyExtracted(HeadersAlreadyExtracted),
-}
-
-impl IntoResponse for LiveViewUpgradeRejection {
-    fn into_response(self) -> Response {
-        match self {
-            Self::HeadersAlreadyExtracted(inner) => inner.into_response(),
-        }
-    }
-}
-
-impl LiveViewUpgrade {
-    pub fn response<F, M>(self, gather_view: F) -> Response
-    where
-        F: FnOnce(EmbedLiveView<'_, M>) -> Html<M>,
-        M: Serialize + DeserializeOwned + Send + 'static,
-    {
-        let (ws, uri, headers) = match self.inner {
-            LiveViewUpgradeInner::Http => {
-                let embed = EmbedLiveView { view: None };
-                return gather_view(embed).into_response();
-            }
-            LiveViewUpgradeInner::Ws(data) => *data,
-        };
-
-        let mut view = None;
-        let (tx, rx) = mpsc::channel(1024);
-
-        let embed = EmbedLiveView {
-            view: Some(&mut view),
-        };
-
-        gather_view(embed);
-
-        let view = if let Some(view) = view {
-            view
-        } else {
-            return ws.on_upgrade(|_| async {}).into_response();
-        };
-
-        ws.on_upgrade(move |socket| async move {
-            let (write, read) = socket.split();
-
-            let write = write.with(|msg| async move {
-                let encoded_msg = ws::Message::Text(serde_json::to_string(&msg)?);
-                Ok::<_, anyhow::Error>(encoded_msg)
-            });
-            futures_util::pin_mut!(write);
-
-            let read = read
-                .map_err(anyhow::Error::from)
-                .and_then(|msg| async move {
-                    if let ws::Message::Text(text) = msg {
-                        serde_json::from_str(&text).map_err(Into::into)
-                    } else {
-                        anyhow::bail!("received message from socket that wasn't text")
-                    }
-                });
-            futures_util::pin_mut!(read);
-
-            let handle = SelfHandle { tx };
-
-            if let Err(err) =
-                process_view_messages(write, read, view, handle, rx, uri, headers).await
-            {
-                tracing::error!(%err, "encountered while processing socket");
-            }
-        })
-        .into_response()
-    }
-}
-
-pub struct EmbedLiveView<'a, M> {
-    view: Option<&'a mut Option<ViewTaskHandle<M>>>,
-}
-
-impl<'a, M> EmbedLiveView<'a, M> {
-    pub fn embed<L>(self, view: L) -> Html<M>
-    where
-        L: LiveView<Message = M>,
-    {
-        let html = wrap_in_live_view_container(view.render());
-
-        if let Some(view_handle) = self.view {
-            *view_handle = Some(spawn_view(view));
-        }
-
-        html
-    }
-
-    pub fn connected(&self) -> bool {
-        self.view.is_some()
-    }
-}
-
-impl<'a, M> fmt::Debug for EmbedLiveView<'a, M> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("EmbedLiveView").finish()
-    }
-}
-
 pub struct SelfHandle<M> {
     tx: mpsc::Sender<M>,
 }
 
 impl<M> SelfHandle<M> {
+    pub(crate) fn new(tx: mpsc::Sender<M>) -> Self {
+        Self { tx }
+    }
+
     pub async fn send(&self, msg: M) -> Result<(), SelfHandleSendError> {
         self.tx.send(msg).await.map_err(|_| SelfHandleSendError)?;
         Ok(())
@@ -386,12 +278,10 @@ impl fmt::Display for SelfHandleSendError {
 
 impl std::error::Error for SelfHandleSendError {}
 
-async fn process_view_messages<W, R, RE, M>(
+pub(crate) async fn process_view_messages<W, R, RE, M>(
     mut write: W,
     read: R,
     view: ViewTaskHandle<M>,
-    handle: SelfHandle<M>,
-    rx: mpsc::Receiver<M>,
     uri: Uri,
     headers: HeaderMap,
 ) -> anyhow::Result<()>
@@ -402,6 +292,9 @@ where
     RE: Into<anyhow::Error>,
     M: DeserializeOwned,
 {
+    let (tx, rx) = mpsc::channel(1024);
+    let handle = SelfHandle::new(tx);
+
     view.mount(uri, headers, handle).await?;
 
     let markup = view.render().await?;
@@ -454,7 +347,7 @@ where
 }
 
 #[derive(Serialize, Debug)]
-struct MessageToSocket {
+pub(crate) struct MessageToSocket {
     #[serde(flatten)]
     data: MessageToSocketData,
 }
@@ -481,7 +374,7 @@ where
 }
 
 #[derive(Debug, Deserialize, PartialEq)]
-struct MessageFromSocket<M> {
+pub(crate) struct MessageFromSocket<M> {
     #[serde(rename = "m")]
     msg: M,
     #[serde(flatten)]
@@ -579,7 +472,7 @@ fn wrap_in_live_view_container<T>(markup: Html<T>) -> Html<T> {
 mod tests {
     use super::*;
     use crate as axum_live_view;
-    use crate::Html;
+    use crate::html::Html;
     use axum_live_view_macros::html;
     use serde::{Deserialize, Serialize};
     use serde_json::json;

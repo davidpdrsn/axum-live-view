@@ -39,20 +39,20 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![cfg_attr(test, allow(clippy::float_cmp))]
 
-#[doc(hidden)]
-pub mod html;
-
 pub mod event_data;
+pub mod extract;
 pub mod js_command;
 pub mod life_cycle;
 pub mod live_view;
 
+mod html;
 mod util;
 
-pub use self::{
-    event_data::EventData,
-    html::Html,
-    life_cycle::{LiveViewUpgrade, SelfHandle},
-    live_view::{LiveView, Updated},
-};
+pub use self::{extract::LiveViewUpgrade, html::Html, live_view::LiveView};
 pub use axum_live_view_macros::html;
+
+#[doc(hidden)]
+pub mod __private {
+    //! Private API. Do _not_ use anything from this module!
+    pub use crate::html::private::*;
+}
