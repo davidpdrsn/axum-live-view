@@ -1,5 +1,8 @@
 use crate::{
-    event_data::EventData, html::Html, life_cycle::SelfHandle, live_view::Updated, LiveView,
+    event_data::EventData,
+    html::Html,
+    live_view::{Updated, ViewHandle},
+    LiveView,
 };
 use async_trait::async_trait;
 use axum::http::{HeaderMap, Uri};

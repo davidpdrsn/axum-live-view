@@ -9,8 +9,7 @@ use axum::{
 use axum_live_view::{
     event_data::EventData,
     html, js_command,
-    life_cycle::SelfHandle,
-    live_view::{self, Updated},
+    live_view::{self, Updated, ViewHandle},
     Html, LiveView, LiveViewUpgrade,
 };
 use serde::{Deserialize, Serialize};
@@ -114,7 +113,7 @@ impl LiveView for MessagesList {
         &mut self,
         _: Uri,
         _: &HeaderMap,
-        handle: SelfHandle<Self::Message>,
+        handle: ViewHandle<Self::Message>,
     ) -> Result<(), Self::Error> {
         let mut rx = self.tx.subscribe();
         tokio::spawn(async move {

@@ -1,7 +1,5 @@
-use crate::{
-    html::Html,
-    life_cycle::{process_view_messages, EmbedLiveView, ViewTaskHandle},
-};
+use self::rejection::*;
+use crate::{html::Html, life_cycle::run_view, LiveView};
 use async_trait::async_trait;
 use axum::{
     extract::{
@@ -15,10 +13,9 @@ use futures_util::{
     sink::SinkExt,
     stream::{StreamExt, TryStreamExt},
 };
-use serde::{de::DeserializeOwned, Serialize};
 use std::fmt::Debug;
 
-use self::rejection::LiveViewUpgradeRejection;
+pub use crate::life_cycle::EmbedLiveView;
 
 #[derive(Debug)]
 pub struct LiveViewUpgrade {
@@ -57,10 +54,10 @@ where
 }
 
 impl LiveViewUpgrade {
-    pub fn response<F, M>(self, gather_view: F) -> Response
+    pub fn response<F, L>(self, gather_view: F) -> Response
     where
-        F: FnOnce(EmbedLiveView<'_, M>) -> Html<M>,
-        M: Serialize + DeserializeOwned + Send + 'static,
+        L: LiveView,
+        F: FnOnce(EmbedLiveView<'_, L>) -> Html<L::Message>,
     {
         let (ws, uri, headers) = match self.inner {
             LiveViewUpgradeInner::Http => {
@@ -87,13 +84,9 @@ impl LiveViewUpgrade {
     }
 }
 
-async fn run_view_on_socket<M>(
-    socket: WebSocket,
-    view: ViewTaskHandle<M>,
-    uri: Uri,
-    headers: HeaderMap,
-) where
-    M: Serialize + DeserializeOwned + Send + 'static,
+async fn run_view_on_socket<L>(socket: WebSocket, view: L, uri: Uri, headers: HeaderMap)
+where
+    L: LiveView,
 {
     let (write, read) = socket.split();
 
@@ -114,7 +107,7 @@ async fn run_view_on_socket<M>(
         });
     futures_util::pin_mut!(read);
 
-    if let Err(err) = process_view_messages(write, read, view, uri, headers).await {
+    if let Err(err) = run_view(write, read, view, uri, headers).await {
         tracing::error!(%err, "encountered while processing socket");
     }
 }
