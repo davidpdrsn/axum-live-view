@@ -2,19 +2,16 @@ use super::{DynamicFragment, Html};
 use serde::Serialize;
 use std::collections::BTreeMap;
 
-#[derive(Clone, Serialize, PartialEq)]
-pub(crate) struct HtmlDiff<T> {
+#[derive(Serialize, PartialEq)]
+pub(crate) struct HtmlDiff<'a, T> {
     #[serde(rename = "f", skip_serializing_if = "super::empty_slice")]
     fixed: &'static [&'static str],
     #[serde(rename = "d", skip_serializing_if = "BTreeMap::is_empty")]
-    dynamic: BTreeMap<usize, Option<DynamicFragmentDiff<T>>>,
+    dynamic: BTreeMap<usize, Option<DynamicFragmentDiff<'a, T>>>,
 }
 
-impl<T> From<&Html<T>> for HtmlDiff<T>
-where
-    T: Clone,
-{
-    fn from(html: &Html<T>) -> Self {
+impl<'a, T> From<&'a Html<T>> for HtmlDiff<'a, T> {
+    fn from(html: &'a Html<T>) -> Self {
         Self {
             fixed: html.fixed,
             dynamic: html
@@ -27,29 +24,26 @@ where
 }
 
 #[allow(dead_code)]
-#[derive(Clone, Serialize, PartialEq)]
+#[derive(Serialize, PartialEq)]
 #[serde(untagged)]
-pub(crate) enum DynamicFragmentDiff<T> {
-    String(String),
+pub(crate) enum DynamicFragmentDiff<'a, T> {
+    String(&'a str),
     #[serde(serialize_with = "super::serialize_dynamic_fragment_message")]
-    Message(T),
-    HtmlDiff(HtmlDiff<T>),
+    Message(&'a T),
+    HtmlDiff(HtmlDiff<'a, T>),
     DedupLoop {
         #[serde(rename = "f", skip_serializing_if = "super::empty_slice")]
         fixed: &'static [&'static str],
         #[serde(rename = "b", skip_serializing_if = "Vec::is_empty")]
-        dynamic: Vec<Option<BTreeMap<usize, DynamicFragmentDiff<T>>>>,
+        dynamic: Vec<Option<BTreeMap<usize, DynamicFragmentDiff<'a, T>>>>,
     },
 }
 
-impl<T> From<&DynamicFragment<T>> for DynamicFragmentDiff<T>
-where
-    T: Clone,
-{
-    fn from(other: &DynamicFragment<T>) -> Self {
+impl<'a, T> From<&'a DynamicFragment<T>> for DynamicFragmentDiff<'a, T> {
+    fn from(other: &'a DynamicFragment<T>) -> Self {
         match other {
-            DynamicFragment::String(s) => Self::String(s.to_owned()),
-            DynamicFragment::Message(msg) => Self::Message(msg.clone()),
+            DynamicFragment::String(s) => Self::String(s),
+            DynamicFragment::Message(msg) => Self::Message(msg),
             DynamicFragment::Html(html) => Self::HtmlDiff(html.into()),
             DynamicFragment::DedupLoop { fixed, dynamic } => Self::DedupLoop {
                 fixed,
@@ -70,9 +64,9 @@ where
 
 impl<T> Html<T> {
     #[allow(warnings)]
-    pub(crate) fn diff(&self, other: &Self) -> Option<HtmlDiff<T>>
+    pub(crate) fn diff<'a>(&'a self, other: &'a Self) -> Option<HtmlDiff<'a, T>>
     where
-        T: Clone + PartialEq + Serialize,
+        T: PartialEq + Serialize,
     {
         let fixed = diff_fixed(self.fixed, other.fixed);
 
@@ -101,16 +95,16 @@ impl<T> Html<T> {
 
 impl<T> DynamicFragment<T> {
     #[allow(warnings)]
-    pub(crate) fn diff(&self, other: &Self) -> Option<DynamicFragmentDiff<T>>
+    pub(crate) fn diff<'a>(&'a self, other: &'a Self) -> Option<DynamicFragmentDiff<'a, T>>
     where
-        T: Clone + PartialEq + Serialize,
+        T: PartialEq + Serialize,
     {
         match (self, other) {
             (Self::String(self_value), Self::String(other_value)) => {
                 if self_value == other_value {
                     None
                 } else {
-                    Some(DynamicFragmentDiff::String(other_value.clone()))
+                    Some(DynamicFragmentDiff::String(other_value))
                 }
             }
             (Self::Message { .. }, Self::Message { .. }) => {

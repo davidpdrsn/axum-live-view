@@ -3,6 +3,14 @@ use crate as axum_live_view;
 use crate::html;
 use serde_json::json;
 
+fn pretty_print<T>(t: T) -> T
+where
+    T: Serialize,
+{
+    println!("{}", serde_json::to_string_pretty(&t).unwrap());
+    t
+}
+
 #[test]
 fn basic() {
     let view: Html<()> = html! { <div></div> };
@@ -458,12 +466,14 @@ fn diffing_dynamic_multiple_dynamics() {
         html! { <div>{ one } " and " { two }</div> }
     }
 
-    let old = render(1, 2);
+    let a = render(1, 2);
 
-    assert_json_diff::assert_json_eq!(old.diff(&render(1, 2)), json!(null));
+    let b = render(1, 2);
+    assert_json_diff::assert_json_eq!(a.diff(&b), json!(null));
 
+    let b = render(2, 2);
     assert_json_diff::assert_json_eq!(
-        old.diff(&render(2, 2)),
+        a.diff(&b),
         json!({
             "d": {
                 "0": "2",
@@ -471,8 +481,9 @@ fn diffing_dynamic_multiple_dynamics() {
         })
     );
 
+    let b = render(2, 3);
     assert_json_diff::assert_json_eq!(
-        old.diff(&render(2, 3)),
+        a.diff(&b),
         json!({
             "d": {
                 "0": "2",
@@ -493,8 +504,10 @@ fn diffing_dynamic_changing_fixed() {
         }
     }
 
+    let a = render(1);
+    let b = render(11);
     assert_json_diff::assert_json_eq!(
-        pretty_print(render(1).diff(&render(11))),
+        pretty_print(a.diff(&b)),
         json!({
             "d": {
                 "0": "11",
@@ -505,8 +518,10 @@ fn diffing_dynamic_changing_fixed() {
         })
     );
 
+    let a = render(11);
+    let b = render(12);
     assert_json_diff::assert_json_eq!(
-        pretty_print(render(11).diff(&render(12))),
+        pretty_print(a.diff(&b)),
         json!({
             "d": {
                 "0": "12",
@@ -527,17 +542,18 @@ fn diffing_loop_dynaming_changes() {
         }
     }
 
-    assert_json_diff::assert_json_eq!(
-        pretty_print(render(&[1, 2, 3]).diff(&render(&[1, 2, 3]))),
-        json!(null)
-    );
+    let a = render(&[1, 2, 3]);
+    let b = render(&[1, 2, 3]);
+    assert_json_diff::assert_json_eq!(pretty_print(a.diff(&b)), json!(null));
 
+    let a = render(&[1, 2]);
+    let b = render(&[3, 4]);
     assert_json_diff::assert_json_eq!(
-        pretty_print(render(&[1, 2]).diff(&render(&[3, 4]))),
+        pretty_print(a.diff(&b)),
         json!({
             "d": {
                 "0": {
-                    "dynamic": [
+                    "b": [
                         { "0": "3" },
                         { "0": "4" }
                     ]
@@ -546,12 +562,14 @@ fn diffing_loop_dynaming_changes() {
         })
     );
 
+    let a = render(&[1, 2]);
+    let b = render(&[2, 2]);
     assert_json_diff::assert_json_eq!(
-        pretty_print(render(&[1, 2]).diff(&render(&[2, 2]))),
+        pretty_print(a.diff(&b)),
         json!({
             "d": {
                 "0": {
-                    "dynamic": [
+                    "b": [
                         { "0": "2" },
                         {},
                     ]
@@ -560,12 +578,14 @@ fn diffing_loop_dynaming_changes() {
         })
     );
 
+    let a = render(&[1]);
+    let b = render(&[1, 2]);
     assert_json_diff::assert_json_eq!(
-        pretty_print(render(&[1]).diff(&render(&[1, 2]))),
+        pretty_print(a.diff(&b)),
         json!({
             "d": {
                 "0": {
-                    "dynamic": [
+                    "b": [
                         {},
                         { "0": "2" },
                     ]
@@ -597,8 +617,10 @@ fn diffing_loop_fixed_changes() {
         }
     }
 
+    let a = render_one(&[1, 2, 3]);
+    let b = render_two(&[1, 2, 3]);
     assert_json_diff::assert_json_eq!(
-        pretty_print(render_one(&[1, 2, 3]).diff(&render_two(&[1, 2, 3]))),
+        pretty_print(a.diff(&b)),
         json!({
             "d": {
                 "0": {
@@ -611,8 +633,10 @@ fn diffing_loop_fixed_changes() {
         })
     );
 
+    let a = render_one(&[1, 2]);
+    let b = render_two(&[1, 2, 3]);
     assert_json_diff::assert_json_eq!(
-        pretty_print(render_one(&[1, 2]).diff(&render_two(&[1, 2, 3]))),
+        pretty_print(a.diff(&b)),
         json!({
             "d": {
                 "0": {
@@ -620,7 +644,7 @@ fn diffing_loop_fixed_changes() {
                         "<li disabled>",
                         "</li>"
                     ],
-                    "dynamic": [
+                    "b": [
                         {},
                         {},
                         { "0": "3" }
@@ -630,8 +654,10 @@ fn diffing_loop_fixed_changes() {
         })
     );
 
+    let a = render_one(&[1, 2, 3]);
+    let b = render_two(&[1, 2]);
     assert_json_diff::assert_json_eq!(
-        pretty_print(render_one(&[1, 2, 3]).diff(&render_two(&[1, 2]))),
+        pretty_print(a.diff(&b)),
         json!({
             "d": {
                 "0": {
@@ -639,7 +665,7 @@ fn diffing_loop_fixed_changes() {
                         "<li disabled>",
                         "</li>"
                     ],
-                    "dynamic": [
+                    "b": [
                         {},
                         {},
                         null
@@ -665,8 +691,10 @@ fn diffing_removing_dynamic() {
         }
     }
 
+    let a = render_one(1, 2);
+    let b = render_two(1);
     assert_json_diff::assert_json_eq!(
-        pretty_print(render_one(1, 2).diff(&render_two(1))),
+        pretty_print(a.diff(&b)),
         json!({
             "f": [""],
             "d": {
@@ -677,11 +705,3 @@ fn diffing_removing_dynamic() {
 }
 
 // TODO(david): loop with conditional and different fixed/dynamics
-
-fn pretty_print<T>(t: T) -> T
-where
-    T: Serialize,
-{
-    println!("{}", serde_json::to_string_pretty(&t).unwrap());
-    t
-}

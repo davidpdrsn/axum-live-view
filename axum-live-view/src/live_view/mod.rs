@@ -13,7 +13,7 @@ pub use self::combine::combine;
 
 #[async_trait]
 pub trait LiveView: Sized + Send + Sync + 'static {
-    type Message: Serialize + DeserializeOwned + Clone + PartialEq + Send + Sync + 'static;
+    type Message: Serialize + DeserializeOwned + PartialEq + Send + Sync + 'static;
     type Error: fmt::Display + Send + Sync + 'static;
 
     async fn mount(
