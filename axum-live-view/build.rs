@@ -32,7 +32,7 @@ fn eithers() -> TokenStream {
 
             quote! {
                 #[allow(unreachable_pub, missing_debug_implementations)]
-                #[derive(PartialEq, Serialize, Deserialize)]
+                #[derive(PartialEq, Serialize, Deserialize, Clone)]
                 pub enum #name <#(#types,)*> {
                     #(#variants)*
                 }

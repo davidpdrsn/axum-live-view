@@ -38,8 +38,6 @@
 #![forbid(unsafe_code)]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![cfg_attr(test, allow(clippy::float_cmp))]
-// TODO(david): MAKE SURE TO REMOVE THIS
-#![allow(warnings)]
 
 #[macro_use]
 mod macros;

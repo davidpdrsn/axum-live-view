@@ -803,12 +803,12 @@ impl NodeToTokens for For {
                     #inside
                     __dynamic
                 };
-                __dynamic_loop_parts.push_fragments(__parts);
+                __dynamic_loop_parts.push(__parts);
             }
-            __dynamic.push_fragment(axum_live_view::__private::HtmlBuilder {
-                dynamic: __dynamic_loop_parts,
-                fixed: &[#(#parts),*],
-            }.into_html());
+            __dynamic.push_fragments(
+                &[#(#parts),*],
+                __dynamic_loop_parts,
+            );
         });
     }
 }

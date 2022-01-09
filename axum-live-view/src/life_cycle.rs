@@ -62,7 +62,7 @@ pub(crate) async fn run_view<W, R, L>(
 ) -> Result<(), String>
 where
     L: LiveView,
-    W: Sink<MessageToSocket> + Unpin,
+    W: Sink<MessageToSocket<L::Message>> + Unpin,
     W::Error: fmt::Display + Send + Sync + 'static,
     R: TryStream<Ok = MessageFromSocket<L::Message>> + Unpin,
     R::Error: fmt::Display + Send + Sync + 'static,
@@ -164,7 +164,8 @@ where
                     }
                 },
                 ViewRequest::Render { reply_tx } => {
-                    let _ = reply_tx.send(markup.serialize());
+                    todo!()
+                    // let _ = reply_tx.send(markup.serialize());
                 }
                 ViewRequest::RenderToString { reply_tx } => {
                     let _ = reply_tx.send(markup.render());
@@ -188,14 +189,16 @@ where
                     let diff = markup.diff(&new_markup);
                     markup = new_markup;
 
-                    let response = match (diff, js_commands.is_empty()) {
-                        (None, true) => UpdateResponse::Empty,
-                        (None, false) => UpdateResponse::JsCommands(js_commands),
-                        (Some(diff), true) => UpdateResponse::Diff(diff),
-                        (Some(diff), false) => UpdateResponse::DiffAndJsCommands(diff, js_commands),
-                    };
+                    todo!()
 
-                    let _ = reply_tx.send(Ok(response));
+                    // let response = match (diff, js_commands.is_empty()) {
+                    //     (None, true) => UpdateResponse::Empty,
+                    //     (None, false) => UpdateResponse::JsCommands(js_commands),
+                    //     (Some(diff), true) => UpdateResponse::Diff(diff),
+                    //     (Some(diff), false) => UpdateResponse::DiffAndJsCommands(diff, js_commands),
+                    // };
+
+                    // let _ = reply_tx.send(Ok(response));
                 }
             }
         }
@@ -268,7 +271,7 @@ impl<M, E> ViewTaskHandle<M, E> {
         &self,
         msg: M,
         event_data: Option<EventData>,
-    ) -> Result<UpdateResponse, ViewRequestError<E>> {
+    ) -> Result<UpdateResponse<M>, ViewRequestError<E>> {
         let (reply_tx, reply_rx) = oneshot::channel();
 
         let request = ViewRequest::Update {
@@ -306,7 +309,7 @@ enum ViewRequest<M, E> {
     Update {
         msg: M,
         event_data: Option<EventData>,
-        reply_tx: oneshot::Sender<Result<UpdateResponse, E>>,
+        reply_tx: oneshot::Sender<Result<UpdateResponse<M>, E>>,
     },
 }
 
@@ -351,36 +354,37 @@ impl fmt::Display for ChannelClosed {
 
 impl std::error::Error for ChannelClosed {}
 
-pub(crate) enum UpdateResponse {
-    Diff(html::Diff),
+pub(crate) enum UpdateResponse<M> {
+    Diff(html::Html<M>),
     JsCommands(Vec<JsCommand>),
-    DiffAndJsCommands(html::Diff, Vec<JsCommand>),
+    DiffAndJsCommands(html::Html<M>, Vec<JsCommand>),
     Empty,
 }
 
-#[derive(Serialize, Debug)]
-pub(crate) struct MessageToSocket {
+#[derive(Serialize)]
+pub(crate) struct MessageToSocket<M> {
     #[serde(flatten)]
-    data: MessageToSocketData,
+    data: MessageToSocketData<M>,
 }
 
-#[derive(Serialize, Debug)]
+#[derive(Serialize)]
 #[serde(tag = "t", content = "d")]
-enum MessageToSocketData {
+enum MessageToSocketData<M> {
     #[serde(rename = "i")]
     InitialRender(html::Serialized),
     #[serde(rename = "r")]
-    Render(html::Diff),
+    Render(html::Html<M>),
     #[serde(rename = "j")]
     JsCommands(Vec<JsCommand>),
 }
 
-async fn write_message<W>(write: &mut W, data: MessageToSocketData) -> Result<(), W::Error>
+async fn write_message<W, M>(write: &mut W, data: MessageToSocketData<M>) -> Result<(), W::Error>
 where
-    W: Sink<MessageToSocket> + Unpin,
+    W: Sink<MessageToSocket<M>> + Unpin,
+    M: Serialize,
 {
     let msg = MessageToSocket { data };
-    tracing::trace!(?msg, "sending message to socket");
+    // tracing::trace!(?msg, "sending message to socket");
     write.send(msg).await
 }
 
@@ -480,44 +484,46 @@ mod tests {
 
     #[test]
     fn serialize_message_to_socket() {
-        fn make_html(value: &'static str) -> Html<()> {
-            todo!()
-            // html! { <div>{ value }</div> }
-        }
+        todo!()
 
-        let html = make_html("foo");
-        let msg = json!(MessageToSocketData::InitialRender(html.serialize()));
+        // fn make_html(value: &'static str) -> Html<()> {
+        //     todo!()
+        //     // html! { <div>{ value }</div> }
+        // }
 
-        assert_eq!(
-            msg,
-            json!({
-                "t": "i",
-                "d": {
-                    "0": "foo",
-                    "f": ["<div>", "</div>"]
-                }
-            })
-        );
+        // let html = make_html("foo");
+        // let msg = json!(MessageToSocketData::InitialRender(html.serialize()));
 
-        let new_html = make_html("bar");
-        let diff = html.diff(&new_html).unwrap();
-        let msg = json!(MessageToSocketData::Render(diff));
+        // assert_eq!(
+        //     msg,
+        //     json!({
+        //         "t": "i",
+        //         "d": {
+        //             "0": "foo",
+        //             "f": ["<div>", "</div>"]
+        //         }
+        //     })
+        // );
 
-        assert_eq!(
-            msg,
-            json!({
-                "t": "r",
-                "d": {
-                    "0": "bar",
-                }
-            })
-        );
+        // let new_html = make_html("bar");
+        // let diff = html.diff(&new_html).unwrap();
+        // let msg = json!(MessageToSocketData::Render(diff));
+
+        // assert_eq!(
+        //     msg,
+        //     json!({
+        //         "t": "r",
+        //         "d": {
+        //             "0": "bar",
+        //         }
+        //     })
+        // );
     }
 
     #[test]
     fn serialize_js_commands() {
         let cmd = crate::js_command::set_title("foo").delay(Duration::from_millis(500));
-        let msg = json!(MessageToSocketData::JsCommands(Vec::from([cmd])));
+        let msg = json!(MessageToSocketData::<()>::JsCommands(Vec::from([cmd])));
 
         assert_eq!(
             msg,
