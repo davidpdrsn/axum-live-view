@@ -58,7 +58,7 @@ pub fn html(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let tokens = tree.into_token_stream();
 
     // useful for debugging:
-    println!("{}", tokens);
+    // println!("{}", tokens);
 
     tokens.into()
 }
@@ -579,12 +579,6 @@ where
         let mut fixed = FixedParts::default();
         self.0.node_to_tokens(&mut fixed, &mut inside_braces);
         let FixedParts { parts } = fixed;
-        // inside_braces.extend(quote! {
-        //     // axum_live_view::__private::fixed(
-        //     //     &mut html,
-        //     //     &[#(#parts),*],
-        //     // );
-        // });
 
         out.extend(quote! {
             {
@@ -795,28 +789,27 @@ impl NodeToTokens for For {
 
         fixed.start_new_part();
 
-        {
-            let mut out = TokenStream::new();
-            let mut fixed = FixedParts::default();
-            tree.node_to_tokens(&mut fixed, &mut out);
-            eprintln!("{}", out);
-            dbg!(&fixed);
-        }
+        let mut inside = TokenStream::new();
 
-        todo!()
+        let mut fixed = FixedParts::default();
+        tree.node_to_tokens(&mut fixed, &mut inside);
+        let FixedParts { parts } = fixed;
 
-        // out.extend(quote! {
-        //     let mut __first = true;
-        //     for #pat in #expr {
-        //         axum_live_view::__private::string(&mut html, #tree);
-
-        //         // add some empty segments so the number of placeholders matches up
-        //         if !__first {
-        //             // axum_live_view::__private::fixed(&mut html, "");
-        //         }
-        //         __first = false;
-        //     }
-        // })
+        out.extend(quote! {
+            let mut __dynamic_loop_parts = Vec::new();
+            for #pat in #expr {
+                let __parts = {
+                    let mut __dynamic = std::vec::Vec::<axum_live_view::__private::DynamicFragment<_>>::new();
+                    #inside
+                    __dynamic
+                };
+                __dynamic_loop_parts.push_fragments(__parts);
+            }
+            __dynamic.push_fragment(axum_live_view::__private::HtmlBuilder {
+                dynamic: __dynamic_loop_parts,
+                fixed: &[#(#parts),*],
+            }.into_html());
+        });
     }
 }
 
