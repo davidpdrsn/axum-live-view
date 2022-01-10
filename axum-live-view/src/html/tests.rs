@@ -764,3 +764,23 @@ fn diffing_loop_conditional() {
         })
     );
 }
+
+#[test]
+fn diffing_message() {
+    fn render(msg: i32) -> Html<i32> {
+        html! { <button axm-click={ msg }></button> }
+    }
+
+    let a = render(1);
+    assert_json_diff::assert_json_eq!(a.diff(&a), json!(null));
+
+    let b = render(2);
+    assert_json_diff::assert_json_eq!(
+        a.diff(&b),
+        json!({
+            "d": {
+                "0": "2",
+            }
+        })
+    );
+}

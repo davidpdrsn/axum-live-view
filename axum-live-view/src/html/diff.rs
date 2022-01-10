@@ -109,8 +109,12 @@ impl<T> DynamicFragment<T> {
                     Some(DynamicFragmentDiff::String(other_value))
                 }
             }
-            (Self::Message { .. }, Self::Message { .. }) => {
-                todo!("diff message")
+            (Self::Message(from_self), Self::Message(from_other)) => {
+                if from_self == from_other {
+                    None
+                } else {
+                    Some(DynamicFragmentDiff::Message(from_other))
+                }
             }
             (Self::Html(self_value), Self::Html(other_value)) => self_value
                 .diff(other_value)
