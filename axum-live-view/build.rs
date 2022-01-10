@@ -2,7 +2,7 @@ use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 use std::{env, fs, path::Path};
 
-const N: usize = 2;
+const N: usize = 8;
 
 fn main() {
     let eithers = eithers();

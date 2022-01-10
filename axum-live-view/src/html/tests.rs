@@ -234,6 +234,34 @@ fn for_loop() {
 }
 
 #[test]
+fn for_loop_with_conditional() {
+    let ns = [1, 11, 2];
+    let view: Html<()> = html! {
+        <ul>
+            for n in ns {
+                <li>
+                if n >= 10 {
+                    <strong>"big number"</strong>
+                } else {
+                    { n }
+                }
+                </li>
+            }
+        </ul>
+    };
+    assert_eq!(
+        view.render(),
+        concat!(
+            "<ul>",
+            "<li>1</li>",
+            "<li><strong>big number</strong></li>",
+            "<li>2</li>",
+            "</ul>",
+        ),
+    );
+}
+
+#[test]
 fn match_() {
     let name = Some("bob");
     let view: Html<()> = html! {
@@ -553,10 +581,10 @@ fn diffing_loop_dynaming_changes() {
         json!({
             "d": {
                 "0": {
-                    "b": [
-                        { "0": "3" },
-                        { "0": "4" }
-                    ]
+                    "b": {
+                        "0": { "0": "3" },
+                        "1": { "0": "4" }
+                    }
                 }
             }
         })
@@ -569,10 +597,9 @@ fn diffing_loop_dynaming_changes() {
         json!({
             "d": {
                 "0": {
-                    "b": [
-                        { "0": "2" },
-                        {},
-                    ]
+                    "b": {
+                        "0": { "0": "2" },
+                    }
                 }
             }
         })
@@ -585,10 +612,9 @@ fn diffing_loop_dynaming_changes() {
         json!({
             "d": {
                 "0": {
-                    "b": [
-                        {},
-                        { "0": "2" },
-                    ]
+                    "b": {
+                        "1": { "0": "2" },
+                    }
                 }
             }
         })
@@ -644,11 +670,9 @@ fn diffing_loop_fixed_changes() {
                         "<li disabled>",
                         "</li>"
                     ],
-                    "b": [
-                        {},
-                        {},
-                        { "0": "3" }
-                    ]
+                    "b": {
+                        "2": { "0": "3" }
+                    }
                 }
             }
         })
@@ -665,11 +689,9 @@ fn diffing_loop_fixed_changes() {
                         "<li disabled>",
                         "</li>"
                     ],
-                    "b": [
-                        {},
-                        {},
-                        null
-                    ]
+                    "b": {
+                        "2": null
+                    }
                 }
             }
         })
@@ -704,4 +726,41 @@ fn diffing_removing_dynamic() {
     );
 }
 
-// TODO(david): loop with conditional and different fixed/dynamics
+#[test]
+fn diffing_loop_conditional() {
+    fn render(ns: &[i32]) -> Html<()> {
+        html! {
+            <ul>
+                for n in ns {
+                    <li>
+                        if *n >= 10 {
+                            <strong>"big number"</strong>
+                        } else {
+                            { n }
+                        }
+                    </li>
+                }
+            </ul>
+        }
+    }
+
+    let a = render(&[1, 2, 3]);
+    let b = render(&[1, 11, 3]);
+    assert_json_diff::assert_json_eq!(
+        pretty_print(a.diff(&b)),
+        json!({
+            "d": {
+                "0": {
+                    "b": {
+                        "1": {
+                            "0": {
+                                "f": ["<strong>big number</strong>"],
+                                "d": { "0": null }
+                            }
+                        },
+                    }
+                }
+            }
+        })
+    );
+}

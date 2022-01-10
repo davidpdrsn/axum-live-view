@@ -1,13 +1,28 @@
-use super::{DynamicFragment, Html};
+use super::{empty_slice, serialize_msg, DynamicFragment, Html, IndexMap};
 use serde::Serialize;
 use std::collections::BTreeMap;
 
-#[derive(Serialize, PartialEq)]
+#[derive(Serialize)]
 pub(crate) struct HtmlDiff<'a, T> {
-    #[serde(rename = "f", skip_serializing_if = "super::empty_slice")]
+    #[serde(rename = "f", skip_serializing_if = "empty_slice")]
     fixed: &'static [&'static str],
     #[serde(rename = "d", skip_serializing_if = "BTreeMap::is_empty")]
-    dynamic: BTreeMap<usize, Option<DynamicFragmentDiff<'a, T>>>,
+    dynamic: IndexMap<Option<DynamicFragmentDiff<'a, T>>>,
+}
+
+#[derive(Serialize)]
+#[serde(untagged)]
+pub(crate) enum DynamicFragmentDiff<'a, T> {
+    String(&'a str),
+    #[serde(serialize_with = "serialize_msg")]
+    Message(&'a T),
+    HtmlDiff(HtmlDiff<'a, T>),
+    DedupLoop {
+        #[serde(rename = "f", skip_serializing_if = "empty_slice")]
+        fixed: &'static [&'static str],
+        #[serde(rename = "b", skip_serializing_if = "BTreeMap::is_empty")]
+        dynamic: IndexMap<Option<IndexMap<DynamicFragmentDiff<'a, T>>>>,
+    },
 }
 
 impl<'a, T> From<&'a Html<T>> for HtmlDiff<'a, T> {
@@ -23,22 +38,6 @@ impl<'a, T> From<&'a Html<T>> for HtmlDiff<'a, T> {
     }
 }
 
-#[allow(dead_code)]
-#[derive(Serialize, PartialEq)]
-#[serde(untagged)]
-pub(crate) enum DynamicFragmentDiff<'a, T> {
-    String(&'a str),
-    #[serde(serialize_with = "super::serialize_dynamic_fragment_message")]
-    Message(&'a T),
-    HtmlDiff(HtmlDiff<'a, T>),
-    DedupLoop {
-        #[serde(rename = "f", skip_serializing_if = "super::empty_slice")]
-        fixed: &'static [&'static str],
-        #[serde(rename = "b", skip_serializing_if = "Vec::is_empty")]
-        dynamic: Vec<Option<BTreeMap<usize, DynamicFragmentDiff<'a, T>>>>,
-    },
-}
-
 impl<'a, T> From<&'a DynamicFragment<T>> for DynamicFragmentDiff<'a, T> {
     fn from(other: &'a DynamicFragment<T>) -> Self {
         match other {
@@ -49,11 +48,14 @@ impl<'a, T> From<&'a DynamicFragment<T>> for DynamicFragmentDiff<'a, T> {
                 fixed,
                 dynamic: dynamic
                     .iter()
-                    .map(|map| {
-                        Some(
-                            map.iter()
-                                .map(|(idx, dynamic)| (*idx, dynamic.into()))
-                                .collect(),
+                    .map(|(idx, map)| {
+                        (
+                            *idx,
+                            Some(
+                                map.iter()
+                                    .map(|(idx, dynamic)| (*idx, dynamic.into()))
+                                    .collect::<IndexMap<_>>(),
+                            ),
                         )
                     })
                     .collect(),
@@ -64,7 +66,7 @@ impl<'a, T> From<&'a DynamicFragment<T>> for DynamicFragmentDiff<'a, T> {
 
 impl<T> Html<T> {
     #[allow(warnings)]
-    pub(crate) fn diff<'a>(&'a self, other: &'a Self) -> Option<HtmlDiff<'a, T>>
+    pub(crate) fn diff<'a>(&self, other: &'a Self) -> Option<HtmlDiff<'a, T>>
     where
         T: PartialEq + Serialize,
     {
@@ -95,7 +97,7 @@ impl<T> Html<T> {
 
 impl<T> DynamicFragment<T> {
     #[allow(warnings)]
-    pub(crate) fn diff<'a>(&'a self, other: &'a Self) -> Option<DynamicFragmentDiff<'a, T>>
+    pub(crate) fn diff<'a>(&self, other: &'a Self) -> Option<DynamicFragmentDiff<'a, T>>
     where
         T: PartialEq + Serialize,
     {
@@ -130,12 +132,19 @@ impl<T> DynamicFragment<T> {
                 let fixed = diff_fixed(self_fixed, dynamic_fixed);
 
                 let dynamic = zip(self_dynamic.iter(), other_dynamic.iter())
-                    .map(|pair| match pair {
-                        Zipped::Left(_) => None,
-                        Zipped::Right(from_other) => {
-                            Some(from_other.iter().map(|(idx, c)| (*idx, c.into())).collect())
-                        }
-                        Zipped::Both(from_self, from_other) => {
+                    .filter_map(|pair| match pair {
+                        Zipped::Left((idx, _)) => Some((*idx, None)),
+                        Zipped::Right((idx, from_other)) => Some((
+                            *idx,
+                            Some(
+                                from_other
+                                    .iter()
+                                    .map(|(idx, c)| (*idx, c.into()))
+                                    .collect::<IndexMap<_>>(),
+                            ),
+                        )),
+                        Zipped::Both((from_idx, from_self), (other_idx, from_other)) => {
+                            debug_assert_eq!(from_idx, other_idx);
                             let map = zip(from_self.iter(), from_other.iter())
                                 .filter_map(|pair| match pair {
                                     Zipped::Left(_) => todo!("Zipped::Left inner"),
@@ -149,21 +158,24 @@ impl<T> DynamicFragment<T> {
                                     }
                                 })
                                 .collect::<BTreeMap<_, _>>();
-
-                            Some(map)
+                            if map.is_empty() {
+                                None
+                            } else {
+                                Some((*from_idx, Some(map)))
+                            }
                         }
                     })
-                    .collect::<Vec<_>>();
+                    .collect::<IndexMap<_>>();
 
                 if fixed.is_empty() && dynamic.is_empty() {
                     None
                 } else if dynamic
                     .iter()
-                    .all(|maybe_map| maybe_map.as_ref().filter(|map| map.is_empty()).is_some())
+                    .all(|(_, maybe_map)| maybe_map.as_ref().filter(|map| map.is_empty()).is_some())
                 {
                     Some(DynamicFragmentDiff::DedupLoop {
                         fixed,
-                        dynamic: Vec::new(),
+                        dynamic: Default::default(),
                     })
                 } else {
                     Some(DynamicFragmentDiff::DedupLoop { fixed, dynamic })

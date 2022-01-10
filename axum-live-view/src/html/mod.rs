@@ -10,6 +10,8 @@ mod render;
 #[cfg(test)]
 mod tests;
 
+type IndexMap<T> = BTreeMap<usize, T>;
+
 // TODO(david): remove this
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(transparent)]
@@ -20,21 +22,21 @@ pub struct Html<T> {
     #[serde(rename = "f", skip_serializing_if = "empty_slice")]
     fixed: &'static [&'static str],
     #[serde(rename = "d", skip_serializing_if = "BTreeMap::is_empty")]
-    dynamic: BTreeMap<usize, DynamicFragment<T>>,
+    dynamic: IndexMap<DynamicFragment<T>>,
 }
 
 #[derive(Clone, Serialize, PartialEq)]
 #[serde(untagged)]
 pub enum DynamicFragment<T> {
     String(String),
-    #[serde(serialize_with = "serialize_dynamic_fragment_message")]
+    #[serde(serialize_with = "serialize_msg")]
     Message(T),
     Html(Html<T>),
     DedupLoop {
         #[serde(skip_serializing_if = "empty_slice")]
         fixed: &'static [&'static str],
-        #[serde(skip_serializing_if = "Vec::is_empty")]
-        dynamic: Vec<BTreeMap<usize, DynamicFragment<T>>>,
+        #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+        dynamic: IndexMap<IndexMap<DynamicFragment<T>>>,
     },
 }
 
@@ -84,7 +86,7 @@ impl<T> From<Html<T>> for DynamicFragment<T> {
     }
 }
 
-fn serialize_dynamic_fragment_message<S, T>(msg: &T, serializer: S) -> Result<S::Ok, S::Error>
+fn serialize_msg<S, T>(msg: &T, serializer: S) -> Result<S::Ok, S::Error>
 where
     S: serde::Serializer,
     T: Serialize,

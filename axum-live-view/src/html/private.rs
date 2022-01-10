@@ -30,7 +30,8 @@ impl<T> DynamicFragmentVecExt<T> for Vec<DynamicFragment<T>> {
     ) {
         let dynamic = dynamic
             .into_iter()
-            .map(|inner| inner.into_iter().enumerate().collect())
+            .enumerate()
+            .map(|(idx, inner)| (idx, inner.into_iter().enumerate().collect()))
             .collect();
         self.push(DynamicFragment::DedupLoop { fixed, dynamic })
     }

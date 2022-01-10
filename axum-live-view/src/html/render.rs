@@ -1,8 +1,5 @@
-use std::collections::BTreeMap;
-
+use super::{DynamicFragment, Html, IndexMap};
 use serde::Serialize;
-
-use super::{DynamicFragment, Html};
 
 impl<T> Html<T> {
     pub(crate) fn render(&self) -> String
@@ -17,7 +14,7 @@ impl<T> Html<T> {
 
 fn render_to<T>(
     fixed: &'static [&'static str],
-    dynamic: &BTreeMap<usize, DynamicFragment<T>>,
+    dynamic: &IndexMap<DynamicFragment<T>>,
     out: &mut String,
 ) -> Result<(), ()>
 where
@@ -46,7 +43,7 @@ where
                     dynamic,
                 },
             )) => {
-                for d in dynamic {
+                for d in dynamic.values() {
                     let _ = render_to(loop_fixed, d, out);
                 }
             }
