@@ -83,7 +83,7 @@ impl<T> Html<T> {
                     }
                 }
                 Zipped::Left((other_idx, _)) => Some((*other_idx, None)),
-                Zipped::Right(from_self) => todo!(),
+                Zipped::Right((a, b)) => Some((*a, Some(b.into()))),
             })
             .collect::<BTreeMap<usize, Option<DynamicFragmentDiff<T>>>>();
 

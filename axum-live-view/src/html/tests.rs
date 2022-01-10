@@ -197,6 +197,54 @@ fn conditional_else_if() {
 }
 
 #[test]
+fn conditional_with_single_expr() {
+    // fn render(x: bool) -> Html<()> {
+    //     html! {
+    //         <div>
+    //             if x {
+    //                 <p>"some paragraph..."</p>
+    //             } else {
+    //                 <p>"wat"</p>
+    //             }
+    //         </div>
+    //     }
+    // }
+    todo!()
+}
+
+#[test]
+fn conditional_with_eq_eq() {
+    // fn render(x: i32) -> Html<()> {
+    //     html! {
+    //         <div>
+    //             if x == x {
+    //                 <p>"some paragraph..."</p>
+    //             } else {
+    //                 <p>"wat"</p>
+    //             }
+    //         </div>
+    //     }
+    // }
+    todo!()
+}
+
+#[test]
+fn conditional_with_not_eq() {
+    // fn render(x: i32) -> Html<()> {
+    //     html! {
+    //         <div>
+    //             if x != x {
+    //                 <p>"some paragraph..."</p>
+    //             } else {
+    //                 <p>"wat"</p>
+    //             }
+    //         </div>
+    //     }
+    // }
+    todo!()
+}
+
+#[test]
 fn if_let() {
     let name = Some("bob");
     let view: Html<()> = html! {
@@ -781,6 +829,48 @@ fn diffing_message() {
             "d": {
                 "0": "2",
             }
+        })
+    );
+}
+
+#[test]
+fn diffing_() {
+    #[allow(unused_parens)] // required due to a bug in parsing
+    fn render(n: i32, m: i32) -> Html<()> {
+        html! {
+            if (n == m) {
+                <div>{ n }</div>
+            } else {
+                "not same"
+            }
+        }
+    }
+
+    let a = pretty_print(render(1, 2));
+    let b = pretty_print(render(1, 1));
+    assert_json_diff::assert_json_eq!(
+        pretty_print(a.diff(&b)),
+        json!({
+            "d": {
+                "0": {
+                    "f": ["<div>", "</div>"],
+                    "d": { "0": "1" },
+                }
+            },
+        })
+    );
+
+    let a = pretty_print(render(1, 1));
+    let b = pretty_print(render(1, 2));
+    assert_json_diff::assert_json_eq!(
+        pretty_print(a.diff(&b)),
+        json!({
+            "d": {
+                "0": {
+                    "f": ["not same"],
+                    "d": { "0": null },
+                }
+            },
         })
     );
 }
