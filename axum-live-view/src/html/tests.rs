@@ -198,50 +198,15 @@ fn conditional_else_if() {
 
 #[test]
 fn conditional_with_single_expr() {
-    // fn render(x: bool) -> Html<()> {
-    //     html! {
-    //         <div>
-    //             if x {
-    //                 <p>"some paragraph..."</p>
-    //             } else {
-    //                 <p>"wat"</p>
-    //             }
-    //         </div>
-    //     }
-    // }
-    todo!()
-}
-
-#[test]
-fn conditional_with_eq_eq() {
-    // fn render(x: i32) -> Html<()> {
-    //     html! {
-    //         <div>
-    //             if x == x {
-    //                 <p>"some paragraph..."</p>
-    //             } else {
-    //                 <p>"wat"</p>
-    //             }
-    //         </div>
-    //     }
-    // }
-    todo!()
-}
-
-#[test]
-fn conditional_with_not_eq() {
-    // fn render(x: i32) -> Html<()> {
-    //     html! {
-    //         <div>
-    //             if x != x {
-    //                 <p>"some paragraph..."</p>
-    //             } else {
-    //                 <p>"wat"</p>
-    //             }
-    //         </div>
-    //     }
-    // }
-    todo!()
+    fn render(x: bool) -> Html<()> {
+        html! {
+            if x {
+                "a"
+            }
+        }
+    }
+    assert_eq!(render(true).render(), "a");
+    assert_eq!(render(false).render(), "");
 }
 
 #[test]
@@ -835,10 +800,9 @@ fn diffing_message() {
 
 #[test]
 fn diffing_() {
-    #[allow(unused_parens)] // required due to a bug in parsing
     fn render(n: i32, m: i32) -> Html<()> {
         html! {
-            if (n == m) {
+            if n == m {
                 <div>{ n }</div>
             } else {
                 "not same"
