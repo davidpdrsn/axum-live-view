@@ -84,9 +84,7 @@ function onMessage(
   } else if (msg.t === "r") {
     if (!state.viewState) { return }
     if (!msg.d) { return }
-    // console.log("before", state.viewState)
     patchTemplate(state.viewState, msg.d)
-    // console.log("after", state.viewState)
     updateDomFromState(socket, state)
 
   } else if (msg.t === "j") {

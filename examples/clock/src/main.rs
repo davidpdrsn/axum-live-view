@@ -1,27 +1,16 @@
-use axum::{
-    async_trait,
-    http::StatusCode,
-    response::IntoResponse,
-    routing::{get, get_service},
-    Router,
-};
+use axum::{async_trait, response::IntoResponse, routing::get, Router};
 use axum_live_view::{
     event_data::EventData, html, live_view::Updated, Html, LiveView, LiveViewUpgrade,
 };
-use std::{convert::Infallible, env, net::SocketAddr, path::PathBuf};
-use tower_http::services::ServeFile;
+use std::{convert::Infallible, net::SocketAddr};
 
 #[tokio::main]
 async fn main() {
     tracing_subscriber::fmt::init();
 
-    let app = Router::new().route("/", get(root)).route(
-        "/bundle.js",
-        get_service(ServeFile::new(
-            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("dist/bundle.js"),
-        ))
-        .handle_error(|_| async { StatusCode::INTERNAL_SERVER_ERROR }),
-    );
+    let app = Router::new()
+        .route("/", get(root))
+        .merge(axum_live_view::precompiled_js_route("/bundle.js"));
 
     let addr = SocketAddr::from(([0, 0, 0, 0], 3000));
     axum::Server::bind(&addr)
