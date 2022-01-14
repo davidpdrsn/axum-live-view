@@ -56,6 +56,10 @@ mod util;
 pub use self::{extract::LiveViewUpgrade, html::Html, live_view::LiveView};
 pub use axum_live_view_macros::html;
 
+#[cfg(feature = "precompiled-js")]
+#[cfg_attr(docsrs, doc(cfg(feature = "precompiled-js")))]
+pub const PRECOMPILED_JS: &str = include_str!("../../assets/axum_live_view.min.js");
+
 #[doc(hidden)]
 pub mod __private {
     //! Private API. Do _not_ use anything from this module!
