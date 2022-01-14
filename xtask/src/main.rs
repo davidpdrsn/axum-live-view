@@ -28,6 +28,7 @@ fn main() -> Result {
     match opt {
         Opt::Ts(Ts::Build(opt)) => ts_build(opt)?,
         Opt::Ts(Ts::Install(opt)) => ts_install(opt)?,
+        Opt::Ts(Ts::Precompile(opt)) => ts_precompile(opt)?,
         Opt::Examples(Examples::Build(opt)) => examples_build(opt)?,
         Opt::Examples(Examples::Run(opt)) => examples_run(opt)?,
         Opt::Codegen => codegen()?,
@@ -48,6 +49,7 @@ enum Opt {
 enum Ts {
     Build(TsBuild),
     Install(TsInstall),
+    Precompile(TsPrecompile),
 }
 
 /// Build the typescript assets
@@ -107,6 +109,38 @@ fn ts_install(opt: TsInstall) -> Result {
     cmd.arg("install");
 
     run_cmd(cmd)?;
+
+    Ok(())
+}
+
+/// Precompile JavaScript
+#[derive(Debug, StructOpt)]
+struct TsPrecompile {
+    #[structopt(long)]
+    check: bool,
+}
+
+fn ts_precompile(opt: TsPrecompile) -> Result {
+    let TsPrecompile { check } = opt;
+
+    examples_build(ExamplesBuild {
+        skip_ts: false,
+        skip_deps: false,
+        which: Some("counter".to_owned()),
+    })?;
+
+    let code = fs::read_to_string(project_root().join("examples/counter/dist/bundle.js"))?;
+
+    let path = project_root().join("assets/axum_live_view.min.js");
+
+    if check {
+        let current = fs::read_to_string(path)?;
+        if current != code {
+            Err("Code on disk doesn't match")?;
+        }
+    } else {
+        fs::write(path, code)?;
+    }
 
     Ok(())
 }

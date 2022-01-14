@@ -10,6 +10,10 @@ license = "MIT"
 readme = "README.md"
 repository = "https://github.com/davidpdrsn/axum-live-view"
 
+[features]
+default = []
+precompiled-js = []
+
 [dependencies]
 anyhow = "1.0"
 async-stream = "0.3"
