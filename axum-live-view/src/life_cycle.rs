@@ -7,9 +7,12 @@ use futures_util::{
     TryStream, TryStreamExt,
 };
 use http::{HeaderMap, Uri};
-use serde::{Deserialize, Serialize};
+use serde::{
+    de::{self, DeserializeOwned},
+    Deserialize, Serialize,
+};
 use serde_json::Value;
-use std::fmt;
+use std::{fmt, marker::PhantomData};
 use tokio::sync::{mpsc, oneshot};
 use tokio_stream::wrappers::ReceiverStream;
 
@@ -385,11 +388,46 @@ where
 }
 
 #[derive(Debug, Deserialize, PartialEq)]
-pub(crate) struct MessageFromSocket<M> {
-    #[serde(rename = "m")]
+pub(crate) struct MessageFromSocket<M>
+where
+    M: DeserializeOwned,
+{
+    #[serde(rename = "m", deserialize_with = "deserialize_msg")]
     msg: M,
     #[serde(flatten)]
     data: MessageFromSocketData,
+}
+
+fn deserialize_msg<'de, D, M>(d: D) -> Result<M, D::Error>
+where
+    D: de::Deserializer<'de>,
+    M: DeserializeOwned,
+{
+    struct MsgVisitor<M>(PhantomData<M>);
+
+    impl<'de, M> de::Visitor<'de> for MsgVisitor<M>
+    where
+        M: DeserializeOwned,
+    {
+        type Value = M;
+
+        fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+            formatter.write_str("a percent encoded JSON string")
+        }
+
+        fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            let s = percent_encoding::percent_decode_str(v)
+                .decode_utf8()
+                .map_err(E::custom)?;
+            let msg = serde_json::from_str::<M>(&s).map_err(E::custom)?;
+            Ok(msg)
+        }
+    }
+
+    d.deserialize_str(MsgVisitor(PhantomData))
 }
 
 #[derive(Debug, Deserialize, PartialEq)]
@@ -499,9 +537,10 @@ mod tests {
 
     #[test]
     fn deserialize_message_from_socket_mount() {
-        let msg =
-            serde_json::from_value::<MessageFromSocket<Msg>>(json!({ "m": "Incr", "t": "click" }))
-                .unwrap();
+        let msg = serde_json::from_value::<MessageFromSocket<Msg>>(
+            json!({ "m": "%22Incr%22", "t": "click" }),
+        )
+        .unwrap();
         assert_eq!(
             msg,
             MessageFromSocket {
@@ -511,7 +550,7 @@ mod tests {
         );
 
         let msg = serde_json::from_value::<MessageFromSocket<Msg>>(
-            json!({ "m": "Incr", "t": "form", "d": { "q": "name=bob&age=20" } }),
+            json!({ "m": "%22Incr%22", "t": "form", "d": { "q": "name=bob&age=20" } }),
         )
         .unwrap();
         assert_eq!(

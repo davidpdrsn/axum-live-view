@@ -34,7 +34,11 @@ where
             }
             Some((_, DynamicFragment::Message(msg))) => {
                 let encoded_msg = serde_json::to_string(msg).unwrap();
-                out.push_str(&encoded_msg);
+                for el in
+                    percent_encoding::utf8_percent_encode(&encoded_msg, super::ENCODE_FRAGMENT)
+                {
+                    out.push_str(el);
+                }
             }
             Some((
                 _,

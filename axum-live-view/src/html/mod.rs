@@ -86,6 +86,10 @@ where
     T: Serialize,
 {
     let encoded = serde_json::to_string(msg).unwrap();
+    let encoded = std::borrow::Cow::from(percent_encoding::utf8_percent_encode(
+        &encoded,
+        ENCODE_FRAGMENT,
+    ));
     serializer.serialize_str(&encoded)
 }
 
@@ -152,3 +156,10 @@ where
         axum::response::Html(self.render()).into_response()
     }
 }
+
+const ENCODE_FRAGMENT: &percent_encoding::AsciiSet = &percent_encoding::CONTROLS
+    .add(b' ')
+    .add(b'"')
+    .add(b'<')
+    .add(b'>')
+    .add(b'`');
