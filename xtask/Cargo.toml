@@ -7,4 +7,6 @@ publish = false
 [dependencies]
 # be _very_ careful about adding dependencies here. Wanna keep xtasks compiling
 # quickly
+proc-macro2 = "1.0"
+quote = "1.0"
 structopt = "0.3"
