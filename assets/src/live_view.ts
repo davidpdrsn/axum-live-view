@@ -3,15 +3,7 @@ import morphdom from "morphdom"
 export interface LiveViewOptions {}
 
 interface State {
-  viewState?: ViewState;
-}
-
-interface ViewState {
-  [index: string]: string | string[] | ViewState;
-}
-
-interface ViewStateDiff {
-  [index: string]: string | string[] | null | ViewStateDiff;
+  viewState?: Template;
 }
 
 export function connectAndRun(options: LiveViewOptions) {
@@ -20,24 +12,56 @@ export function connectAndRun(options: LiveViewOptions) {
   var state: State = {}
 
   socket.addEventListener("message", (event) => {
-    onMessage(socket, event, state, options)
+    onMessage(socket, event, state)
   })
 
-  socket.addEventListener("close", (event) => {
-    onClose(socket, state, options)
+  socket.addEventListener("close", () => {
+    onClose(options)
   })
 }
 
 type MessageFromView = InitialRender | Render | JsCommands
 
+interface Template {
+  f: string[],
+  d: {
+    [index: string]: TemplateDynamic
+  },
+}
+
+type TemplateDynamic = string | Template | TemplateLoop
+
+interface TemplateLoop {
+  f: string[],
+  b: {
+    [index: string]: { [index: string]: TemplateDynamic }
+  }
+}
+
+interface TemplateDiff {
+  f?: string[],
+  d?: {
+    [index: string]: TemplateDiffDynamic | null
+  }
+}
+
+type TemplateDiffDynamic = string | TemplateDiff | TemplateDiffLoop
+
+interface TemplateDiffLoop {
+  f: string[],
+  b: {
+    [index: string]: { [index: string]: TemplateDiffDynamic  } | null
+  }
+}
+
 type InitialRender = {
   t: "i",
-  d: ViewState,
+  d: Template,
 }
 
 type Render = {
   t: "r",
-  d: ViewStateDiff,
+  d: TemplateDiff | null,
 }
 
 type JsCommands = {
@@ -49,7 +73,6 @@ function onMessage(
   socket: WebSocket,
   event: MessageEvent,
   state: State,
-  options: LiveViewOptions,
 ) {
   const msg: MessageFromView = JSON.parse(event.data)
 
@@ -60,7 +83,10 @@ function onMessage(
 
   } else if (msg.t === "r") {
     if (!state.viewState) { return }
-    patchViewState(state.viewState, msg.d)
+    if (!msg.d) { return }
+    // console.log("before", state.viewState)
+    patchTemplate(state.viewState, msg.d)
+    // console.log("after", state.viewState)
     updateDomFromState(socket, state)
 
   } else if (msg.t === "j") {
@@ -73,7 +99,7 @@ function onMessage(
   }
 }
 
-function onClose(socket: WebSocket, state: State, options: LiveViewOptions) {
+function onClose(options: LiveViewOptions) {
   setTimeout(() => {
     connectAndRun(options)
   }, 500)
@@ -267,19 +293,19 @@ function addEventListeners(socket: WebSocket, element: Element) {
   });
 
   if (element.hasAttribute(axm.window_focus)) {
-    on(window, "focus", axm.window_focus, (msg, event) => {
+    on(window, "focus", axm.window_focus, (msg) => {
       return { t: "window_focus", m: msg }
     })
   }
 
   if (element.hasAttribute(axm.window_blur)) {
-    on(window, "blur", axm.window_blur, (msg, event) => {
+    on(window, "blur", axm.window_blur, (msg) => {
       return { t: "window_blur", m: msg }
     })
   }
 
   if (element.hasAttribute(axm.scroll)) {
-    on(document, "scroll", axm.scroll, (msg, event) => {
+    on(document, "scroll", axm.scroll, (msg) => {
       const data = {
         sx: window.scrollX,
         sy: window.scrollY,
@@ -449,30 +475,35 @@ function updateDomFromState(socket: WebSocket, state: State) {
   if (!container) { return }
   patchDom(socket, container, html)
 
-  function buildHtml(state: ViewState): string {
+  function buildHtml(template: Template): string {
       var combined = ""
+      const fixed = template.f
 
-      const f = state[fixed]
-      if (!Array.isArray(f)) {
-        throw "fixed is not an array"
-      }
-
-      f.forEach((value, i) => {
+      fixed.forEach((value, i) => {
         combined = combined.concat(value)
-        const variable = state[i]
+        const templateDyn = template.d[i]
 
-        if (variable === undefined || variable === null) {
+        if (templateDyn === undefined || templateDyn === null) {
           return
         }
 
-        if (typeof variable === "string") {
-          combined = combined.concat(variable)
+        if (typeof templateDyn === "string") {
+          combined = combined.concat(templateDyn)
 
-        } else if (Array.isArray(variable)) {
-          throw "wat"
+        } else if ("d" in templateDyn) {
+          combined = combined.concat(buildHtml(templateDyn))
+
+        } else if ("b" in templateDyn) {
+          const fixed = templateDyn.f
+
+          // TODO: make sure we loop over the entries in order here
+          Object.values(templateDyn.b).forEach((value) => {
+            const nestedTemplate = { f: fixed, d: value }
+            combined = combined.concat(buildHtml(nestedTemplate))
+          })
 
         } else {
-          combined = combined.concat(buildHtml(variable))
+          const _: never = templateDyn
         }
       })
 
@@ -480,72 +511,122 @@ function updateDomFromState(socket: WebSocket, state: State) {
   }
 
   function patchDom(socket: WebSocket, element: Element, html: string) {
-      morphdom(element, html, {
-          onNodeAdded: (node) => {
-            if (node instanceof Element) {
-              addEventListeners(socket, node)
-            }
-            return node
-          },
-          onBeforeElUpdated: (fromEl, toEl) => {
-            const tag = toEl.tagName
-
-            if (fromEl instanceof HTMLInputElement && toEl instanceof HTMLInputElement) {
-              if (toEl.getAttribute("type") === "radio" || toEl.getAttribute("type") === "checkbox") {
-                toEl.checked = fromEl.checked;
-              } else {
-                toEl.value = fromEl.value;
-              }
-            }
-
-            if (fromEl instanceof HTMLTextAreaElement && toEl instanceof HTMLTextAreaElement) {
+    morphdom(element, html, {
+        onNodeAdded: (node) => {
+          if (node instanceof Element) {
+            addEventListeners(socket, node)
+          }
+          return node
+        },
+        onBeforeElUpdated: (fromEl, toEl) => {
+          if (fromEl instanceof HTMLInputElement && toEl instanceof HTMLInputElement) {
+            if (toEl.getAttribute("type") === "radio" || toEl.getAttribute("type") === "checkbox") {
+              toEl.checked = fromEl.checked;
+            } else {
               toEl.value = fromEl.value;
             }
+          }
 
-            if (fromEl instanceof HTMLOptionElement && toEl instanceof HTMLOptionElement) {
-              if (toEl.closest("select")?.hasAttribute("multiple")) {
-                toEl.selected = fromEl.selected
-              }
+          if (fromEl instanceof HTMLTextAreaElement && toEl instanceof HTMLTextAreaElement) {
+            toEl.value = fromEl.value;
+          }
+
+          if (fromEl instanceof HTMLOptionElement && toEl instanceof HTMLOptionElement) {
+            if (toEl.closest("select")?.hasAttribute("multiple")) {
+              toEl.selected = fromEl.selected
             }
+          }
 
-            if (fromEl instanceof HTMLSelectElement && toEl instanceof HTMLSelectElement && !toEl.hasAttribute("multiple")) {
-              toEl.value = fromEl.value
-            }
+          if (fromEl instanceof HTMLSelectElement && toEl instanceof HTMLSelectElement && !toEl.hasAttribute("multiple")) {
+            toEl.value = fromEl.value
+          }
 
-            return true
-          },
-      })
+          return true
+        },
+    })
   }
 }
 
-const fixed = "f";
+function patchTemplate(template: Template, diff: TemplateDiff) {
+  if (diff.f) {
+    template.f = diff.f
+  }
 
-function patchViewState(state: ViewState, diff: ViewStateDiff) {
-  for (const [key, val] of Object.entries(diff)) {
-    if (typeof val === "string" || Array.isArray(val)) {
-      state[key] = val
+  if (diff.d && diff.d !== null) {
+    patchTemplateDiff(template.d, diff.d)
+  }
 
-    } else if (val === null) {
-      delete state[key]
+  function patchTemplateDiff(template: { [index: string]: TemplateDynamic }, diff: { [index: string]: TemplateDiffDynamic | null; }) {
+    for (const [key, diffVal] of Object.entries(diff)) {
+      if (typeof diffVal === "string") {
+        template[key] = diffVal
 
-    } else if (typeof val === "object") {
-      const nestedState = state[key]
+      } else if (diffVal === null) {
+        delete template[key]
 
-      if (typeof nestedState === "object" && !Array.isArray(nestedState)) {
-        patchViewState(nestedState, val)
+      } else if (typeof diffVal === "object") {
+        const current = template[key]
+        if (current === undefined) { continue }
 
-      } else if (typeof nestedState === "string" || nestedState === undefined) {
-        state[key] = <ViewState>val
+        if ("d" in diffVal) {
+          if (typeof current === "string") {
+            template[key] = <TemplateDynamic>diffVal
 
-      } else if (Array.isArray(nestedState)) {
-        throw "can this be an array?"
+          } else if ("d" in current) {
+            patchTemplate(current, diffVal)
+
+          } else if ("b" in current) {
+            console.error("not implemented: b in current")
+
+          } else {
+            const _: never = current
+          }
+
+        } else if ("b" in diffVal) {
+          if (typeof current === "string") {
+            template[key] = <TemplateLoop>diffVal
+
+          } else {
+            if (!("b" in current)) {
+              template[key] = {
+                f: current.f,
+                b: <{ [index: string]: { [index: string]: TemplateDynamic } }>diffVal.b
+              }
+            } else {
+              patchTemplateLoop(current, diffVal)
+            }
+          }
+
+        } else {
+          console.error("unexpected diff value", diffVal)
+        }
 
       } else {
-        const _: never = nestedState
+        const _: never = diffVal
       }
+    }
+  }
 
-    } else {
-      const _: never = val
+  function patchTemplateLoop(template: TemplateLoop, diff: TemplateDiffLoop) {
+    if (diff.f) {
+      template.f = diff.f
+    }
+
+    if (diff.b) {
+      for (const [key, diffVal] of Object.entries(diff.b)) {
+        if (diffVal === null) {
+          delete template.b[key]
+
+        } else {
+          const current = template.b[key]
+
+          if (current === undefined || typeof current === "string") {
+            template.b[key] = <{ [index: string]: TemplateDynamic; }>diffVal
+          } else {
+            patchTemplateDiff(current, diffVal)
+          }
+        }
+      }
     }
   }
 }

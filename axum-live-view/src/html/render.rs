@@ -38,7 +38,7 @@ where
             }
             Some((
                 _,
-                DynamicFragment::DedupLoop {
+                DynamicFragment::Loop {
                     fixed: loop_fixed,
                     dynamic,
                 },

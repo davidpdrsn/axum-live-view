@@ -12,14 +12,9 @@ mod tests;
 
 type IndexMap<T> = BTreeMap<usize, T>;
 
-// TODO(david): remove this
-#[derive(Serialize, Deserialize, Debug)]
-#[serde(transparent)]
-pub(crate) struct Serialized(Value);
-
 #[derive(Clone, Serialize, PartialEq)]
 pub struct Html<T> {
-    #[serde(rename = "f", skip_serializing_if = "empty_slice")]
+    #[serde(rename = "f")]
     fixed: &'static [&'static str],
     #[serde(rename = "d", skip_serializing_if = "BTreeMap::is_empty")]
     dynamic: IndexMap<DynamicFragment<T>>,
@@ -32,10 +27,10 @@ pub enum DynamicFragment<T> {
     #[serde(serialize_with = "serialize_msg")]
     Message(T),
     Html(Html<T>),
-    DedupLoop {
-        #[serde(skip_serializing_if = "empty_slice")]
+    Loop {
+        #[serde(rename = "f")]
         fixed: &'static [&'static str],
-        #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+        #[serde(rename = "b", skip_serializing_if = "BTreeMap::is_empty")]
         dynamic: IndexMap<IndexMap<DynamicFragment<T>>>,
     },
 }
@@ -60,8 +55,8 @@ impl<T> std::fmt::Debug for DynamicFragment<T> {
             Self::String(inner) => f.debug_tuple("String").field(inner).finish(),
             Self::Message(_) => f.debug_tuple("Message").finish(),
             Self::Html(inner) => f.debug_tuple("Html").field(inner).finish(),
-            Self::DedupLoop { fixed, dynamic } => f
-                .debug_struct("DedupLoop")
+            Self::Loop { fixed, dynamic } => f
+                .debug_struct("Loop")
                 .field("fixed", &fixed)
                 .field("dynamic", &dynamic)
                 .finish(),
@@ -104,7 +99,7 @@ impl<T> DynamicFragment<T> {
             DynamicFragment::String(s) => DynamicFragment::String(s),
             DynamicFragment::Message(msg) => DynamicFragment::Message(f(msg)),
             DynamicFragment::Html(inner) => DynamicFragment::Html(inner.map_with_mut(f)),
-            DynamicFragment::DedupLoop { .. } => todo!("DynamicFragment::map_with_mut"),
+            DynamicFragment::Loop { .. } => todo!("DynamicFragment::map_with_mut"),
         }
     }
 }

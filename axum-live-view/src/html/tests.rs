@@ -799,7 +799,7 @@ fn diffing_message() {
 }
 
 #[test]
-fn diffing_() {
+fn diffing_dynamic_or_fixed() {
     fn render(n: i32, m: i32) -> Html<()> {
         html! {
             if n == m {

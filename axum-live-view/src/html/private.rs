@@ -33,7 +33,7 @@ impl<T> DynamicFragmentVecExt<T> for Vec<DynamicFragment<T>> {
             .enumerate()
             .map(|(idx, inner)| (idx, inner.into_iter().enumerate().collect()))
             .collect();
-        self.push(DynamicFragment::DedupLoop { fixed, dynamic })
+        self.push(DynamicFragment::Loop { fixed, dynamic })
     }
 
     #[inline]

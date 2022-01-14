@@ -17,7 +17,7 @@ pub(crate) enum DynamicFragmentDiff<'a, T> {
     #[serde(serialize_with = "serialize_msg")]
     Message(&'a T),
     HtmlDiff(HtmlDiff<'a, T>),
-    DedupLoop {
+    Loop {
         #[serde(rename = "f", skip_serializing_if = "empty_slice")]
         fixed: &'static [&'static str],
         #[serde(rename = "b", skip_serializing_if = "BTreeMap::is_empty")]
@@ -44,7 +44,7 @@ impl<'a, T> From<&'a DynamicFragment<T>> for DynamicFragmentDiff<'a, T> {
             DynamicFragment::String(s) => Self::String(s),
             DynamicFragment::Message(msg) => Self::Message(msg),
             DynamicFragment::Html(html) => Self::HtmlDiff(html.into()),
-            DynamicFragment::DedupLoop { fixed, dynamic } => Self::DedupLoop {
+            DynamicFragment::Loop { fixed, dynamic } => Self::Loop {
                 fixed,
                 dynamic: dynamic
                     .iter()
@@ -120,11 +120,11 @@ impl<T> DynamicFragment<T> {
                 .diff(other_value)
                 .map(DynamicFragmentDiff::HtmlDiff),
             (
-                Self::DedupLoop {
+                Self::Loop {
                     fixed: self_fixed,
                     dynamic: self_dynamic,
                 },
-                Self::DedupLoop {
+                Self::Loop {
                     fixed: dynamic_fixed,
                     dynamic: other_dynamic,
                 },
@@ -151,8 +151,12 @@ impl<T> DynamicFragment<T> {
                             debug_assert_eq!(from_idx, other_idx);
                             let map = zip(from_self.iter(), from_other.iter())
                                 .filter_map(|pair| match pair {
-                                    Zipped::Left(_) => todo!("Zipped::Left inner"),
-                                    Zipped::Right(_) => todo!("Zipped::Right inner"),
+                                    Zipped::Left(_) => {
+                                        unreachable!("unable to find a way to hit this yolo")
+                                    }
+                                    Zipped::Right(_) => {
+                                        unreachable!("unable to find a way to hit this yolo")
+                                    }
                                     Zipped::Both(
                                         (self_idx, self_value),
                                         (other_idx, other_value),
@@ -177,12 +181,12 @@ impl<T> DynamicFragment<T> {
                     .iter()
                     .all(|(_, maybe_map)| maybe_map.as_ref().filter(|map| map.is_empty()).is_some())
                 {
-                    Some(DynamicFragmentDiff::DedupLoop {
+                    Some(DynamicFragmentDiff::Loop {
                         fixed,
                         dynamic: Default::default(),
                     })
                 } else {
-                    Some(DynamicFragmentDiff::DedupLoop { fixed, dynamic })
+                    Some(DynamicFragmentDiff::Loop { fixed, dynamic })
                 }
             }
             (_, other) => Some(other.into()),
