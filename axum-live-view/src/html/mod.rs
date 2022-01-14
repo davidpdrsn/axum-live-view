@@ -1,6 +1,5 @@
 use axum::response::IntoResponse;
-use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde::Serialize;
 use std::{collections::BTreeMap, fmt};
 
 mod diff;
@@ -99,7 +98,20 @@ impl<T> DynamicFragment<T> {
             DynamicFragment::String(s) => DynamicFragment::String(s),
             DynamicFragment::Message(msg) => DynamicFragment::Message(f(msg)),
             DynamicFragment::Html(inner) => DynamicFragment::Html(inner.map_with_mut(f)),
-            DynamicFragment::Loop { .. } => todo!("DynamicFragment::map_with_mut"),
+            DynamicFragment::Loop { fixed, dynamic } => DynamicFragment::Loop {
+                fixed,
+                dynamic: dynamic
+                    .into_iter()
+                    .map(move |(idx, map)| {
+                        (
+                            idx,
+                            map.into_iter()
+                                .map(|(idx, value)| (idx, value.map_with_mut(f)))
+                                .collect(),
+                        )
+                    })
+                    .collect(),
+            },
         }
     }
 }
