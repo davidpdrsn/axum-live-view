@@ -537,9 +537,10 @@ mod tests {
 
     #[test]
     fn deserialize_message_from_socket_mount() {
-        let msg =
-            serde_json::from_value::<MessageFromSocket<Msg>>(json!({ "m": "Incr", "t": "click" }))
-                .unwrap();
+        let msg = serde_json::from_value::<MessageFromSocket<Msg>>(
+            json!({ "m": "%22Incr%22", "t": "click" }),
+        )
+        .unwrap();
         assert_eq!(
             msg,
             MessageFromSocket {
@@ -549,7 +550,7 @@ mod tests {
         );
 
         let msg = serde_json::from_value::<MessageFromSocket<Msg>>(
-            json!({ "m": "Incr", "t": "form", "d": { "q": "name=bob&age=20" } }),
+            json!({ "m": "%22Incr%22", "t": "form", "d": { "q": "name=bob&age=20" } }),
         )
         .unwrap();
         assert_eq!(
