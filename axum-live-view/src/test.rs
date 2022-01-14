@@ -21,7 +21,10 @@ where
     }
 }
 
-pub struct TestViewHandleBuilder<M, E> {
+pub struct TestViewHandleBuilder<M, E>
+where
+    M: 'static,
+{
     handle: ViewTaskHandle<M, E>,
     uri: Option<Uri>,
     headers: Option<HeaderMap>,
@@ -61,7 +64,10 @@ impl<M, E> TestViewHandleBuilder<M, E> {
     }
 }
 
-pub struct TestViewHandle<M, E> {
+pub struct TestViewHandle<M, E>
+where
+    M: 'static,
+{
     handle: ViewTaskHandle<M, E>,
 }
 
@@ -172,10 +178,9 @@ mod tests {
         }
 
         fn render(&self) -> Html<Self::Message> {
-            todo!()
-            // html! {
-            //     { self.count }
-            // }
+            html! {
+                { self.count }
+            }
         }
     }
 

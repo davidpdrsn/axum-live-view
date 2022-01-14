@@ -1,9 +1,5 @@
 use crate::{
-    event_data::EventData,
-    html::{self, Html},
-    js_command::JsCommand,
-    live_view::ViewHandle,
-    LiveView,
+    event_data::EventData, html::Html, js_command::JsCommand, live_view::ViewHandle, LiveView,
 };
 use futures_util::{
     sink::{Sink, SinkExt},
@@ -12,6 +8,7 @@ use futures_util::{
 };
 use http::{HeaderMap, Uri};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::fmt;
 use tokio::sync::{mpsc, oneshot};
 use tokio_stream::wrappers::ReceiverStream;
@@ -164,7 +161,8 @@ where
                     }
                 },
                 ViewRequest::Render { reply_tx } => {
-                    let _ = reply_tx.send(markup.serialize());
+                    let _ = reply_tx
+                        .send(serde_json::to_value(&markup).expect("failed to serialize HTML"));
                 }
                 ViewRequest::RenderToString { reply_tx } => {
                     let _ = reply_tx.send(markup.render());
@@ -185,7 +183,9 @@ where
                     view = new_view;
 
                     let new_markup = wrap_in_live_view_container(view.render());
-                    let diff = markup.diff(&new_markup);
+                    let diff = markup.diff(&new_markup).map(|diff| {
+                        serde_json::to_value(&diff).expect("failed to serialize HTML diff")
+                    });
                     markup = new_markup;
 
                     let response = match (diff, js_commands.is_empty()) {
@@ -244,7 +244,7 @@ impl<M, E> ViewTaskHandle<M, E> {
         }
     }
 
-    pub(crate) async fn render(&self) -> Result<html::Serialized, ChannelClosed> {
+    pub(crate) async fn render(&self) -> Result<Value, ChannelClosed> {
         let (reply_tx, reply_rx) = oneshot::channel();
 
         let request = ViewRequest::Render { reply_tx };
@@ -298,7 +298,7 @@ enum ViewRequest<M, E> {
         reply_tx: oneshot::Sender<Result<(), E>>,
     },
     Render {
-        reply_tx: oneshot::Sender<html::Serialized>,
+        reply_tx: oneshot::Sender<Value>,
     },
     RenderToString {
         reply_tx: oneshot::Sender<String>,
@@ -352,25 +352,25 @@ impl fmt::Display for ChannelClosed {
 impl std::error::Error for ChannelClosed {}
 
 pub(crate) enum UpdateResponse {
-    Diff(html::Diff),
+    Diff(Value),
     JsCommands(Vec<JsCommand>),
-    DiffAndJsCommands(html::Diff, Vec<JsCommand>),
+    DiffAndJsCommands(Value, Vec<JsCommand>),
     Empty,
 }
 
-#[derive(Serialize, Debug)]
+#[derive(Serialize)]
 pub(crate) struct MessageToSocket {
     #[serde(flatten)]
     data: MessageToSocketData,
 }
 
-#[derive(Serialize, Debug)]
+#[derive(Serialize)]
 #[serde(tag = "t", content = "d")]
 enum MessageToSocketData {
     #[serde(rename = "i")]
-    InitialRender(html::Serialized),
+    InitialRender(Value),
     #[serde(rename = "r")]
-    Render(html::Diff),
+    Render(Value),
     #[serde(rename = "j")]
     JsCommands(Vec<JsCommand>),
 }
@@ -380,7 +380,7 @@ where
     W: Sink<MessageToSocket> + Unpin,
 {
     let msg = MessageToSocket { data };
-    tracing::trace!(?msg, "sending message to socket");
+    // tracing::trace!(?msg, "sending message to socket");
     write.send(msg).await
 }
 
@@ -461,58 +461,19 @@ pub(crate) enum InputValue {
 }
 
 fn wrap_in_live_view_container<T>(markup: Html<T>) -> Html<T> {
-    todo!()
-    // use crate as axum_live_view;
-    // axum_live_view_macros::html! {
-    //     <div id="live-view-container">{ markup }</div>
-    // }
+    crate::html::private::HtmlBuilder {
+        dynamic: Vec::from([crate::html::DynamicFragment::Html(markup)]),
+        fixed: &["<div id=\"live-view-container\">", "</div>"],
+    }
+    .into_html()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate as axum_live_view;
-    use crate::html::Html;
-    use axum_live_view_macros::html;
     use serde::{Deserialize, Serialize};
     use serde_json::json;
     use std::time::Duration;
-
-    #[test]
-    fn serialize_message_to_socket() {
-        fn make_html(value: &'static str) -> Html<()> {
-            todo!()
-            // html! { <div>{ value }</div> }
-        }
-
-        let html = make_html("foo");
-        let msg = json!(MessageToSocketData::InitialRender(html.serialize()));
-
-        assert_eq!(
-            msg,
-            json!({
-                "t": "i",
-                "d": {
-                    "0": "foo",
-                    "f": ["<div>", "</div>"]
-                }
-            })
-        );
-
-        let new_html = make_html("bar");
-        let diff = html.diff(&new_html).unwrap();
-        let msg = json!(MessageToSocketData::Render(diff));
-
-        assert_eq!(
-            msg,
-            json!({
-                "t": "r",
-                "d": {
-                    "0": "bar",
-                }
-            })
-        );
-    }
 
     #[test]
     fn serialize_js_commands() {
