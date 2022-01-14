@@ -17,14 +17,21 @@ This is what using axum-live-view looks like.
 
 ```rust
 use axum::{async_trait, response::IntoResponse, routing::get, Router};
-use axum_live_view::{html, EventData, Html, LiveView, LiveViewUpgrade, Updated};
+use axum_live_view::{
+    event_data::EventData, html, live_view::Updated, Html, LiveView, LiveViewUpgrade,
+};
 use serde::{Deserialize, Serialize};
 use std::convert::Infallible;
 
 #[tokio::main]
 async fn main() {
     // A normal axum router...
-    let app = Router::new().route("/", get(root));
+    let app = Router::new()
+        .route("/", get(root))
+        // Use a precompiled and minified build of axum-live-view's JavaScript.
+        // This is the easiest way to get started. Integration with bundlers
+        // is of course also possible.
+        .merge(axum_live_view::precompiled_js_route("/assets/live-view.js"));
 
     // ...that we run like any other axum app
     axum::Server::bind(&"0.0.0.0:3000".parse().unwrap())
@@ -61,17 +68,16 @@ async fn root(
             <!DOCTYPE html>
             <html>
                 <head>
-                    // axum-live-view comes with some assets that you must bundle and load.
-                    // Your JavaScript should contain something along the lines of
-                    //
-                    //     import * as LiveView from "axum-live-view"
-                    //     LiveView.connectAndRun({})
                 </head>
                 <body>
                     // Embed our live view into the HTML template. This will render the
                     // view and include the HTML in the response, leading to good SEO
                     // and fast first paint.
                     { embed_live_view.embed(counter) }
+
+                    // Load the JavaScript. This will automatically initialize live view
+                    // connections.
+                    <script src="/assets/live-view.js"></script>
                 </body>
             </html>
         }
