@@ -1,6 +1,9 @@
 #![allow(clippy::try_err)]
 
+use proc_macro2::TokenStream;
+use quote::{format_ident, quote};
 use std::{
+    env, fs,
     fs::read_dir,
     path::{Path, PathBuf},
     process::Command,
@@ -27,6 +30,7 @@ fn main() -> Result {
         Opt::Ts(Ts::Install(opt)) => ts_install(opt)?,
         Opt::Examples(Examples::Build(opt)) => examples_build(opt)?,
         Opt::Examples(Examples::Run(opt)) => examples_run(opt)?,
+        Opt::Codegen => codegen()?,
     }
 
     Ok(())
@@ -36,6 +40,7 @@ fn main() -> Result {
 enum Opt {
     Ts(Ts),
     Examples(Examples),
+    Codegen,
 }
 
 /// Typescript related commands
@@ -241,4 +246,169 @@ fn project_root() -> PathBuf {
         .nth(1)
         .unwrap()
         .to_path_buf()
+}
+
+fn codegen() -> Result {
+    const N: usize = 8;
+
+    fn eithers() -> TokenStream {
+        (1..=N)
+            .map(|n| {
+                let name = format_ident!("Either{}", n);
+
+                let types = (1..=n).map(|n| format_ident!("T{}", n)).collect::<Vec<_>>();
+
+                let variants = types.iter().map(|name| {
+                    quote! { #name(#name), }
+                });
+
+                quote! {
+                    #[allow(unreachable_pub, missing_debug_implementations)]
+                    #[derive(PartialEq, Serialize, Deserialize)]
+                    pub enum #name <#(#types,)*> {
+                        #(#variants)*
+                    }
+                }
+            })
+            .collect()
+    }
+
+    fn live_view_impls() -> TokenStream {
+        (1..=N)
+            .map(|n| {
+                let types = (1..=n).map(|n| format_ident!("T{}", n)).collect::<Vec<_>>();
+
+                let live_view_bounds = types.iter().map(|ty| {
+                    quote! { #ty: LiveView<Error = E>, }
+                });
+
+                let either_name = format_ident!("Either{}", n);
+
+                let either = {
+                    let variants = types.iter().map(|ty| {
+                        quote! { #ty::Message }
+                    });
+                    quote! {
+                        #either_name<#(#variants,)*>
+                    }
+                };
+
+                let fn_bound_args = types.iter().map(|_| {
+                    quote! { Html<#either> }
+                });
+
+                let mount = quote! {
+                    let Self { views: (#(#types,)*), .. } = self;
+                    #(
+                        #types.mount(
+                            uri.clone(),
+                            request_headers,
+                            handle.clone().with(#either_name::#types),
+                        ).await?;
+                    )*
+                };
+
+                let update = {
+                    let match_arms = types.iter().map(|ty| {
+                        quote! {
+                            #either_name::#ty(msg) => {
+                                let Self { views: (#(#types,)*), render } = self;
+                                let (#ty, cmds) = #ty.update(msg, data).await?.into_parts();
+                                Ok(Updated::new(Self {
+                                    views: (#(#types,)*),
+                                    render,
+                                })
+                                .with_all(cmds))
+                            }
+                        }
+                    });
+
+                    quote! {
+                        match msg {
+                            #( #match_arms )*
+                        }
+                    }
+                };
+
+                let render = quote! {
+                    let Self { views: (#(#types,)*), render } = self;
+                    render( #( #types.render().map(#either_name::#types), )* )
+                };
+
+                quote! {
+                    #[allow(non_snake_case)]
+                    #[async_trait]
+                    impl<F, E, #(#types,)*> LiveView for Combine<(#(#types,)*), F>
+                    where
+                        #(#live_view_bounds)*
+                        F: Fn( #(#fn_bound_args,)* ) -> Html<#either> + Send + Sync + 'static,
+                        E: std::fmt::Display + Send + Sync + 'static,
+                    {
+                        type Message = #either;
+                        type Error = E;
+
+                        async fn mount(
+                            &mut self,
+                            uri: Uri,
+                            request_headers: &HeaderMap,
+                            handle: ViewHandle<Self::Message>,
+                        ) -> Result<(), Self::Error> {
+                            #mount
+                            Ok(())
+                        }
+
+                        async fn update(
+                            mut self,
+                            msg: Self::Message,
+                            data: Option<EventData>,
+                        ) -> Result<Updated<Self>, Self::Error> {
+                            #update
+                        }
+
+                        fn render(&self) -> Html<Self::Message> {
+                            #render
+                        }
+                    }
+                }
+            })
+            .collect()
+    }
+
+    let eithers = eithers();
+    let live_view_impls = live_view_impls();
+    let code = quote! {
+        use crate::{
+            event_data::EventData,
+            html::Html,
+            live_view::{Updated, ViewHandle},
+            LiveView,
+        };
+        use async_trait::async_trait;
+        use axum::http::{HeaderMap, Uri};
+        use serde::{Deserialize, Serialize};
+
+        pub fn combine<V, F>(views: V, render: F) -> Combine<V, F> {
+            Combine { views, render }
+        }
+
+        #[allow(missing_debug_implementations)]
+        pub struct Combine<V, F> {
+            views: V,
+            render: F,
+        }
+
+        #eithers
+        #live_view_impls
+    };
+
+    let combine_mod_path = project_root().join("axum-live-view/src/live_view/combine.rs");
+
+    fs::write(combine_mod_path, code.to_string())?;
+
+    let mut cmd = Command::new("cargo");
+    cmd.current_dir(project_root());
+    cmd.args(&["fmt"]);
+    cmd.status()?;
+
+    Ok(())
 }
