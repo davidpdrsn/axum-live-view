@@ -113,7 +113,7 @@ fn ts_install(opt: TsInstall) -> Result {
     Ok(())
 }
 
-/// Install typescript dependecies
+/// Precompile JavaScript
 #[derive(Debug, StructOpt)]
 struct TsPrecompile {
     #[structopt(long)]
