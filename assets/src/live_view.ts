@@ -7,6 +7,11 @@ interface State {
 }
 
 export function connectAndRun(options: LiveViewOptions) {
+  // only connect if there is a live view on the page
+  if (document.getElementById("live-view-container") === null) {
+    return
+  }
+
   const socket = new WebSocket(`ws://${window.location.host}${window.location.pathname}`);
 
   var state: State = {}
