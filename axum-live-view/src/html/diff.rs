@@ -65,7 +65,6 @@ impl<'a, T> From<&'a DynamicFragment<T>> for DynamicFragmentDiff<'a, T> {
 }
 
 impl<T> Html<T> {
-    #[allow(warnings)]
     pub(crate) fn diff<'a>(&self, other: &'a Self) -> Option<HtmlDiff<'a, T>>
     where
         T: PartialEq + Serialize,
@@ -76,11 +75,9 @@ impl<T> Html<T> {
             .filter_map(|pair| match pair {
                 Zipped::Both((self_idx, self_value), (other_idx, other_value)) => {
                     debug_assert_eq!(self_idx, other_idx);
-                    if let Some(diff) = self_value.diff(other_value) {
-                        Some((*self_idx, Some(diff)))
-                    } else {
-                        None
-                    }
+                    self_value
+                        .diff(other_value)
+                        .map(|diff| (*self_idx, Some(diff)))
                 }
                 Zipped::Left((other_idx, _)) => Some((*other_idx, None)),
                 Zipped::Right((a, b)) => Some((*a, Some(b.into()))),
@@ -96,7 +93,6 @@ impl<T> Html<T> {
 }
 
 impl<T> DynamicFragment<T> {
-    #[allow(warnings)]
     pub(crate) fn diff<'a>(&self, other: &'a Self) -> Option<DynamicFragmentDiff<'a, T>>
     where
         T: PartialEq + Serialize,

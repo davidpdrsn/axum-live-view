@@ -1,5 +1,3 @@
-pub(crate) mod interleave;
-
 /// Spawn a future that is required to yield `()`.
 ///
 /// This means the future is required to handle all errors.

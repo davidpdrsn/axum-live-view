@@ -8,7 +8,6 @@ use axum::{
 use axum_live_view::{
     event_data::EventData, html, live_view::Updated, Html, LiveView, LiveViewUpgrade,
 };
-use serde::{Deserialize, Serialize};
 use std::{convert::Infallible, env, net::SocketAddr, path::PathBuf};
 use tower_http::services::ServeFile;
 
@@ -32,7 +31,10 @@ async fn main() {
 }
 
 async fn root(live: LiveViewUpgrade) -> impl IntoResponse {
-    let view = Counter::default();
+    let format =
+        time::format_description::parse("[hour]:[minute]:[second].[subsecond digits:6]").unwrap();
+
+    let view = Clock { format };
 
     live.response(move |embed| {
         html! {
@@ -49,50 +51,47 @@ async fn root(live: LiveViewUpgrade) -> impl IntoResponse {
     })
 }
 
-#[derive(Default, Clone)]
-struct Counter {
-    count: u64,
+#[derive(Clone)]
+struct Clock {
+    format: Vec<time::format_description::FormatItem<'static>>,
 }
 
 #[async_trait]
-impl LiveView for Counter {
-    type Message = Msg;
+impl LiveView for Clock {
+    type Message = ();
     type Error = Infallible;
+
+    async fn mount(
+        &mut self,
+        _uri: axum::http::Uri,
+        _request_headers: &axum::http::HeaderMap,
+        handle: axum_live_view::live_view::ViewHandle<Self::Message>,
+    ) -> Result<(), Self::Error> {
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(std::time::Duration::from_millis(1));
+            loop {
+                interval.tick().await;
+                if handle.send(()).await.is_err() {
+                    return;
+                }
+            }
+        });
+        Ok(())
+    }
 
     async fn update(
         mut self,
-        msg: Msg,
+        _msg: Self::Message,
         _data: Option<EventData>,
     ) -> Result<Updated<Self>, Self::Error> {
-        match msg {
-            Msg::Incr => self.count += 1,
-            Msg::Decr => {
-                if self.count > 0 {
-                    self.count -= 1;
-                }
-            }
-        }
-
         Ok(Updated::new(self))
     }
 
     fn render(&self) -> Html<Self::Message> {
-        html! {
-            <div>
-                <button axm-click={ Msg::Incr }>"+"</button>
-                <button axm-click={ Msg::Decr }>"-"</button>
-            </div>
+        let now = time::OffsetDateTime::now_utc();
 
-            <div>
-                "Counter value: "
-                { self.count }
-            </div>
+        html! {
+            "Current time:" { now.format(&self.format).unwrap() }
         }
     }
-}
-
-#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
-enum Msg {
-    Incr,
-    Decr,
 }
