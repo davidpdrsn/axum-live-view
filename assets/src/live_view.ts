@@ -600,6 +600,20 @@ function patchTemplate(template: Template, diff: TemplateDiff) {
             }
           }
 
+        } else if ("f" in diffVal) {
+          if (typeof current === "string") {
+            template[key] = <TemplateDynamic>diffVal
+
+          } else if ("d" in current) {
+            patchTemplate(current, diffVal)
+
+          } else if ("b" in current) {
+            console.error("not implemented: b in current, with f")
+
+          } else {
+            const _: never = current
+          }
+
         } else {
           console.error("unexpected diff value", diffVal)
         }
