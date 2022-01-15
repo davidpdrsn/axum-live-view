@@ -54,7 +54,7 @@ async fn root(
     //
     // If the WebSocket connection breaks (or your view crashes) the JavaScript
     // client will call this endpoint again to establish a new connection and
-    // a new instance instance of your view is created.
+    // a new instance of your view is created.
     //
     // The task running the old view automatically stops when the WebSocket is
     // closed.
