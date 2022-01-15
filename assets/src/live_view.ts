@@ -29,7 +29,7 @@ type MessageFromView = InitialRender | Render | JsCommands
 
 interface Template {
   f: string[],
-  d: {
+  d?: {
     [index: string]: TemplateDynamic
   },
 }
@@ -479,38 +479,40 @@ function updateDomFromState(socket: WebSocket, state: State) {
   patchDom(socket, container, html)
 
   function buildHtml(template: Template): string {
-      var combined = ""
-      const fixed = template.f
+    var combined = ""
+    const fixed = template.f
 
-      fixed.forEach((value, i) => {
-        combined = combined.concat(value)
-        const templateDyn = template.d[i]
+    fixed.forEach((value, i) => {
+      combined = combined.concat(value)
 
-        if (templateDyn === undefined || templateDyn === null) {
-          return
-        }
+      if (template.d === undefined) {
+        return
+      }
 
-        if (typeof templateDyn === "string") {
-          combined = combined.concat(templateDyn)
+      const templateDyn = template.d[i]
 
-        } else if ("d" in templateDyn) {
-          combined = combined.concat(buildHtml(templateDyn))
+      if (templateDyn === undefined || templateDyn === null) {
+        return
+      }
 
-        } else if ("b" in templateDyn) {
-          const fixed = templateDyn.f
+      if (typeof templateDyn === "string") {
+        combined = combined.concat(templateDyn)
 
-          // TODO: make sure we loop over the entries in order here
-          Object.values(templateDyn.b).forEach((value) => {
-            const nestedTemplate = { f: fixed, d: value }
-            combined = combined.concat(buildHtml(nestedTemplate))
-          })
+      } else if ("b" in templateDyn) {
+        const fixed = templateDyn.f
 
-        } else {
-          const _: never = templateDyn
-        }
-      })
+        // TODO: make sure we loop over the entries in order here
+        Object.values(templateDyn.b).forEach((value) => {
+          const nestedTemplate = { f: fixed, d: value }
+          combined = combined.concat(buildHtml(nestedTemplate))
+        })
 
-      return combined
+      } else {
+        combined = combined.concat(buildHtml(templateDyn))
+      }
+    })
+
+    return combined
   }
 
   function patchDom(socket: WebSocket, element: Element, html: string) {
@@ -556,10 +558,13 @@ function patchTemplate(template: Template, diff: TemplateDiff) {
   }
 
   if (diff.d && diff.d !== null) {
-    patchTemplateDiff(template.d, diff.d)
+    patchTemplateDiff(template.d || {}, diff.d)
   }
 
-  function patchTemplateDiff(template: { [index: string]: TemplateDynamic }, diff: { [index: string]: TemplateDiffDynamic | null; }) {
+  function patchTemplateDiff(
+    template: { [index: string]: TemplateDynamic },
+    diff: { [index: string]: TemplateDiffDynamic | null; },
+  ) {
     for (const [key, diffVal] of Object.entries(diff)) {
       if (typeof diffVal === "string") {
         template[key] = diffVal
@@ -582,7 +587,7 @@ function patchTemplate(template: Template, diff: TemplateDiff) {
             console.error("not implemented: b in current")
 
           } else {
-            const _: never = current
+            template[key] = <TemplateDynamic>diffVal
           }
 
         } else if ("b" in diffVal) {
@@ -598,6 +603,20 @@ function patchTemplate(template: Template, diff: TemplateDiff) {
             } else {
               patchTemplateLoop(current, diffVal)
             }
+          }
+
+        } else if ("f" in diffVal) {
+          if (typeof current === "string") {
+            template[key] = <TemplateDynamic>diffVal
+
+          } else if ("d" in current) {
+            patchTemplate(current, diffVal)
+
+          } else if ("b" in current) {
+            console.error("not implemented: b in current, with f")
+
+          } else {
+            template[key] = <TemplateDynamic>diffVal
           }
 
         } else {
