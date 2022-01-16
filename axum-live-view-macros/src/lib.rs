@@ -530,6 +530,9 @@ impl FixedParts {
     }
 
     fn start_new_part(&mut self) {
+        if self.parts.is_empty() {
+            self.append("");
+        }
         self.parts.push(String::new());
     }
 }
