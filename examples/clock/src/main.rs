@@ -10,7 +10,7 @@ async fn main() {
 
     let app = Router::new()
         .route("/", get(root))
-        .merge(axum_live_view::precompiled_js_route("/bundle.js"));
+        .route("/bundle.js", axum_live_view::precompiled_js());
 
     let addr = SocketAddr::from(([0, 0, 0, 0], 3000));
     axum::Server::bind(&addr)

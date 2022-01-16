@@ -39,7 +39,11 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![cfg_attr(test, allow(clippy::float_cmp))]
 
-use axum::{http::header, response::Headers, routing::get, Router};
+use axum::{
+    http::header,
+    response::Headers,
+    routing::{get, MethodRouter},
+};
 
 #[macro_use]
 mod macros;
@@ -64,19 +68,16 @@ pub const PRECOMPILED_JS: &str = include_str!("../../assets/axum_live_view.min.j
 
 #[cfg(feature = "precompiled-js")]
 #[cfg_attr(docsrs, doc(cfg(feature = "precompiled-js")))]
-pub fn precompiled_js_route<B>(path: &str) -> Router<B>
+pub fn precompiled_js<B>() -> MethodRouter<B>
 where
     B: Send + 'static,
 {
-    Router::new().route(
-        path,
-        get(|| async {
-            (
-                Headers([(header::CONTENT_TYPE, "application/json")]),
-                PRECOMPILED_JS,
-            )
-        }),
-    )
+    get(|| async {
+        (
+            Headers([(header::CONTENT_TYPE, "application/json")]),
+            PRECOMPILED_JS,
+        )
+    })
 }
 
 #[doc(hidden)]
