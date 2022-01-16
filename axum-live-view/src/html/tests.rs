@@ -734,7 +734,7 @@ fn diffing_removing_dynamic() {
     assert_json_diff::assert_json_eq!(
         pretty_print(a.diff(&b)),
         json!({
-            "f": [""],
+            "f": ["", ""],
             "d": {
                 "1": null,
             }
@@ -840,4 +840,15 @@ fn diffing_dynamic_or_fixed() {
             },
         })
     );
+}
+
+#[test]
+fn starting_with_dynamic() {
+    let view: Html<()> = html! {
+        if true {
+            "one."
+        }
+        "two"
+    };
+    assert_eq!(view.render(), "one.two");
 }
