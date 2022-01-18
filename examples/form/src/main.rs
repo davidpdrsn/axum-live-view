@@ -289,6 +289,7 @@ enum ChangedInputValue {
 
 #[derive(Debug, Deserialize)]
 struct ChangedInput {
+    #[allow(dead_code)]
     input: String,
 }
 
