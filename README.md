@@ -31,7 +31,7 @@ async fn main() {
         // Use a precompiled and minified build of axum-live-view's JavaScript.
         // This is the easiest way to get started. Integration with bundlers
         // is of course also possible.
-        .merge(axum_live_view::precompiled_js_route("/assets/live-view.js"));
+        .route("/assets/live-view.js", axum_live_view::precompiled_js());
 
     // ...that we run like any other axum app
     axum::Server::bind(&"0.0.0.0:3000".parse().unwrap())

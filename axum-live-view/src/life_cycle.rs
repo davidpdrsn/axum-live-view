@@ -82,18 +82,15 @@ where
         .map_err(|err| err.to_string())?;
 
     let rx_stream = ReceiverStream::new(rx).map(|msg| {
-        Ok(MessageFromSocket {
+        Ok(MessageFromSocket::Event {
             msg,
-            data: MessageFromSocketData::None,
+            data: EventMessageFromSocketData::None,
         })
     });
     let mut stream = tokio_stream::StreamExt::merge(read.into_stream(), rx_stream);
 
     loop {
-        let MessageFromSocket {
-            msg: msg_for_view,
-            data,
-        } = match stream.next().await {
+        let msg = match stream.next().await {
             Some(Ok(msg)) => msg,
             Some(Err(err)) => {
                 let err = err.to_string();
@@ -106,32 +103,46 @@ where
             }
         };
 
-        let data = Option::<EventData>::from(data);
+        match msg {
+            MessageFromSocket::Event {
+                msg: msg_for_view,
+                data,
+            } => {
+                let data = Option::<EventData>::from(data);
 
-        match view
-            .update(msg_for_view, data)
-            .await
-            .map_err(|err| err.to_string())?
-        {
-            UpdateResponse::Diff(diff) => {
-                write_message(&mut write, MessageToSocketData::Render(diff))
+                match view
+                    .update(msg_for_view, data)
+                    .await
+                    .map_err(|err| err.to_string())?
+                {
+                    UpdateResponse::Diff(diff) => {
+                        write_message(&mut write, MessageToSocketData::Render(diff))
+                            .await
+                            .map_err(|err| err.to_string())?;
+                    }
+                    UpdateResponse::JsCommands(commands) => {
+                        write_message(&mut write, MessageToSocketData::JsCommands(commands))
+                            .await
+                            .map_err(|err| err.to_string())?;
+                    }
+                    UpdateResponse::DiffAndJsCommands(diff, commands) => {
+                        write_message(&mut write, MessageToSocketData::Render(diff))
+                            .await
+                            .map_err(|err| err.to_string())?;
+                        write_message(&mut write, MessageToSocketData::JsCommands(commands))
+                            .await
+                            .map_err(|err| err.to_string())?;
+                    }
+                    UpdateResponse::Empty => {}
+                }
+            }
+            MessageFromSocket::Internal {
+                data: InternalMessageFromSocketData::Health,
+            } => {
+                write_message(&mut write, MessageToSocketData::Health)
                     .await
                     .map_err(|err| err.to_string())?;
             }
-            UpdateResponse::JsCommands(commands) => {
-                write_message(&mut write, MessageToSocketData::JsCommands(commands))
-                    .await
-                    .map_err(|err| err.to_string())?;
-            }
-            UpdateResponse::DiffAndJsCommands(diff, commands) => {
-                write_message(&mut write, MessageToSocketData::Render(diff))
-                    .await
-                    .map_err(|err| err.to_string())?;
-                write_message(&mut write, MessageToSocketData::JsCommands(commands))
-                    .await
-                    .map_err(|err| err.to_string())?;
-            }
-            UpdateResponse::Empty => {}
         }
     }
 
@@ -376,6 +387,8 @@ enum MessageToSocketData {
     Render(Value),
     #[serde(rename = "j")]
     JsCommands(Vec<JsCommand>),
+    #[serde(rename = "h")]
+    Health,
 }
 
 async fn write_message<W>(write: &mut W, data: MessageToSocketData) -> Result<(), W::Error>
@@ -383,19 +396,25 @@ where
     W: Sink<MessageToSocket> + Unpin,
 {
     let msg = MessageToSocket { data };
-    // tracing::trace!(?msg, "sending message to socket");
     write.send(msg).await
 }
 
 #[derive(Debug, Deserialize, PartialEq)]
-pub(crate) struct MessageFromSocket<M>
+#[serde(untagged)]
+pub(crate) enum MessageFromSocket<M>
 where
     M: DeserializeOwned,
 {
-    #[serde(rename = "m", deserialize_with = "deserialize_msg")]
-    msg: M,
-    #[serde(flatten)]
-    data: MessageFromSocketData,
+    Event {
+        #[serde(rename = "m", deserialize_with = "deserialize_msg")]
+        msg: M,
+        #[serde(flatten)]
+        data: EventMessageFromSocketData,
+    },
+    Internal {
+        #[serde(flatten)]
+        data: InternalMessageFromSocketData,
+    },
 }
 
 fn deserialize_msg<'de, D, M>(d: D) -> Result<M, D::Error>
@@ -433,7 +452,7 @@ where
 #[derive(Debug, Deserialize, PartialEq)]
 #[serde(tag = "t", content = "d")]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum MessageFromSocketData {
+pub(crate) enum EventMessageFromSocketData {
     None,
     Click,
     WindowFocus,
@@ -498,6 +517,13 @@ pub(crate) enum InputValue {
     Strings(Vec<String>),
 }
 
+#[derive(Debug, Deserialize, PartialEq)]
+#[serde(tag = "t")]
+pub(crate) enum InternalMessageFromSocketData {
+    #[serde(rename = "h")]
+    Health,
+}
+
 fn wrap_in_live_view_container<T>(markup: Html<T>) -> Html<T> {
     crate::html::private::HtmlBuilder {
         dynamic: Vec::from([crate::html::DynamicFragment::Html(markup)]),
@@ -543,9 +569,9 @@ mod tests {
         .unwrap();
         assert_eq!(
             msg,
-            MessageFromSocket {
+            MessageFromSocket::Event {
                 msg: Msg::Incr,
-                data: MessageFromSocketData::Click
+                data: EventMessageFromSocketData::Click
             }
         );
 
@@ -555,9 +581,9 @@ mod tests {
         .unwrap();
         assert_eq!(
             msg,
-            MessageFromSocket {
+            MessageFromSocket::Event {
                 msg: Msg::Incr,
-                data: MessageFromSocketData::Form {
+                data: EventMessageFromSocketData::Form {
                     query: "name=bob&age=20".to_owned()
                 }
             }

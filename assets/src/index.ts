@@ -1,1 +1,1 @@
-export { LiveViewOptions, connectAndRun } from "./live_view"
+export { LiveView } from "./live_view"

@@ -1,5 +1,5 @@
 mod inner {
-    use crate::life_cycle::{self, MessageFromSocketData};
+    use crate::life_cycle::{self, EventMessageFromSocketData};
     use serde::{de::DeserializeOwned, Serialize};
     use std::fmt;
 
@@ -61,15 +61,15 @@ mod inner {
         }
     }
 
-    impl From<MessageFromSocketData> for Option<EventData> {
-        fn from(data: MessageFromSocketData) -> Self {
+    impl From<EventMessageFromSocketData> for Option<EventData> {
+        fn from(data: EventMessageFromSocketData) -> Self {
             match data {
-                MessageFromSocketData::Click
-                | MessageFromSocketData::WindowFocus
-                | MessageFromSocketData::WindowBlur
-                | MessageFromSocketData::None => None,
-                MessageFromSocketData::Form { query } => Some(EventData::Form(Form { query })),
-                MessageFromSocketData::Input { value } => {
+                EventMessageFromSocketData::Click
+                | EventMessageFromSocketData::WindowFocus
+                | EventMessageFromSocketData::WindowBlur
+                | EventMessageFromSocketData::None => None,
+                EventMessageFromSocketData::Form { query } => Some(EventData::Form(Form { query })),
+                EventMessageFromSocketData::Input { value } => {
                     let value = match value {
                         life_cycle::InputValue::Bool(x) => Input::Bool(x),
                         life_cycle::InputValue::String(x) => Input::String(x),
@@ -77,7 +77,7 @@ mod inner {
                     };
                     Some(EventData::Input(value))
                 }
-                MessageFromSocketData::Key {
+                EventMessageFromSocketData::Key {
                     key,
                     code,
                     alt,
@@ -92,7 +92,7 @@ mod inner {
                     shift,
                     meta,
                 })),
-                MessageFromSocketData::Mouse {
+                EventMessageFromSocketData::Mouse {
                     client_x,
                     client_y,
                     page_x,
@@ -115,7 +115,7 @@ mod inner {
                     screen_x,
                     screen_y,
                 })),
-                MessageFromSocketData::Scroll { scroll_x, scroll_y } => {
+                EventMessageFromSocketData::Scroll { scroll_x, scroll_y } => {
                     Some(EventData::Scroll(Scroll { scroll_x, scroll_y }))
                 }
             }
