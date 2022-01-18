@@ -45,6 +45,7 @@ use std::fmt::Write;
 use syn::{
     parse::{Parse, ParseStream},
     punctuated::Punctuated,
+    spanned::Spanned,
     Block, Ident, LitStr, Token,
 };
 
@@ -159,8 +160,17 @@ impl Parse for TagNode {
         let open = input.parse()?;
 
         let mut attrs = Vec::new();
-        while input.fork().parse::<AttrIdent>().is_ok() {
-            attrs.push(input.parse()?);
+        loop {
+            if input.peek(Token![/]) || input.peek(Token![>]) || input.is_empty() {
+                break;
+            }
+
+            match input.fork().parse::<AttrIdent>() {
+                Ok(_) => attrs.push(input.parse()?),
+                Err(err) => {
+                    return Err(err);
+                }
+            }
         }
 
         if input.parse::<Token![/]>().is_ok() {
@@ -251,6 +261,7 @@ impl Parse for AttrIdent {
             Ok(Self::Lit("for".to_owned()))
         } else {
             let idents = Punctuated::<Ident, Token![-]>::parse_separated_nonempty(input)?;
+            let idents_span = idents.span();
             let mut out = String::new();
             let mut iter = idents.iter().peekable();
             while let Some(ident) = iter.next() {
@@ -262,10 +273,17 @@ impl Parse for AttrIdent {
             }
 
             match out.strip_prefix("axm-") {
-                Some(ident) if ident == "throttle" || ident == "debounce" || ident == "key" => {
-                    Ok(Self::Lit(out))
-                }
-                Some(_) => Ok(Self::Axm(out)),
+                Some(ident) => match ident {
+                    "click" | "input" | "change" | "submit" | "focus" | "blur" | "keydown"
+                    | "keyup" | "window-keydown" | "window-keyup" | "window-focus"
+                    | "window-blur" | "mouseenter" | "mouseover" | "mouseleave" | "mouseout"
+                    | "mousemove" | "scroll" => Ok(Self::Axm(out)),
+                    "throttle" | "debounce" | "key" => Ok(Self::Lit(out)),
+                    _ => Err(syn::Error::new(
+                        idents_span,
+                        format!("unknown `{out}` attribute"),
+                    )),
+                },
                 None => Ok(Self::Lit(out)),
             }
         }

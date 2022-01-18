@@ -1,12 +1,33 @@
 import morphdom from "morphdom"
 
-export interface LiveViewOptions {}
+export class LiveView {
+  private options: LiveViewOptions
+
+  constructor() {
+    this.options = {
+      debug: false,
+    }
+    connect(this.options)
+  }
+
+  enableDebug() {
+    this.options.debug = true
+  }
+
+  disableDebug() {
+    this.options.debug = false
+  }
+}
+
+interface LiveViewOptions {
+  debug: boolean,
+}
 
 interface State {
   viewState?: Template;
 }
 
-export function connectAndRun(options: LiveViewOptions) {
+function connect(options: LiveViewOptions) {
   // only connect if there is a live view on the page
   if (document.getElementById("live-view-container") === null) {
     return
@@ -16,8 +37,12 @@ export function connectAndRun(options: LiveViewOptions) {
 
   var state: State = {}
 
+  socket.addEventListener("open", () => {
+    onOpen(socket, options)
+  })
+
   socket.addEventListener("message", (event) => {
-    onMessage(socket, event, state)
+    onMessage(socket, event, state, options)
   })
 
   socket.addEventListener("close", () => {
@@ -25,7 +50,7 @@ export function connectAndRun(options: LiveViewOptions) {
   })
 }
 
-type MessageFromView = InitialRender | Render | JsCommands
+type MessageFromView = InitialRender | Render | JsCommands | HealthPong
 
 interface Template {
   f: string[],
@@ -74,27 +99,59 @@ type JsCommands = {
   d: JsCommand[],
 }
 
+type HealthPong = { t: "h" }
+
+const pingTimeLabel = "ping"
+
+function socketSend(
+  socket: WebSocket,
+  msg: MessageToView,
+  options: LiveViewOptions,
+) {
+  socket.send(JSON.stringify(msg))
+}
+
+function onOpen(
+  socket: WebSocket,
+  options: LiveViewOptions,
+) {
+  setInterval(() => {
+    const msg: MessageToView = { t: "h" }
+    if (options.debug) {
+      console.time(pingTimeLabel)
+    }
+    socketSend(socket, msg, options)
+  }, 30 * 1000)
+}
+
 function onMessage(
   socket: WebSocket,
   event: MessageEvent,
   state: State,
+  options: LiveViewOptions,
 ) {
   const msg: MessageFromView = JSON.parse(event.data)
 
   if (msg.t === "i") {
     state.viewState = msg.d
-    updateDomFromState(socket, state)
-    bindInitialEvents(socket)
+    updateDomFromState(socket, state, options)
+    bindInitialEvents(socket, options)
 
   } else if (msg.t === "r") {
     if (!state.viewState) { return }
     if (!msg.d) { return }
     patchTemplate(state.viewState, msg.d)
-    updateDomFromState(socket, state)
+    updateDomFromState(socket, state, options)
 
   } else if (msg.t === "j") {
     for (const jsCommand of msg.d) {
       handleJsCommand(jsCommand)
+    }
+
+  } else if (msg.t === "h") {
+    // do nothing...
+    if (options.debug) {
+      console.timeEnd(pingTimeLabel)
     }
 
   } else {
@@ -104,8 +161,8 @@ function onMessage(
 
 function onClose(options: LiveViewOptions) {
   setTimeout(() => {
-    connectAndRun(options)
-  }, 500)
+    connect(options)
+  }, 1000)
 }
 
 const axm = {
@@ -129,15 +186,15 @@ const axm = {
   scroll: "axm-scroll",
 }
 
-function bindInitialEvents(socket: WebSocket) {
+function bindInitialEvents(socket: WebSocket, options: LiveViewOptions) {
   const attrs = Object.values(axm).map((attr) => `[${attr}]`).join(", ")
 
   document.querySelectorAll(attrs).forEach((element) => {
-    addEventListeners(socket, element)
+    addEventListeners(socket, element, options)
   })
 }
 
-function addEventListeners(socket: WebSocket, element: Element) {
+function addEventListeners(socket: WebSocket, element: Element, options: LiveViewOptions) {
   if (element.hasAttribute(axm.click)) {
     on(element, "click", axm.click, (msg) => ({ t: "click", m: msg }))
   }
@@ -332,7 +389,7 @@ function addEventListeners(socket: WebSocket, element: Element) {
       if (!decodeMsg) { return }
       const payload = f(decodeMsg, event)
       if (!payload) { return }
-      socket.send(JSON.stringify(payload))
+      socketSend(socket, payload, options)
     }))
   }
 
@@ -370,6 +427,9 @@ type MessageToView =
   | WindowBlur
   | Mouse
   | Scroll
+  | HealthPing
+
+interface HealthPing { t: "h" }
 
 interface Click { t: "click", m: string | JSON }
 
@@ -471,7 +531,7 @@ function numberAttr(element: Element, attr: string): number | null {
   return null
 }
 
-function updateDomFromState(socket: WebSocket, state: State) {
+function updateDomFromState(socket: WebSocket, state: State, options: LiveViewOptions) {
   if (!state.viewState) { return }
   const html = buildHtml(state.viewState)
   const container = document.querySelector("#live-view-container")
@@ -519,7 +579,7 @@ function updateDomFromState(socket: WebSocket, state: State) {
     morphdom(element, html, {
         onNodeAdded: (node) => {
           if (node instanceof Element) {
-            addEventListeners(socket, node)
+            addEventListeners(socket, node, options)
           }
           return node
         },

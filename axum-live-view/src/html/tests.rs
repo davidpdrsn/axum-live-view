@@ -423,15 +423,15 @@ fn optional_attribute() {
 
 #[test]
 fn axm_attribute() {
-    let view: Html<&str> = html! { <input axm-foo={ "foo" } /> };
-    assert_eq!(view.render(), "<input axm-foo=%22foo%22>");
+    let view: Html<&str> = html! { <input axm-click={ "foo" } /> };
+    assert_eq!(view.render(), "<input axm-click=%22foo%22>");
 
-    let view: Html<&str> = html! { <input axm-foo=if true { "foo" } else { "bar" } /> };
-    assert_eq!(view.render(), "<input axm-foo=%22foo%22>");
+    let view: Html<&str> = html! { <input axm-click=if true { "foo" } else { "bar" } /> };
+    assert_eq!(view.render(), "<input axm-click=%22foo%22>");
 
     let view: Html<Option<&str>> =
-        html! { <input axm-foo=if true { Some("foo") } else { None } /> };
-    assert_eq!(view.render(), "<input axm-foo=%22foo%22>");
+        html! { <input axm-click=if true { Some("foo") } else { None } /> };
+    assert_eq!(view.render(), "<input axm-click=%22foo%22>");
 
     #[derive(Serialize)]
     enum Msg {
@@ -439,13 +439,13 @@ fn axm_attribute() {
         Bar { value: i32 },
     }
 
-    let view: Html<Msg> = html! { <input axm-foo={ Msg::Foo } /> };
-    assert_eq!(view.render(), "<input axm-foo=%22Foo%22>");
+    let view: Html<Msg> = html! { <input axm-click={ Msg::Foo } /> };
+    assert_eq!(view.render(), "<input axm-click=%22Foo%22>");
 
-    let view: Html<Msg> = html! { <input axm-foo={ Msg::Bar { value: 123 } } /> };
+    let view: Html<Msg> = html! { <input axm-click={ Msg::Bar { value: 123 } } /> };
     assert_eq!(
         view.render(),
-        "<input axm-foo={%22Bar%22:{%22value%22:123}}>"
+        "<input axm-click={%22Bar%22:{%22value%22:123}}>"
     );
 }
 
