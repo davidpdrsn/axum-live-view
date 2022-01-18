@@ -131,7 +131,8 @@ fn ts_precompile(opt: TsPrecompile) -> Result {
 
     let code = fs::read_to_string(project_root().join("examples/counter/dist/bundle.js"))?;
 
-    let path = project_root().join("assets/axum_live_view.min.js");
+    let assets = project_root().join("assets");
+    let path = assets.join("axum_live_view.min.js");
 
     if check {
         let current = fs::read_to_string(path)?;
@@ -139,10 +140,39 @@ fn ts_precompile(opt: TsPrecompile) -> Result {
             Err("Code on disk doesn't match")?;
         }
     } else {
-        fs::write(path, code)?;
+        fs::write(path, &code)?;
+
+        fs::write(
+            assets.join("axum_live_view.min.js.gz"),
+            gzip(code.as_bytes())?,
+        )?;
+
+        fs::write(
+            assets.join("axum_live_view.hash.txt"),
+            calculate_hash(&code).to_string(),
+        )?;
     }
 
     Ok(())
+}
+
+fn calculate_hash<T: std::hash::Hash>(t: &T) -> u64 {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::Hasher;
+
+    let mut s = DefaultHasher::new();
+    t.hash(&mut s);
+    s.finish()
+}
+
+fn gzip(input: &[u8]) -> Result<Vec<u8>> {
+    use flate2::write::GzEncoder;
+    use flate2::Compression;
+    use std::io::prelude::*;
+
+    let mut encoder = GzEncoder::new(Vec::new(), Compression::best());
+    encoder.write_all(input)?;
+    Ok(encoder.finish()?)
 }
 
 /// Typescript related commands
