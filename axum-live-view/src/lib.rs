@@ -62,15 +62,51 @@ pub const PRECOMPILED_JS: &str = include_str!("../../assets/axum_live_view.min.j
 
 #[cfg(feature = "precompiled-js")]
 #[cfg_attr(docsrs, doc(cfg(feature = "precompiled-js")))]
+#[allow(clippy::declare_interior_mutable_const)]
 pub fn precompiled_js<B>() -> axum::routing::MethodRouter<B>
 where
     B: Send + 'static,
 {
-    axum::routing::get(|| async {
-        (
-            axum::response::Headers([(axum::http::header::CONTENT_TYPE, "application/json")]),
-            PRECOMPILED_JS,
-        )
+    use axum::{
+        http::{header, HeaderMap, HeaderValue, StatusCode},
+        response::IntoResponse,
+        routing::get,
+    };
+
+    const HASH: &str = include_str!("../../assets/axum_live_view.hash.txt");
+    const PRECOMPILED_JS_GZ: &[u8] = include_bytes!("../../assets/axum_live_view.min.js.gz");
+
+    const APPLICATION_JAVASCRIPT: HeaderValue =
+        HeaderValue::from_static("application/javascript; charset=utf-8");
+    const GZIP: HeaderValue = HeaderValue::from_static("gzip");
+
+    get(|request_headers: HeaderMap| async move {
+        let etag = format!("\"{HASH}\"").parse::<HeaderValue>().unwrap();
+
+        if request_headers
+            .get(header::IF_NONE_MATCH)
+            .filter(|&value| value == etag)
+            .is_some()
+        {
+            StatusCode::NOT_MODIFIED.into_response()
+        } else {
+            let mut response_headers = HeaderMap::new();
+
+            response_headers.insert(header::CONTENT_TYPE, APPLICATION_JAVASCRIPT);
+            response_headers.insert(header::ETAG, etag);
+
+            if request_headers
+                .get(header::ACCEPT_ENCODING)
+                .and_then(|value| value.to_str().ok())
+                .filter(|value| value.contains("gzip"))
+                .is_some()
+            {
+                response_headers.insert(header::CONTENT_ENCODING, GZIP);
+                (response_headers, PRECOMPILED_JS_GZ).into_response()
+            } else {
+                (response_headers, PRECOMPILED_JS).into_response()
+            }
+        }
     })
 }
 
