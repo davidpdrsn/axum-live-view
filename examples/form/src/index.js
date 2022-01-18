@@ -1,3 +1,3 @@
-import * as LiveView from "axum-live-view"
+import { LiveView } from "axum-live-view"
 
-LiveView.connect({})
+window.liveView = new LiveView()
