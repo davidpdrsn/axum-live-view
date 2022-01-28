@@ -46,7 +46,7 @@ jobs:
     - uses: actions/setup-node@v2
       with:
         node-version: '16'
-    - run: cargo xtask ts install && cargo xtask ts precompile --check
+    - run: cargo xtask ts precompile --check
 
   check-docs:
     runs-on: ubuntu-latest
