@@ -174,15 +174,18 @@ const axm = {
   blur: "axm-blur",
   keydown: "axm-keydown",
   keyup: "axm-keyup",
-  window_keydown: "axm-window-keydown",
-  window_keyup: "axm-window-keyup",
-  window_focus: "axm-window-focus",
-  window_blur: "axm-window-blur",
   mouseenter: "axm-mouseenter",
   mouseover: "axm-mouseover",
   mouseleave: "axm-mouseleave",
   mouseout: "axm-mouseout",
   mousemove: "axm-mousemove",
+}
+
+const axm_window = {
+  keydown: "axm-window-keydown",
+  keyup: "axm-window-keyup",
+  focus: "axm-window-focus",
+  blur: "axm-window-blur",
   scroll: "axm-scroll",
 }
 
@@ -194,9 +197,13 @@ function bindInitialEvents(socket: WebSocket, options: LiveViewOptions) {
   })
 }
 
-function addEventListeners(socket: WebSocket, element: Element, options: LiveViewOptions) {
+function addEventListeners(
+  socket: WebSocket,
+  element: Element,
+  options: LiveViewOptions,
+) {
   if (element.hasAttribute(axm.click)) {
-    on(element, "click", axm.click, (msg) => ({ t: "click", m: msg }))
+    on(socket, options, element, element, "click", axm.click, (msg) => ({ t: "click", m: msg }))
   }
 
   if (
@@ -205,28 +212,28 @@ function addEventListeners(socket: WebSocket, element: Element, options: LiveVie
       element instanceof HTMLSelectElement
   ) {
     if (element.hasAttribute(axm.input)) {
-      on(element, "input", axm.input, (msg) => {
+      on(socket, options, element, element, "input", axm.input, (msg) => {
         const value = inputValue(element)
         return { t: "input", m: msg, d: { v: value } }
       })
     }
 
     if (element.hasAttribute(axm.change)) {
-      on(element, "change", axm.change, (msg) => {
+      on(socket, options, element, element, "change", axm.change, (msg) => {
         const value = inputValue(element)
         return { t: "input", m: msg, d: { v: value } }
       })
     }
 
     if (element.hasAttribute(axm.focus)) {
-      on(element, "focus", axm.focus, (msg) => {
+      on(socket, options, element, element, "focus", axm.focus, (msg) => {
         const value = inputValue(element)
         return { t: "input", m: msg, d: { v: value } }
       })
     }
 
     if (element.hasAttribute(axm.blur)) {
-      on(element, "blur", axm.blur, (msg) => {
+      on(socket, options, element, element, "blur", axm.blur, (msg) => {
         const value = inputValue(element)
         return { t: "input", m: msg, d: { v: value } }
       })
@@ -235,7 +242,7 @@ function addEventListeners(socket: WebSocket, element: Element, options: LiveVie
 
   if (element instanceof HTMLFormElement) {
     if (element.hasAttribute(axm.change)) {
-      on(element, "change", axm.change, (msg) => {
+      on(socket, options, element, element, "change", axm.change, (msg) => {
         // workaround for https://github.com/microsoft/TypeScript/issues/30584
         const form = new FormData(element) as any
         const query = new URLSearchParams(form).toString()
@@ -244,7 +251,7 @@ function addEventListeners(socket: WebSocket, element: Element, options: LiveVie
     }
 
     if (element.hasAttribute(axm.submit)) {
-      on(element, "submit", axm.submit, (msg) => {
+      on(socket, options, element, element, "submit", axm.submit, (msg) => {
         // workaround for https://github.com/microsoft/TypeScript/issues/30584
         const form = new FormData(element) as any
         const query = new URLSearchParams(form).toString()
@@ -264,7 +271,7 @@ function addEventListeners(socket: WebSocket, element: Element, options: LiveVie
     if (!axm) { return }
 
     if (element.hasAttribute(axm)) {
-      on(element, event, axm, (msg, event) => {
+      on(socket, options, element, element, event, axm, (msg, event) => {
         if (event instanceof MouseEvent) {
           const data: MouseData = {
             cx: event.clientX,
@@ -294,7 +301,7 @@ function addEventListeners(socket: WebSocket, element: Element, options: LiveVie
     if (!axm) { return }
 
     if (element.hasAttribute(axm)) {
-      on(element, event, axm, (msg, event) => {
+      on(socket, options, element, element, event, axm, (msg, event) => {
         if (event instanceof KeyboardEvent) {
           if (
             element.hasAttribute("axm-key") &&
@@ -319,15 +326,22 @@ function addEventListeners(socket: WebSocket, element: Element, options: LiveVie
     }
   });
 
+}
+
+function addDocumentEventListeners(
+  socket: WebSocket,
+  element: Element,
+  options: LiveViewOptions,
+) {
   [
-    ["keydown", axm.window_keydown],
-    ["keyup", axm.window_keyup],
+    ["keydown", axm_window.keydown],
+    ["keyup", axm_window.keyup],
   ].forEach(([event, axm]) => {
     if (!event) { return }
     if (!axm) { return }
 
     if (element.hasAttribute(axm)) {
-      on(window, event, axm, (msg, event) => {
+      on(socket, options, element, document, event, axm, (msg, event) => {
         if (event instanceof KeyboardEvent) {
           if (
             element.hasAttribute("axm-key") &&
@@ -352,20 +366,20 @@ function addEventListeners(socket: WebSocket, element: Element, options: LiveVie
     }
   });
 
-  if (element.hasAttribute(axm.window_focus)) {
-    on(window, "focus", axm.window_focus, (msg) => {
+  if (element.hasAttribute(axm_window.focus)) {
+    on(socket, options, element, document, "focus", axm_window.focus, (msg) => {
       return { t: "window_focus", m: msg }
     })
   }
 
-  if (element.hasAttribute(axm.window_blur)) {
-    on(window, "blur", axm.window_blur, (msg) => {
+  if (element.hasAttribute(axm_window.blur)) {
+    on(socket, options, element, document, "blur", axm_window.blur, (msg) => {
       return { t: "window_blur", m: msg }
     })
   }
 
-  if (element.hasAttribute(axm.scroll)) {
-    on(document, "scroll", axm.scroll, (msg) => {
+  if (element.hasAttribute(axm_window.scroll)) {
+    on(socket, options, element, document, "scroll", axm_window.scroll, (msg) => {
       const data = {
         sx: window.scrollX,
         sy: window.scrollY,
@@ -373,50 +387,69 @@ function addEventListeners(socket: WebSocket, element: Element, options: LiveVie
       return { t: "scroll", m: msg, d: data }
     })
   }
-
-  function on(
-    element: Element | typeof window | typeof document,
-    eventName: string,
-    attr: string,
-    f: (msg: string | JSON, event: Event) => MessageToView | undefined,
-  ) {
-    element.addEventListener(eventName, delayOrThrottle((event) => {
-      if (!(event instanceof KeyboardEvent)) {
-        event.preventDefault()
-      }
-
-      const decodeMsg = msgAttr(attr)
-      if (!decodeMsg) { return }
-      const payload = f(decodeMsg, event)
-      if (!payload) { return }
-      socketSend(socket, payload, options)
-    }))
-  }
-
-  function msgAttr(attr: string): string | JSON | undefined {
-      const value = element.getAttribute(attr)
-      if (!value) { return }
-      try {
-        return JSON.parse(value)
-      } catch {
-        return value
-      }
-  }
-
-  function delayOrThrottle<In extends unknown[]>(f: Fn<In>): Fn<In> {
-    var delayMs = numberAttr(element, "axm-debounce")
-    if (delayMs) {
-      return debounce(f, delayMs)
-    }
-
-    var delayMs = numberAttr(element, "axm-throttle")
-    if (delayMs) {
-      return throttle(f, delayMs)
-    }
-
-    return f
-  }
 }
+
+function on(
+  socket: WebSocket,
+  options: LiveViewOptions,
+  element: Element,
+  listenForEventOn: Element | typeof document,
+  eventName: string,
+  attr: string,
+  f: (msg: string | JSON, event: Event) => MessageToView | undefined,
+) {
+  var callback: (event: Event) => void = delayOrThrottle(element, (event: Event) => {
+    if (!(event instanceof KeyboardEvent)) {
+      event.preventDefault()
+    }
+
+    const decodeMsg = msgAttr(element, attr)
+    if (!decodeMsg) { return }
+    const payload = f(decodeMsg, event)
+    if (!payload) { return }
+    socketSend(socket, payload, options)
+  })
+
+  if (document === listenForEventOn) {
+    documentEventListeners.push({
+      event: eventName,
+      callback: callback,
+    })
+  }
+
+  listenForEventOn.addEventListener(eventName, callback)
+}
+
+function msgAttr(element: Element, attr: string): string | JSON | undefined {
+    const value = element.getAttribute(attr)
+    if (!value) { return }
+    try {
+      return JSON.parse(value)
+    } catch {
+      return value
+    }
+}
+
+function delayOrThrottle<In extends unknown[]>(element: Element, f: Fn<In>): Fn<In> {
+  var delayMs = numberAttr(element, "axm-debounce")
+  if (delayMs) {
+    return debounce(f, delayMs)
+  }
+
+  var delayMs = numberAttr(element, "axm-throttle")
+  if (delayMs) {
+    return throttle(f, delayMs)
+  }
+
+  return f
+}
+
+interface DocumentEventListener {
+  event: string,
+  callback: (event: Event) => void,
+}
+
+var documentEventListeners: DocumentEventListener[] = []
 
 type MessageToView =
   Click
@@ -576,38 +609,50 @@ function updateDomFromState(socket: WebSocket, state: State, options: LiveViewOp
   }
 
   function patchDom(socket: WebSocket, element: Element, html: string) {
-    morphdom(element, html, {
-        onNodeAdded: (node) => {
-          if (node instanceof Element) {
-            addEventListeners(socket, node, options)
-          }
-          return node
-        },
-        onBeforeElUpdated: (fromEl, toEl) => {
-          if (fromEl instanceof HTMLInputElement && toEl instanceof HTMLInputElement) {
-            if (toEl.getAttribute("type") === "radio" || toEl.getAttribute("type") === "checkbox") {
-              toEl.checked = fromEl.checked;
-            } else {
-              toEl.value = fromEl.value;
-            }
-          }
+    for (var i = 0; i < documentEventListeners.length; i++) {
+      let e = documentEventListeners[i]
+      if (!e) { continue }
+      document.removeEventListener(e.event, e.callback)
+      documentEventListeners.splice(i, 1);
+    }
 
-          if (fromEl instanceof HTMLTextAreaElement && toEl instanceof HTMLTextAreaElement) {
+    morphdom(element, html, {
+      onNodeAdded: (node) => {
+        if (node instanceof Element) {
+          addEventListeners(socket, node, options)
+        }
+        return node
+      },
+      onBeforeElUpdated: (fromEl, toEl) => {
+        if (fromEl instanceof HTMLInputElement && toEl instanceof HTMLInputElement) {
+          if (toEl.getAttribute("type") === "radio" || toEl.getAttribute("type") === "checkbox") {
+            toEl.checked = fromEl.checked;
+          } else {
             toEl.value = fromEl.value;
           }
+        }
 
-          if (fromEl instanceof HTMLOptionElement && toEl instanceof HTMLOptionElement) {
-            if (toEl.closest("select")?.hasAttribute("multiple")) {
-              toEl.selected = fromEl.selected
-            }
+        if (fromEl instanceof HTMLTextAreaElement && toEl instanceof HTMLTextAreaElement) {
+          toEl.value = fromEl.value;
+        }
+
+        if (fromEl instanceof HTMLOptionElement && toEl instanceof HTMLOptionElement) {
+          if (toEl.closest("select")?.hasAttribute("multiple")) {
+            toEl.selected = fromEl.selected
           }
+        }
 
-          if (fromEl instanceof HTMLSelectElement && toEl instanceof HTMLSelectElement && !toEl.hasAttribute("multiple")) {
-            toEl.value = fromEl.value
-          }
+        if (fromEl instanceof HTMLSelectElement && toEl instanceof HTMLSelectElement && !toEl.hasAttribute("multiple")) {
+          toEl.value = fromEl.value
+        }
 
-          return true
-        },
+        return true
+      },
+    })
+
+    const attrs = Object.values(axm_window).map((attr) => `[${attr}]`).join(", ")
+    document.querySelectorAll(attrs).forEach((el) => {
+      addDocumentEventListeners(socket, el, options)
     })
   }
 }
