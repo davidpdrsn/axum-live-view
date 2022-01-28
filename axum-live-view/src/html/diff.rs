@@ -4,8 +4,8 @@ use std::collections::BTreeMap;
 
 #[derive(Serialize)]
 pub(crate) struct HtmlDiff<'a, T> {
-    #[serde(rename = "f", skip_serializing_if = "empty_slice")]
-    fixed: &'static [&'static str],
+    #[serde(rename = "f", skip_serializing_if = "Option::is_none")]
+    fixed: Option<&'static [&'static str]>,
     #[serde(rename = "d", skip_serializing_if = "BTreeMap::is_empty")]
     dynamic: IndexMap<Option<DynamicFragmentDiff<'a, T>>>,
 }
@@ -28,7 +28,7 @@ pub(crate) enum DynamicFragmentDiff<'a, T> {
 impl<'a, T> From<&'a Html<T>> for HtmlDiff<'a, T> {
     fn from(html: &'a Html<T>) -> Self {
         Self {
-            fixed: html.fixed,
+            fixed: Some(html.fixed),
             dynamic: html
                 .dynamic
                 .iter()
@@ -69,8 +69,6 @@ impl<T> Html<T> {
     where
         T: PartialEq + Serialize,
     {
-        let fixed = diff_fixed(self.fixed, other.fixed);
-
         let dynamic = zip(self.dynamic.iter(), other.dynamic.iter())
             .filter_map(|pair| match pair {
                 Zipped::Both((self_idx, self_value), (other_idx, other_value)) => {
@@ -84,10 +82,23 @@ impl<T> Html<T> {
             })
             .collect::<BTreeMap<usize, Option<DynamicFragmentDiff<T>>>>();
 
-        if !fixed.is_empty() || !dynamic.is_empty() {
-            Some(HtmlDiff { fixed, dynamic })
-        } else {
-            None
+        let new_fixed = (self.fixed != other.fixed).then(|| other.fixed);
+        let new_dynamic = (!dynamic.is_empty()).then(|| dynamic);
+
+        match (new_fixed, new_dynamic) {
+            (None, None) => None,
+            (Some(fixed), None) => Some(HtmlDiff {
+                fixed: Some(fixed),
+                dynamic: Default::default(),
+            }),
+            (None, Some(dynamic)) => Some(HtmlDiff {
+                fixed: None,
+                dynamic,
+            }),
+            (Some(fixed), Some(dynamic)) => Some(HtmlDiff {
+                fixed: Some(fixed),
+                dynamic,
+            }),
         }
     }
 }

@@ -852,3 +852,23 @@ fn starting_with_dynamic() {
     };
     assert_eq!(view.render(), "one.two");
 }
+
+#[test]
+fn if_toggle() {
+    fn render(flag: bool) -> Html<()> {
+        if flag {
+            html! { "hi" }
+        } else {
+            html! {}
+        }
+    }
+
+    let a = render(true);
+    let b = render(false);
+    assert_json_diff::assert_json_eq!(
+        pretty_print(a.diff(&b)),
+        json!({
+            "f": []
+        })
+    );
+}
