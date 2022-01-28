@@ -1,9 +1,9 @@
 use axum::{
     async_trait,
     extract::Extension,
-    http::{HeaderMap, StatusCode, Uri},
+    http::{HeaderMap, Uri},
     response::IntoResponse,
-    routing::{get, get_service},
+    routing::get,
     AddExtensionLayer, Router,
 };
 use axum_live_view::{
@@ -15,14 +15,11 @@ use axum_live_view::{
 use serde::{Deserialize, Serialize};
 use std::{
     convert::Infallible,
-    env,
     net::SocketAddr,
-    path::PathBuf,
     sync::{Arc, Mutex},
 };
 use tokio::sync::broadcast;
 use tower::ServiceBuilder;
-use tower_http::services::ServeFile;
 
 #[tokio::main]
 async fn main() {
@@ -34,13 +31,7 @@ async fn main() {
 
     let app = Router::new()
         .route("/", get(root))
-        .route(
-            "/bundle.js",
-            get_service(ServeFile::new(
-                PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("dist/bundle.js"),
-            ))
-            .handle_error(|_| async { StatusCode::INTERNAL_SERVER_ERROR }),
-        )
+        .route("/bundle.js", axum_live_view::precompiled_js())
         .layer(
             ServiceBuilder::new()
                 .layer(AddExtensionLayer::new(messages))

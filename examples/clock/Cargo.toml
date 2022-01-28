@@ -12,5 +12,4 @@ tokio = { version = "1.0", features = ["full"] }
 tracing = "0.1"
 serde = { version = "1.0", features = ["derive"] }
 tower-http = { version = "0.2", features = ["fs"] }
-
 time = { version = "0.3.5", features = ["local-offset", "formatting"] }

@@ -58,7 +58,7 @@ pub use axum_live_view_macros::html;
 
 #[cfg(feature = "precompiled-js")]
 #[cfg_attr(docsrs, doc(cfg(feature = "precompiled-js")))]
-pub const PRECOMPILED_JS: &str = include_str!("../../assets/axum_live_view.min.js");
+pub const PRECOMPILED_JS: &str = include_str!("../../assets-precompiled/axum_live_view.min.js");
 
 #[cfg(feature = "precompiled-js")]
 #[cfg_attr(docsrs, doc(cfg(feature = "precompiled-js")))]
@@ -73,8 +73,9 @@ where
         routing::get,
     };
 
-    const HASH: &str = include_str!("../../assets/axum_live_view.hash.txt");
-    const PRECOMPILED_JS_GZ: &[u8] = include_bytes!("../../assets/axum_live_view.min.js.gz");
+    const HASH: &str = include_str!("../../assets-precompiled/axum_live_view.hash.txt");
+    const PRECOMPILED_JS_GZ: &[u8] =
+        include_bytes!("../../assets-precompiled/axum_live_view.min.js.gz");
 
     const APPLICATION_JAVASCRIPT: HeaderValue =
         HeaderValue::from_static("application/javascript; charset=utf-8");

@@ -30,15 +30,6 @@ jobs:
         command: fmt
         args: --all -- --check
 
-  build-assets:
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v2
-    - uses: actions/setup-node@v2
-      with:
-        node-version: '16'
-    - run: cargo xtask ts install && cargo xtask examples build
-
   ensure-precompiled-up-to-date:
     runs-on: ubuntu-latest
     steps:
@@ -46,7 +37,8 @@ jobs:
     - uses: actions/setup-node@v2
       with:
         node-version: '16'
-    - run: cargo xtask ts install && cargo xtask ts precompile --check
+    # this will also install and build the typescript
+    - run: cargo xtask ts precompile --check
 
   check-docs:
     runs-on: ubuntu-latest

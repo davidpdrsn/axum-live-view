@@ -1,6 +1,6 @@
 {
   "dependencies": {
-    "axum-live-view": "file:../../assets"
+    "axum-live-view": "file:../assets"
   },
   "private": true,
   "devDependencies": {
