@@ -30,5 +30,5 @@
     "removeComments": true,
     "declaration": true
   },
-  "exclude": ["node_modules", "dist", "precompiled"]
+  "exclude": ["node_modules", "dist"]
 }
