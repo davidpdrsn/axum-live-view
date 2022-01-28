@@ -103,7 +103,9 @@ struct TsPrecompile {
 fn ts_precompile(opt: TsPrecompile) -> Result {
     let TsPrecompile { check, no_install } = opt;
 
-    ts_install(TsInstall {})?;
+    if !no_install {
+        ts_install(TsInstall {})?;
+    }
 
     ts_build(TsBuild { check: false })?;
 
