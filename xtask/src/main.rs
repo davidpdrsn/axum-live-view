@@ -4,7 +4,6 @@ use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 use std::{
     env, fs,
-    fs::read_dir,
     path::{Path, PathBuf},
     process::Command,
 };
@@ -26,11 +25,9 @@ fn main() -> Result {
     let opt = Opt::from_args();
 
     match opt {
-        Opt::Ts(Ts::Build(opt)) => ts_build(opt)?,
         Opt::Ts(Ts::Install(opt)) => ts_install(opt)?,
+        Opt::Ts(Ts::Build(opt)) => ts_build(opt)?,
         Opt::Ts(Ts::Precompile(opt)) => ts_precompile(opt)?,
-        Opt::Examples(Examples::Build(opt)) => examples_build(opt)?,
-        Opt::Examples(Examples::Run(opt)) => examples_run(opt)?,
         Opt::Codegen => codegen()?,
     }
 
@@ -40,56 +37,36 @@ fn main() -> Result {
 #[derive(Debug, StructOpt)]
 enum Opt {
     Ts(Ts),
-    Examples(Examples),
     Codegen,
 }
 
 /// Typescript related commands
 #[derive(Debug, StructOpt)]
 enum Ts {
-    Build(TsBuild),
     Install(TsInstall),
+    Build(TsBuild),
     Precompile(TsPrecompile),
 }
 
 /// Build the typescript assets
 #[derive(Debug, StructOpt)]
 struct TsBuild {
-    /// Watch files for changes
-    #[structopt(short, long)]
-    watch: bool,
-
-    /// Clean compiled files and artifacts
-    #[structopt(long)]
-    clean: bool,
-
     /// Only perform type checking, don't emit any files
-    #[structopt(short, long, conflicts_with_all = &["clean"])]
+    #[structopt(short, long)]
     check: bool,
 }
 
 fn ts_build(opt: TsBuild) -> Result {
-    let TsBuild {
-        watch,
-        clean,
-        check,
-    } = opt;
+    let TsBuild { check } = opt;
 
     let mut cmd = Command::new("npx");
-    cmd.current_dir(project_root().join("assets"));
-
     cmd.arg("tsc");
-
-    if watch {
-        cmd.arg("-w");
-    }
-
-    if clean {
-        cmd.args(&["--build", "--clean"]);
-    }
+    cmd.current_dir(project_root().join("assets"));
 
     if check {
         cmd.arg("--noEmit");
+    } else {
+        cmd.args(&["--build"]);
     }
 
     run_cmd(cmd)?;
@@ -118,37 +95,48 @@ fn ts_install(opt: TsInstall) -> Result {
 struct TsPrecompile {
     #[structopt(long)]
     check: bool,
+
+    #[structopt(long)]
+    no_install: bool,
 }
 
 fn ts_precompile(opt: TsPrecompile) -> Result {
-    let TsPrecompile { check } = opt;
+    let TsPrecompile { check, no_install } = opt;
 
-    examples_build(ExamplesBuild {
-        skip_ts: false,
-        skip_deps: false,
-        which: Some("counter".to_owned()),
-    })?;
+    if !no_install {
+        ts_install(TsInstall {})?;
+    }
 
-    let code = fs::read_to_string(project_root().join("examples/counter/dist/bundle.js"))?;
+    ts_build(TsBuild { check: false })?;
 
-    let assets = project_root().join("assets");
-    let path = assets.join("axum_live_view.min.js");
+    let precompiled = project_root().join("assets-precompiled");
+
+    let code_before_build = fs::read_to_string(precompiled.join("axum_live_view.min.js"))?;
+
+    let mut install_cmd = Command::new("npm");
+    install_cmd.arg("install");
+    install_cmd.current_dir(&precompiled);
+    run_cmd(install_cmd)?;
+
+    let mut build_command = Command::new("npx");
+    build_command.arg("webpack");
+    build_command.current_dir(&precompiled);
+    run_cmd(build_command)?;
+
+    let code = fs::read_to_string(precompiled.join("axum_live_view.min.js"))?;
 
     if check {
-        let current = fs::read_to_string(path)?;
-        if current != code {
+        if code_before_build != code {
             Err("Code on disk doesn't match")?;
         }
     } else {
-        fs::write(path, &code)?;
-
         fs::write(
-            assets.join("axum_live_view.min.js.gz"),
+            precompiled.join("axum_live_view.min.js.gz"),
             gzip(code.as_bytes())?,
         )?;
 
         fs::write(
-            assets.join("axum_live_view.hash.txt"),
+            precompiled.join("axum_live_view.hash.txt"),
             calculate_hash(&code).to_string(),
         )?;
     }
@@ -173,128 +161,6 @@ fn gzip(input: &[u8]) -> Result<Vec<u8>> {
     let mut encoder = GzEncoder::new(Vec::new(), Compression::best());
     encoder.write_all(input)?;
     Ok(encoder.finish()?)
-}
-
-/// Typescript related commands
-#[derive(Debug, StructOpt)]
-enum Examples {
-    Build(ExamplesBuild),
-    Run(ExamplesRun),
-}
-
-#[derive(Debug, StructOpt)]
-struct ExamplesBuild {
-    #[structopt(long)]
-    skip_ts: bool,
-
-    #[structopt(long)]
-    skip_deps: bool,
-
-    #[structopt()]
-    which: Option<String>,
-}
-
-fn examples_build(opt: ExamplesBuild) -> Result {
-    let ExamplesBuild {
-        which,
-        skip_ts,
-        skip_deps,
-    } = opt;
-
-    if !skip_ts {
-        println!("building typescript");
-        ts_build(TsBuild {
-            watch: false,
-            clean: false,
-            check: false,
-        })?;
-    }
-
-    let example_dirs = read_dir(project_root().join("examples"))?
-        .into_iter()
-        .filter_map(|entry| entry.ok())
-        .filter(|entry| entry.path().is_dir())
-        .map(|entry| entry.path())
-        .filter(|path| {
-            if let Some(which) = &which {
-                path.ends_with(which)
-            } else {
-                true
-            }
-        });
-
-    let mut threads = Vec::new();
-    for dir in example_dirs {
-        threads.push(std::thread::spawn(move || {
-            let contains_webpack_config = read_dir(&dir)?
-                .into_iter()
-                .filter_map(|entry| entry.ok())
-                .any(|entry| {
-                    let path = entry.path();
-                    let name = path.file_name().and_then(|name| name.to_str());
-                    name == Some("webpack.config.js")
-                });
-
-            if contains_webpack_config {
-                if !skip_deps {
-                    println!("installing dependencies {}", dir.display());
-                    let mut install_cmd = Command::new("npm");
-                    install_cmd.arg("install");
-                    install_cmd.current_dir(&dir);
-                    run_cmd(install_cmd)?;
-                }
-
-                println!("building {}", dir.display());
-                let mut cmd = Command::new("npx");
-                cmd.arg("webpack");
-                cmd.current_dir(&dir);
-                run_cmd(cmd)?;
-            }
-
-            Result::Ok(())
-        }));
-    }
-
-    for t in threads {
-        t.join().expect("thread panicked")?;
-    }
-
-    Ok(())
-}
-
-#[derive(Debug, StructOpt)]
-struct ExamplesRun {
-    #[structopt(long)]
-    release: bool,
-
-    #[structopt(flatten)]
-    build: ExamplesBuild,
-}
-
-fn examples_run(opt: ExamplesRun) -> Result {
-    let ExamplesRun { release, build } = opt;
-
-    let which = if let Some(which) = build.which.as_ref() {
-        which.to_owned()
-    } else {
-        Err("Must specify which example to run")?
-    };
-
-    examples_build(build)?;
-
-    let mut cmd = Command::new("cargo");
-    cmd.current_dir(project_root());
-    cmd.args(&["run", "-p", &format!("example-{}", which)]);
-    if release {
-        cmd.arg("--release");
-    }
-    cmd.env(
-        "RUST_LOG",
-        format!("axum_live_view=trace,example_{}=trace", which),
-    );
-    cmd.status()?;
-
-    Ok(())
 }
 
 fn run_cmd(mut cmd: Command) -> Result {
