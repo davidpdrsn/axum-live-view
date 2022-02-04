@@ -1,3 +1,7 @@
+//! Internal macro crate for [axum-live-view].
+//!
+//! [axum-live-view]: https://crates.io/crates/axum-live-view
+
 #![warn(
     clippy::all,
     clippy::dbg_macro,
@@ -30,8 +34,8 @@
     rust_2018_idioms,
     future_incompatible,
     nonstandard_style,
-    // missing_debug_implementations,
-    // missing_docs
+    missing_debug_implementations,
+    missing_docs
 )]
 #![deny(unreachable_pub, private_in_public)]
 #![allow(elided_lifetimes_in_paths, clippy::type_complexity)]
@@ -50,6 +54,7 @@ use syn::{
 };
 
 #[proc_macro]
+#[allow(missing_docs)]
 pub fn html(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let tree = match syn::parse::<Tree>(input) {
         Ok(tree) => tree,

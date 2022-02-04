@@ -281,6 +281,19 @@ mod inner {
     builder! {
         #[builder_name = MouseBuilder]
         #[derive(Debug, Clone)]
+        /// A mouse event.
+        ///
+        /// This event type is sent for these bindings:
+        ///
+        /// - `axm-mouseenter`
+        /// - `axm-mouseover`
+        /// - `axm-mouseleave`
+        /// - `axm-mouseout`
+        /// - `axm-mousemove`
+        ///
+        /// See [MDN] for more details about mouse events.
+        ///
+        /// [MDN]: https://developer.mozilla.org/en-US/docs/Web/API/MouseEvent
         pub struct Mouse {
             client_x: f64,
             client_y: f64,
@@ -296,42 +309,96 @@ mod inner {
     }
 
     impl Mouse {
+        /// Horizontal coordinate within the application's viewport at which the event occurred.
+        ///
+        /// See [MDN] for more details.
+        ///
+        /// [MDN]: https://developer.mozilla.org/en-US/docs/Web/API/MouseEvent/clientX
         pub fn client_x(&self) -> f64 {
             self.client_x
         }
 
+        /// Vertical coordinate within the application's viewport at which the event occurred.
+        ///
+        /// See [MDN] for more details.
+        ///
+        /// [MDN]: https://developer.mozilla.org/en-US/docs/Web/API/MouseEvent/clientX
         pub fn client_y(&self) -> f64 {
             self.client_y
         }
 
+        /// The horizontal coordinate of the mouse pointer relative to the whole document.
+        ///
+        /// See [MDN] for more details.
+        ///
+        /// [MDN]: https://developer.mozilla.org/en-US/docs/Web/API/MouseEvent/pageX
         pub fn page_x(&self) -> f64 {
             self.page_x
         }
 
+        /// The vertical coordinate of the mouse pointer relative to the whole document.
+        ///
+        /// See [MDN] for more details.
+        ///
+        /// [MDN]: https://developer.mozilla.org/en-US/docs/Web/API/MouseEvent/pageY
         pub fn page_y(&self) -> f64 {
             self.page_y
         }
 
+        /// The horizontal coordinate of the mouse pointer relative to the position of the padding
+        /// edge of the target node.
+        ///
+        /// See [MDN] for more details.
+        ///
+        /// [MDN]: https://developer.mozilla.org/en-US/docs/Web/API/MouseEvent/offsetX
         pub fn offset_x(&self) -> f64 {
             self.offset_x
         }
 
+        /// The vertical coordinate of the mouse pointer relative to the position of the padding
+        /// edge of the target node.
+        ///
+        /// See [MDN] for more details.
+        ///
+        /// [MDN]: https://developer.mozilla.org/en-US/docs/Web/API/MouseEvent/offsetY
         pub fn offset_y(&self) -> f64 {
             self.offset_y
         }
 
+        /// The horizontal coordinate of the mouse pointer relative to the position of the last
+        /// `mousemove` event.
+        ///
+        /// See [MDN] for more details.
+        ///
+        /// [MDN]: https://developer.mozilla.org/en-US/docs/Web/API/MouseEvent/movementX
         pub fn movement_x(&self) -> f64 {
             self.movement_x
         }
 
+        /// The vertical coordinate of the mouse pointer relative to the position of the last
+        /// `mousemove` event.
+        ///
+        /// See [MDN] for more details.
+        ///
+        /// [MDN]: https://developer.mozilla.org/en-US/docs/Web/API/MouseEvent/movementY
         pub fn movement_y(&self) -> f64 {
             self.movement_y
         }
 
+        /// The horizontal coordinate of the mouse pointer in global (screen) coordinates.
+        ///
+        /// See [MDN] for more details.
+        ///
+        /// [MDN]: https://developer.mozilla.org/en-US/docs/Web/API/MouseEvent/screenX
         pub fn screen_x(&self) -> f64 {
             self.screen_x
         }
 
+        /// The vertical coordinate of the mouse pointer in global (screen) coordinates.
+        ///
+        /// See [MDN] for more details.
+        ///
+        /// [MDN]: https://developer.mozilla.org/en-US/docs/Web/API/MouseEvent/screenY
         pub fn screen_y(&self) -> f64 {
             self.screen_y
         }
@@ -340,6 +407,9 @@ mod inner {
     builder! {
         #[builder_name = ScrollBuilder]
         #[derive(Debug, Clone)]
+        /// A scroll event.
+        ///
+        /// This event type is sent for `axm-scroll` bindings.
         pub struct Scroll {
             scroll_x: f64,
             scroll_y: f64,
@@ -347,10 +417,20 @@ mod inner {
     }
 
     impl Scroll {
+        /// The number of pixels that the document is currently scrolled horizontally.
+        ///
+        /// See [MDN] for more details.
+        ///
+        /// [mdn]: https://developer.mozilla.org/en-US/docs/Web/API/Window/scrollX
         pub fn scroll_x(&self) -> f64 {
             self.scroll_x
         }
 
+        /// The number of pixels that the document is currently scrolled vertically.
+        ///
+        /// See [MDN] for more details.
+        ///
+        /// [MDN]: https://developer.mozilla.org/en-US/docs/Web/API/Window/scrollY
         pub fn scroll_y(&self) -> f64 {
             self.scroll_y
         }

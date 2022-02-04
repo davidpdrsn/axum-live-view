@@ -1,14 +1,14 @@
 macro_rules! builder {
     (
         #[builder_name = $builder_name:ident]
-        #[$($m:meta)*]
+        $(#[$m:meta])*
         pub struct $name:ident {
             $(
                 $field:ident : $field_ty:ty,
             )*
         }
     ) => {
-        #[$($m)*]
+        $(#[$m])*
         pub struct $name {
             $(
                 $field: $field_ty,
@@ -16,12 +16,18 @@ macro_rules! builder {
         }
 
         impl $name {
+            #[doc = concat!("Get a builder for `", stringify!($name), "`.")]
+            #[doc = ""]
+            #[doc = concat!("This allows creating `", stringify!($name), "` events for example for use in tests.")]
             pub fn builder() -> $builder_name {
                 $builder_name::default()
             }
         }
 
         #[derive(Default, Debug, Clone)]
+        #[doc = concat!("Builder for `", stringify!($name), "`")]
+        #[doc = ""]
+        #[doc = concat!("Created with `", stringify!($name), "::build`")]
         pub struct $builder_name {
             $(
                 $field: Option<$field_ty>,
@@ -29,17 +35,15 @@ macro_rules! builder {
         }
 
         impl $builder_name {
-            pub fn new() -> Self {
-                Self::default()
-            }
-
             $(
+                #[doc = concat!("Set `", stringify!($field), "`.")]
                 pub fn $field(mut self, $field: impl Into<$field_ty>) -> Self {
                     self.$field = Some($field.into());
                     self
                 }
             )*
 
+            #[doc = concat!("Consume the build and construct a `", stringify!($name), "`")]
             pub fn build(self) -> $name {
                 $name {
                     $(

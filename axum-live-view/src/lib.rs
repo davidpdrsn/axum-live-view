@@ -1,3 +1,5 @@
+//! TODO
+
 #![warn(
     clippy::all,
     clippy::dbg_macro,
@@ -30,8 +32,8 @@
     rust_2018_idioms,
     future_incompatible,
     nonstandard_style,
-    // missing_debug_implementations,
-    // missing_docs
+    missing_debug_implementations,
+    missing_docs
 )]
 #![deny(unreachable_pub, private_in_public)]
 #![allow(elided_lifetimes_in_paths, clippy::type_complexity)]
@@ -54,12 +56,61 @@ mod util;
 
 #[doc(inline)]
 pub use self::{extract::LiveViewUpgrade, html::Html, live_view::LiveView};
+
+/// TODO
 pub use axum_live_view_macros::html;
 
+/// A precompiled build of axum-live-view's JavaScript.
+///
+/// This enables using axum-live-view without a bundler like [webpack].
+///
+/// What's compiled is
+///
+/// ```javascript
+/// import { LiveView } from "axum-live-view"
+///
+/// window.liveView = new LiveView()
+/// ```
+///
+/// Which will automatically detect and connect any live views on the page. The live view instance
+/// is stored on the `window` object so its accessible to other scripts and from the developer
+/// console.
+///
+/// This constant contains just the JavaScript itself allowing you to serve it however you want.
+/// For a good default route that serves just the JavaScript use [`precompiled_js`].
+///
+/// [webpack]: https://webpack.js.org
 #[cfg(feature = "precompiled-js")]
 #[cfg_attr(docsrs, doc(cfg(feature = "precompiled-js")))]
 pub const PRECOMPILED_JS: &str = include_str!("../../assets-precompiled/axum_live_view.min.js");
 
+/// A route that returns a precompiled build of axum-live-view's JavaScript.
+///
+/// This enables using axum-live-view without a bundler like [webpack].
+///
+/// What's compiled is
+///
+/// ```javascript
+/// import { LiveView } from "axum-live-view"
+///
+/// window.liveView = new LiveView()
+/// ```
+///
+/// Which will automatically detect and connect any live views on the page. The live view instance
+/// is stored on the `window` object so its accessible to other scripts and from the developer
+/// console.
+///
+/// # Example
+///
+/// ```
+/// use axum::Router;
+/// use axum_live_view::precompiled_js;
+///
+/// let app = Router::new().route("/assets/live_view.js", precompiled_js());
+/// # let _: Router<axum::body::Body> = app;
+/// ```
+///
+/// [webpack]: https://webpack.js.org
 #[cfg(feature = "precompiled-js")]
 #[cfg_attr(docsrs, doc(cfg(feature = "precompiled-js")))]
 #[allow(clippy::declare_interior_mutable_const)]
