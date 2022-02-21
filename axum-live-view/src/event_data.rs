@@ -3,13 +3,33 @@ mod inner {
     use serde::{de::DeserializeOwned, Serialize};
     use std::fmt;
 
+    /// The data for an event that happened on the client.
+    ///
+    /// This is passed to [`LiveView::update`].
+    ///
+    /// [`LiveView::update`]: crate::live_view::LiveView::update
     #[derive(Debug, Clone)]
     #[non_exhaustive]
     pub enum EventData {
+        /// An form event.
+        ///
+        /// See [`Form`] for more details.
         Form(Form),
+        /// An input event.
+        ///
+        /// See [`Input`] for more details.
         Input(Input),
+        /// An key event.
+        ///
+        /// See [`Key`] for more details.
         Key(Key),
+        /// A mouse event.
+        ///
+        /// See [`Mouse`] for more details.
         Mouse(Mouse),
+        /// A scroll event.
+        ///
+        /// See [`Scroll`] for more details.
         Scroll(Scroll),
     }
 
@@ -20,6 +40,7 @@ mod inner {
     impl_from!(EventData::Scroll);
 
     impl EventData {
+        /// Get the inner [`Form`] if any.
         pub fn as_form(&self) -> Option<&Form> {
             if let Self::Form(inner) = self {
                 Some(inner)
@@ -28,6 +49,7 @@ mod inner {
             }
         }
 
+        /// Get the inner [`Input`] if any.
         pub fn as_input(&self) -> Option<&Input> {
             if let Self::Input(inner) = self {
                 Some(inner)
@@ -36,6 +58,7 @@ mod inner {
             }
         }
 
+        /// Get the inner [`Key`] if any.
         pub fn as_key(&self) -> Option<&Key> {
             if let Self::Key(inner) = self {
                 Some(inner)
@@ -44,6 +67,7 @@ mod inner {
             }
         }
 
+        /// Get the inner [`Mouse`] if any.
         pub fn as_mouse(&self) -> Option<&Mouse> {
             if let Self::Mouse(inner) = self {
                 Some(inner)
@@ -52,6 +76,7 @@ mod inner {
             }
         }
 
+        /// Get the inner [`Scroll`] if any.
         pub fn as_scroll(&self) -> Option<&Scroll> {
             if let Self::Scroll(inner) = self {
                 Some(inner)

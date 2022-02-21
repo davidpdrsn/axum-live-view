@@ -317,14 +317,10 @@ fn codegen() -> Result {
         use axum::http::{HeaderMap, Uri};
         use serde::{Deserialize, Serialize};
 
-        pub fn combine<V, F>(views: V, render: F) -> Combine<V, F> {
-            Combine { views, render }
-        }
-
         #[allow(missing_debug_implementations)]
         pub struct Combine<V, F> {
-            views: V,
-            render: F,
+            pub(super) views: V,
+            pub(super) render: F,
         }
 
         #eithers
