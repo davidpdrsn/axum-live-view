@@ -232,6 +232,7 @@
 //!
 //! [phx]: https://github.com/phoenixframework/phoenix_live_view
 //! [axum]: https://github.com/tokio-rs/axum
+//! [`EmbedLiveView::connected`]: extract::EmbedLiveView::connected
 
 #![warn(
     clippy::all,
@@ -290,7 +291,7 @@ mod util;
 #[doc(inline)]
 pub use self::{extract::LiveViewUpgrade, html::Html, live_view::LiveView};
 
-/// TODO
+#[doc = include_str!("docs/html.md")]
 pub use axum_live_view_macros::html;
 
 /// A precompiled build of axum-live-view's JavaScript.

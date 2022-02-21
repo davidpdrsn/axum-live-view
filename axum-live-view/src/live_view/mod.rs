@@ -1,3 +1,5 @@
+//! Server-rendered live views.
+
 use crate::{event_data::EventData, html::Html, js_command::JsCommand};
 use axum::{
     async_trait,
@@ -9,194 +11,6 @@ use std::fmt;
 use tokio::sync::mpsc;
 
 mod combine;
-
-/// Combine multiple live views into one.
-///
-/// Normally you cannot combine two or more views in the same `html!` template because the message
-/// types are different. `combine` can be used to work around that.
-///
-/// # Example
-///
-/// ```
-/// use axum::{async_trait, response::IntoResponse};
-/// use axum_live_view::{
-///     Html,
-///     LiveView,
-///     LiveViewUpgrade,
-///     html,
-///     event_data::EventData,
-///     live_view::Updated,
-/// };
-/// use std::convert::Infallible;
-/// use serde::{Deserialize, Serialize};
-///
-/// // `Foo` and `Bar` are live views with different message types
-/// struct Foo {}
-///
-/// #[async_trait]
-/// impl LiveView for Foo {
-///     type Message = FooMsg;
-///
-///     // ...
-///     # type Error = Infallible;
-///     # async fn update(
-///     #     mut self,
-///     #     msg: FooMsg,
-///     #     data: Option<EventData>,
-///     # ) -> Result<Updated<Self>, Self::Error> {
-///     #     unimplemented!()
-///     # }
-///     # fn render(&self) -> Html<Self::Message> {
-///     #     unimplemented!()
-///     # }
-/// }
-///
-/// #[derive(Serialize, Deserialize, Debug, PartialEq)]
-/// enum FooMsg {}
-///
-/// struct Bar {}
-///
-/// #[async_trait]
-/// impl LiveView for Bar {
-///     type Message = BarMsg;
-///
-///     // ...
-///     # type Error = Infallible;
-///     # async fn update(
-///     #     mut self,
-///     #     msg: BarMsg,
-///     #     data: Option<EventData>,
-///     # ) -> Result<Updated<Self>, Self::Error> {
-///     #     unimplemented!()
-///     # }
-///     # fn render(&self) -> Html<Self::Message> {
-///     #     unimplemented!()
-///     # }
-/// }
-///
-/// #[derive(Serialize, Deserialize, Debug, PartialEq)]
-/// enum BarMsg {}
-///
-/// async fn handle(live: LiveViewUpgrade) -> impl IntoResponse {
-///     live.response(|embed_live_view| {
-///         // instantiate each view
-///         let foo = Foo {};
-///         let bar = Bar {};
-///
-///         // combine them into one view
-///         let combined_view = axum_live_view::live_view::combine(
-///             // a tuple with each view we want to combine
-///             (foo, bar),
-///             // a closure that takes each view and returns the combined HTML
-///             |foo, bar| {
-///                 html! {
-///                     <div class="foo">{ foo }</div>
-///                     <div class="bar">{ bar }</div>
-///                 }
-///             });
-///
-///         html! {
-///             { embed_live_view.embed(combined_view) }
-///         }
-///     })
-/// }
-/// ```
-///
-/// # Combining views with different error types
-///
-/// `combine` requires the views to have the same error type. Use [`LiveView::map_err`] to convert
-/// error types if necessary:
-///
-/// ```
-/// use axum::{async_trait, response::IntoResponse};
-/// use axum_live_view::{
-///     Html,
-///     LiveView,
-///     LiveViewUpgrade,
-///     html,
-///     event_data::EventData,
-///     live_view::Updated,
-/// };
-/// use std::convert::Infallible;
-/// use serde::{Deserialize, Serialize};
-///
-/// // `Foo` and `Bar` are live views with different message types _and different error types_
-/// struct Foo {}
-///
-/// #[async_trait]
-/// impl LiveView for Foo {
-///     type Message = FooMsg;
-///     type Error = std::io::Error;
-///
-///     // ...
-///     # async fn update(
-///     #     mut self,
-///     #     msg: FooMsg,
-///     #     data: Option<EventData>,
-///     # ) -> Result<Updated<Self>, Self::Error> {
-///     #     unimplemented!()
-///     # }
-///     # fn render(&self) -> Html<Self::Message> {
-///     #     unimplemented!()
-///     # }
-/// }
-///
-/// #[derive(Serialize, Deserialize, Debug, PartialEq)]
-/// enum FooMsg {}
-///
-/// struct Bar {}
-///
-/// #[async_trait]
-/// impl LiveView for Bar {
-///     type Message = BarMsg;
-///     type Error = Infallible;
-///
-///     // ...
-///     # async fn update(
-///     #     mut self,
-///     #     msg: BarMsg,
-///     #     data: Option<EventData>,
-///     # ) -> Result<Updated<Self>, Self::Error> {
-///     #     unimplemented!()
-///     # }
-///     # fn render(&self) -> Html<Self::Message> {
-///     #     unimplemented!()
-///     # }
-/// }
-///
-/// #[derive(Serialize, Deserialize, Debug, PartialEq)]
-/// enum BarMsg {}
-///
-/// async fn handle(live: LiveViewUpgrade) -> impl IntoResponse {
-///     live.response(|embed_live_view| {
-///         // instantiate each view
-///         let foo = Foo {};
-///
-///         let bar = Bar {};
-///         // convert `Infallible` into a `std::io::Error` so it matches `Foo`'s error type
-///         let bar = bar.map_err(|err: Infallible| match err {});
-///
-///         // combine them into one view
-///         let combined_view = axum_live_view::live_view::combine(
-///             // a tuple with each view we want to combine
-///             (foo, bar),
-///             // a closure that takes each view and returns the combined HTML
-///             |foo, bar| {
-///                 html! {
-///                     <div class="foo">{ foo }</div>
-///                     <div class="bar">{ bar }</div>
-///                 }
-///             });
-///
-///         html! {
-///             { embed_live_view.embed(combined_view) }
-///         }
-///     })
-/// }
-/// ```
-pub fn combine<V, F>(views: V, render: F) -> combine::Combine<V, F> {
-    combine::Combine { views, render }
-}
 
 /// A server-rendered live view.
 ///
@@ -683,3 +497,191 @@ impl fmt::Display for ViewHandleSendError {
 }
 
 impl std::error::Error for ViewHandleSendError {}
+
+/// Combine multiple live views into one.
+///
+/// Normally you cannot combine two or more views in the same `html!` template because the message
+/// types are different. `combine` can be used to work around that.
+///
+/// # Example
+///
+/// ```
+/// use axum::{async_trait, response::IntoResponse};
+/// use axum_live_view::{
+///     Html,
+///     LiveView,
+///     LiveViewUpgrade,
+///     html,
+///     event_data::EventData,
+///     live_view::Updated,
+/// };
+/// use std::convert::Infallible;
+/// use serde::{Deserialize, Serialize};
+///
+/// // `Foo` and `Bar` are live views with different message types
+/// struct Foo {}
+///
+/// #[async_trait]
+/// impl LiveView for Foo {
+///     type Message = FooMsg;
+///
+///     // ...
+///     # type Error = Infallible;
+///     # async fn update(
+///     #     mut self,
+///     #     msg: FooMsg,
+///     #     data: Option<EventData>,
+///     # ) -> Result<Updated<Self>, Self::Error> {
+///     #     unimplemented!()
+///     # }
+///     # fn render(&self) -> Html<Self::Message> {
+///     #     unimplemented!()
+///     # }
+/// }
+///
+/// #[derive(Serialize, Deserialize, Debug, PartialEq)]
+/// enum FooMsg {}
+///
+/// struct Bar {}
+///
+/// #[async_trait]
+/// impl LiveView for Bar {
+///     type Message = BarMsg;
+///
+///     // ...
+///     # type Error = Infallible;
+///     # async fn update(
+///     #     mut self,
+///     #     msg: BarMsg,
+///     #     data: Option<EventData>,
+///     # ) -> Result<Updated<Self>, Self::Error> {
+///     #     unimplemented!()
+///     # }
+///     # fn render(&self) -> Html<Self::Message> {
+///     #     unimplemented!()
+///     # }
+/// }
+///
+/// #[derive(Serialize, Deserialize, Debug, PartialEq)]
+/// enum BarMsg {}
+///
+/// async fn handle(live: LiveViewUpgrade) -> impl IntoResponse {
+///     live.response(|embed_live_view| {
+///         // instantiate each view
+///         let foo = Foo {};
+///         let bar = Bar {};
+///
+///         // combine them into one view
+///         let combined_view = axum_live_view::live_view::combine(
+///             // a tuple with each view we want to combine
+///             (foo, bar),
+///             // a closure that takes each view and returns the combined HTML
+///             |foo, bar| {
+///                 html! {
+///                     <div class="foo">{ foo }</div>
+///                     <div class="bar">{ bar }</div>
+///                 }
+///             });
+///
+///         html! {
+///             { embed_live_view.embed(combined_view) }
+///         }
+///     })
+/// }
+/// ```
+///
+/// # Combining views with different error types
+///
+/// `combine` requires the views to have the same error type. Use [`LiveView::map_err`] to convert
+/// error types if necessary:
+///
+/// ```
+/// use axum::{async_trait, response::IntoResponse};
+/// use axum_live_view::{
+///     Html,
+///     LiveView,
+///     LiveViewUpgrade,
+///     html,
+///     event_data::EventData,
+///     live_view::Updated,
+/// };
+/// use std::convert::Infallible;
+/// use serde::{Deserialize, Serialize};
+///
+/// // `Foo` and `Bar` are live views with different message types _and different error types_
+/// struct Foo {}
+///
+/// #[async_trait]
+/// impl LiveView for Foo {
+///     type Message = FooMsg;
+///     type Error = std::io::Error;
+///
+///     // ...
+///     # async fn update(
+///     #     mut self,
+///     #     msg: FooMsg,
+///     #     data: Option<EventData>,
+///     # ) -> Result<Updated<Self>, Self::Error> {
+///     #     unimplemented!()
+///     # }
+///     # fn render(&self) -> Html<Self::Message> {
+///     #     unimplemented!()
+///     # }
+/// }
+///
+/// #[derive(Serialize, Deserialize, Debug, PartialEq)]
+/// enum FooMsg {}
+///
+/// struct Bar {}
+///
+/// #[async_trait]
+/// impl LiveView for Bar {
+///     type Message = BarMsg;
+///     type Error = Infallible;
+///
+///     // ...
+///     # async fn update(
+///     #     mut self,
+///     #     msg: BarMsg,
+///     #     data: Option<EventData>,
+///     # ) -> Result<Updated<Self>, Self::Error> {
+///     #     unimplemented!()
+///     # }
+///     # fn render(&self) -> Html<Self::Message> {
+///     #     unimplemented!()
+///     # }
+/// }
+///
+/// #[derive(Serialize, Deserialize, Debug, PartialEq)]
+/// enum BarMsg {}
+///
+/// async fn handle(live: LiveViewUpgrade) -> impl IntoResponse {
+///     live.response(|embed_live_view| {
+///         // instantiate each view
+///         let foo = Foo {};
+///
+///         let bar = Bar {};
+///         // convert `Infallible` into a `std::io::Error` so it matches `Foo`'s error type
+///         let bar = bar.map_err(|err: Infallible| match err {});
+///
+///         // combine them into one view
+///         let combined_view = axum_live_view::live_view::combine(
+///             // a tuple with each view we want to combine
+///             (foo, bar),
+///             // a closure that takes each view and returns the combined HTML
+///             |foo, bar| {
+///                 html! {
+///                     <div class="foo">{ foo }</div>
+///                     <div class="bar">{ bar }</div>
+///                 }
+///             });
+///
+///         html! {
+///             { embed_live_view.embed(combined_view) }
+///         }
+///     })
+/// }
+/// ```
+pub fn combine<V, F>(views: V, render: F) -> combine::Combine<V, F> {
+    combine::Combine { views, render }
+}

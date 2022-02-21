@@ -1,3 +1,5 @@
+//! Extractor for embedding live views in HTML templates.
+
 use self::rejection::*;
 use crate::{html::Html, life_cycle::run_view, LiveView};
 use async_trait::async_trait;
@@ -17,6 +19,7 @@ use std::fmt::Debug;
 
 pub use crate::life_cycle::EmbedLiveView;
 
+/// Extractor for embedding live views in HTML templates.
 #[derive(Debug)]
 pub struct LiveViewUpgrade {
     inner: LiveViewUpgradeInner,
@@ -54,33 +57,83 @@ where
 }
 
 impl LiveViewUpgrade {
+    /// Return a response that contains an embedded live view.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use axum::{async_trait, response::IntoResponse};
+    /// use axum_live_view::{
+    ///     event_data::EventData, html, live_view::Updated, Html, LiveView, LiveViewUpgrade,
+    /// };
+    /// use serde::{Deserialize, Serialize};
+    /// use std::convert::Infallible;
+    ///
+    /// async fn handler(live: LiveViewUpgrade) -> impl IntoResponse {
+    ///     let view = MyView::default();
+    ///
+    ///     live.response(|embed_live_view| {
+    ///         html! {
+    ///           { embed_live_view.embed(view) }
+    ///
+    ///           // Load the JavaScript. This will automatically initialize live view
+    ///           // connections.
+    ///           <script src="/assets/live-view.js"></script>
+    ///         }
+    ///     })
+    /// }
+    ///
+    /// #[derive(Default)]
+    /// struct MyView;
+    ///
+    /// #[async_trait]
+    /// impl LiveView for MyView {
+    ///     // ...
+    ///     # type Message = Msg;
+    ///     # type Error = Infallible;
+    ///     # async fn update(
+    ///     #     mut self,
+    ///     #     msg: Msg,
+    ///     #     data: Option<EventData>,
+    ///     # ) -> Result<Updated<Self>, Self::Error> {
+    ///     #     todo!()
+    ///     # }
+    ///     # fn render(&self) -> Html<Self::Message> {
+    ///     #     todo!()
+    ///     # }
+    /// }
+    ///
+    /// #[derive(Serialize, Deserialize, Debug, PartialEq)]
+    /// enum Msg {}
+    /// ```
+    ///
+    /// See the [root module docs](crate) for a more complete example.
     pub fn response<F, L>(self, gather_view: F) -> Response
     where
         L: LiveView,
         F: FnOnce(EmbedLiveView<'_, L>) -> Html<L::Message>,
     {
-        let (ws, uri, headers) = match self.inner {
+        match self.inner {
             LiveViewUpgradeInner::Http => {
                 let embed = EmbedLiveView::noop();
-                return gather_view(embed).into_response();
+                gather_view(embed).into_response()
             }
-            LiveViewUpgradeInner::Ws(data) => *data,
-        };
+            LiveViewUpgradeInner::Ws(data) => {
+                let (ws, uri, headers) = *data;
+                let mut view = None;
 
-        let mut view = None;
+                let embed = EmbedLiveView::new(&mut view);
 
-        let embed = EmbedLiveView::new(&mut view);
+                gather_view(embed);
 
-        gather_view(embed);
-
-        let view = if let Some(view) = view {
-            view
-        } else {
-            return ws.on_upgrade(|_| async {}).into_response();
-        };
-
-        ws.on_upgrade(|socket| run_view_on_socket(socket, view, uri, headers))
-            .into_response()
+                if let Some(view) = view {
+                    ws.on_upgrade(|socket| run_view_on_socket(socket, view, uri, headers))
+                        .into_response()
+                } else {
+                    ws.on_upgrade(|_| async {}).into_response()
+                }
+            }
+        }
     }
 }
 
@@ -113,14 +166,20 @@ where
 }
 
 pub mod rejection {
+    //! Rejection types.
+
     use axum::{
         extract::rejection::HeadersAlreadyExtracted,
         response::{IntoResponse, Response},
     };
+    use std::fmt;
 
+    /// Rejection returned by [`LiveViewUpgrade`](super::LiveViewUpgrade) if the request doesn't
+    /// match.
     #[derive(Debug)]
     #[non_exhaustive]
     pub enum LiveViewUpgradeRejection {
+        #[allow(missing_docs)]
         HeadersAlreadyExtracted(HeadersAlreadyExtracted),
     }
 
@@ -128,6 +187,22 @@ pub mod rejection {
         fn into_response(self) -> Response {
             match self {
                 Self::HeadersAlreadyExtracted(inner) => inner.into_response(),
+            }
+        }
+    }
+
+    impl fmt::Display for LiveViewUpgradeRejection {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            match self {
+                Self::HeadersAlreadyExtracted(inner) => write!(f, "{}", inner),
+            }
+        }
+    }
+
+    impl std::error::Error for LiveViewUpgradeRejection {
+        fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+            match self {
+                Self::HeadersAlreadyExtracted(inner) => Some(inner),
             }
         }
     }

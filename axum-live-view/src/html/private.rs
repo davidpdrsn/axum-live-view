@@ -1,8 +1,23 @@
 //! Private API. Do _not_ use anything from this module!
 
-#[allow(unreachable_pub)]
-pub use super::DynamicFragment;
+#![allow(missing_docs)]
+
 use super::*;
+
+#[derive(Clone, Serialize, PartialEq)]
+#[serde(untagged)]
+pub enum DynamicFragment<T> {
+    String(String),
+    #[serde(serialize_with = "serialize_msg")]
+    Message(T),
+    Html(Html<T>),
+    Loop {
+        #[serde(rename = "f")]
+        fixed: &'static [&'static str],
+        #[serde(rename = "b", skip_serializing_if = "BTreeMap::is_empty")]
+        dynamic: IndexMap<IndexMap<DynamicFragment<T>>>,
+    },
+}
 
 pub trait DynamicFragmentVecExt<T> {
     fn push_fragment(&mut self, part: impl Into<DynamicFragment<T>>);

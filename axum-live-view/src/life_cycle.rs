@@ -16,6 +16,7 @@ use std::{fmt, marker::PhantomData};
 use tokio::sync::{mpsc, oneshot};
 use tokio_stream::wrappers::ReceiverStream;
 
+/// Type used to embed live views in HTML templates.
 pub struct EmbedLiveView<'a, L> {
     view: Option<&'a mut Option<L>>,
 }
@@ -29,6 +30,7 @@ impl<'a, L> EmbedLiveView<'a, L> {
         Self { view: Some(view) }
     }
 
+    /// Embed a live view in a HTML template.
     pub fn embed(self, view: L) -> Html<L::Message>
     where
         L: LiveView,
@@ -42,6 +44,11 @@ impl<'a, L> EmbedLiveView<'a, L> {
         html
     }
 
+    /// Check whether the request was a WebSocket upgrade request.
+    ///
+    /// This can be used to initialize the view differently depending on which part of the live
+    /// view life cycle we're in. See the [root module docs](crate) for more details on the life
+    /// cycle.
     pub fn connected(&self) -> bool {
         self.view.is_some()
     }
@@ -227,6 +234,14 @@ impl<M, E> Clone for ViewTaskHandle<M, E> {
         Self {
             tx: self.tx.clone(),
         }
+    }
+}
+
+impl<M, E> fmt::Debug for ViewTaskHandle<M, E> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ViewTaskHandle")
+            .field("tx", &self.tx)
+            .finish()
     }
 }
 

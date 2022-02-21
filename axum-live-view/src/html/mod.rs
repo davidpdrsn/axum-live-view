@@ -2,6 +2,8 @@ use axum::response::IntoResponse;
 use serde::Serialize;
 use std::{collections::BTreeMap, fmt};
 
+pub(crate) use self::private::*;
+
 mod diff;
 pub(crate) mod private;
 mod render;
@@ -11,27 +13,17 @@ mod tests;
 
 type IndexMap<T> = BTreeMap<usize, T>;
 
+/// An HTML template created with [`html!`].
+///
+/// See [`html!`] for more details.
+///
+/// [`html!`]: crate::html!
 #[derive(Clone, Serialize, PartialEq)]
 pub struct Html<T> {
     #[serde(rename = "f")]
     fixed: &'static [&'static str],
     #[serde(rename = "d", skip_serializing_if = "BTreeMap::is_empty")]
     dynamic: IndexMap<DynamicFragment<T>>,
-}
-
-#[derive(Clone, Serialize, PartialEq)]
-#[serde(untagged)]
-pub enum DynamicFragment<T> {
-    String(String),
-    #[serde(serialize_with = "serialize_msg")]
-    Message(T),
-    Html(Html<T>),
-    Loop {
-        #[serde(rename = "f")]
-        fixed: &'static [&'static str],
-        #[serde(rename = "b", skip_serializing_if = "BTreeMap::is_empty")]
-        dynamic: IndexMap<IndexMap<DynamicFragment<T>>>,
-    },
 }
 
 impl<T> std::fmt::Debug for Html<T> {
@@ -43,7 +35,6 @@ impl<T> std::fmt::Debug for Html<T> {
     }
 }
 
-#[inline]
 fn empty_slice<T>(s: &[T]) -> bool {
     s.is_empty()
 }
@@ -67,14 +58,12 @@ impl<S, T> From<S> for DynamicFragment<T>
 where
     S: fmt::Display,
 {
-    #[inline]
     fn from(x: S) -> Self {
         DynamicFragment::String(x.to_string())
     }
 }
 
 impl<T> From<Html<T>> for DynamicFragment<T> {
-    #[inline]
     fn from(x: Html<T>) -> Self {
         DynamicFragment::Html(x)
     }
@@ -121,10 +110,7 @@ impl<T> DynamicFragment<T> {
 }
 
 impl<T> Html<T> {
-    pub fn unit(self) -> Html<()> {
-        self.map(|_| ())
-    }
-
+    /// Map the messages to a different type.
     pub fn map<F, K>(self, mut f: F) -> Html<K>
     where
         F: FnMut(T) -> K,

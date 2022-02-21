@@ -1,3 +1,5 @@
+//! Data associated with events from the client such as click or form events.
+
 mod inner {
     use crate::life_cycle::{self, EventMessageFromSocketData};
     use serde::{de::DeserializeOwned, Serialize};
@@ -147,36 +149,47 @@ mod inner {
         }
     }
 
+    /// A form event.
+    ///
+    /// This event type is sent for these bindings:
+    ///
+    /// - `axm-submit`
+    /// - `axm-change`
     #[derive(Debug, Clone)]
     pub struct Form {
         query: String,
     }
 
     impl Form {
+        /// Get a [`FormBuilder`] for `Form`.
+        ///
+        /// This allows creating `Form` events for example for use in tests.
         pub fn builder() -> FormBuilder {
             FormBuilder::default()
         }
 
-        pub fn deserialize<T>(&self) -> Result<T, QuerySerializationError>
+        /// Deserialize the form into some type.
+        pub fn deserialize<T>(&self) -> Result<T, FormSerializationError>
         where
             T: DeserializeOwned,
         {
             let query = percent_encoding::percent_decode_str(&self.query)
                 .decode_utf8()
                 .map_err(|err| {
-                    QuerySerializationError(QuerySerializationErrorKind::Utf8Error(err))
+                    FormSerializationError(QuerySerializationErrorKind::Utf8Error(err))
                 })?;
 
             let t = serde_qs::from_str(&*query).map_err(|err| {
-                QuerySerializationError(QuerySerializationErrorKind::Serialization(err))
+                FormSerializationError(QuerySerializationErrorKind::Serialization(err))
             })?;
 
             Ok(t)
         }
     }
 
+    /// The error returned if a form couldn't be serialized or deserialized.
     #[derive(Debug)]
-    pub struct QuerySerializationError(QuerySerializationErrorKind);
+    pub struct FormSerializationError(QuerySerializationErrorKind);
 
     #[derive(Debug)]
     enum QuerySerializationErrorKind {
@@ -184,7 +197,7 @@ mod inner {
         Serialization(serde_qs::Error),
     }
 
-    impl fmt::Display for QuerySerializationError {
+    impl fmt::Display for FormSerializationError {
         fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
             match &self.0 {
                 QuerySerializationErrorKind::Utf8Error(inner) => inner.fmt(f),
@@ -193,7 +206,7 @@ mod inner {
         }
     }
 
-    impl std::error::Error for QuerySerializationError {
+    impl std::error::Error for FormSerializationError {
         fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
             match &self.0 {
                 QuerySerializationErrorKind::Utf8Error(inner) => Some(&*inner),
@@ -212,12 +225,12 @@ mod inner {
             Self::default()
         }
 
-        pub fn serialize<T>(mut self, value: &T) -> Result<Self, QuerySerializationError>
+        pub fn serialize<T>(mut self, value: &T) -> Result<Self, FormSerializationError>
         where
             T: Serialize,
         {
             let query = serde_qs::to_string(value).map_err(|err| {
-                QuerySerializationError(QuerySerializationErrorKind::Serialization(err))
+                FormSerializationError(QuerySerializationErrorKind::Serialization(err))
             })?;
             let query =
                 percent_encoding::utf8_percent_encode(&query, percent_encoding::NON_ALPHANUMERIC)
@@ -462,8 +475,10 @@ mod inner {
     }
 }
 
-pub use self::inner::{EventData, Form, Input, Key, Mouse, QuerySerializationError, Scroll};
+pub use self::inner::{EventData, Form, FormSerializationError, Input, Key, Mouse, Scroll};
 
 pub mod builders {
+    //! Event data builder types.
+
     pub use super::inner::{FormBuilder, KeyBuilder, MouseBuilder, ScrollBuilder};
 }
