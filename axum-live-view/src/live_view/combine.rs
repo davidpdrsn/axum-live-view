@@ -118,13 +118,21 @@ where
                 } = self;
                 let Updated {
                     live_view: T1,
-                    js_commands: cmds,
+                    js_commands,
+                    spawns,
                 } = T1.update(msg, data).await?;
-                Ok(Updated::new(Self {
-                    views: (T1,),
-                    render,
+                let spawns = spawns
+                    .into_iter()
+                    .map(|future| Box::pin(async move { Either1::T1(future.await) }) as _)
+                    .collect::<Vec<_>>();
+                Ok(Updated {
+                    live_view: Self {
+                        views: (T1,),
+                        render,
+                    },
+                    js_commands,
+                    spawns,
                 })
-                .with_all(cmds))
             }
         }
     }
@@ -189,13 +197,21 @@ where
                 } = self;
                 let Updated {
                     live_view: T1,
-                    js_commands: cmds,
+                    js_commands,
+                    spawns,
                 } = T1.update(msg, data).await?;
-                Ok(Updated::new(Self {
-                    views: (T1, T2),
-                    render,
+                let spawns = spawns
+                    .into_iter()
+                    .map(|future| Box::pin(async move { Either2::T1(future.await) }) as _)
+                    .collect::<Vec<_>>();
+                Ok(Updated {
+                    live_view: Self {
+                        views: (T1, T2),
+                        render,
+                    },
+                    js_commands,
+                    spawns,
                 })
-                .with_all(cmds))
             }
             Either2::T2(msg) => {
                 let Self {
@@ -204,13 +220,21 @@ where
                 } = self;
                 let Updated {
                     live_view: T2,
-                    js_commands: cmds,
+                    js_commands,
+                    spawns,
                 } = T2.update(msg, data).await?;
-                Ok(Updated::new(Self {
-                    views: (T1, T2),
-                    render,
+                let spawns = spawns
+                    .into_iter()
+                    .map(|future| Box::pin(async move { Either2::T2(future.await) }) as _)
+                    .collect::<Vec<_>>();
+                Ok(Updated {
+                    live_view: Self {
+                        views: (T1, T2),
+                        render,
+                    },
+                    js_commands,
+                    spawns,
                 })
-                .with_all(cmds))
             }
         }
     }
@@ -284,13 +308,21 @@ where
                 } = self;
                 let Updated {
                     live_view: T1,
-                    js_commands: cmds,
+                    js_commands,
+                    spawns,
                 } = T1.update(msg, data).await?;
-                Ok(Updated::new(Self {
-                    views: (T1, T2, T3),
-                    render,
+                let spawns = spawns
+                    .into_iter()
+                    .map(|future| Box::pin(async move { Either3::T1(future.await) }) as _)
+                    .collect::<Vec<_>>();
+                Ok(Updated {
+                    live_view: Self {
+                        views: (T1, T2, T3),
+                        render,
+                    },
+                    js_commands,
+                    spawns,
                 })
-                .with_all(cmds))
             }
             Either3::T2(msg) => {
                 let Self {
@@ -299,13 +331,21 @@ where
                 } = self;
                 let Updated {
                     live_view: T2,
-                    js_commands: cmds,
+                    js_commands,
+                    spawns,
                 } = T2.update(msg, data).await?;
-                Ok(Updated::new(Self {
-                    views: (T1, T2, T3),
-                    render,
+                let spawns = spawns
+                    .into_iter()
+                    .map(|future| Box::pin(async move { Either3::T2(future.await) }) as _)
+                    .collect::<Vec<_>>();
+                Ok(Updated {
+                    live_view: Self {
+                        views: (T1, T2, T3),
+                        render,
+                    },
+                    js_commands,
+                    spawns,
                 })
-                .with_all(cmds))
             }
             Either3::T3(msg) => {
                 let Self {
@@ -314,13 +354,21 @@ where
                 } = self;
                 let Updated {
                     live_view: T3,
-                    js_commands: cmds,
+                    js_commands,
+                    spawns,
                 } = T3.update(msg, data).await?;
-                Ok(Updated::new(Self {
-                    views: (T1, T2, T3),
-                    render,
+                let spawns = spawns
+                    .into_iter()
+                    .map(|future| Box::pin(async move { Either3::T3(future.await) }) as _)
+                    .collect::<Vec<_>>();
+                Ok(Updated {
+                    live_view: Self {
+                        views: (T1, T2, T3),
+                        render,
+                    },
+                    js_commands,
+                    spawns,
                 })
-                .with_all(cmds))
             }
         }
     }
@@ -406,13 +454,21 @@ where
                 } = self;
                 let Updated {
                     live_view: T1,
-                    js_commands: cmds,
+                    js_commands,
+                    spawns,
                 } = T1.update(msg, data).await?;
-                Ok(Updated::new(Self {
-                    views: (T1, T2, T3, T4),
-                    render,
+                let spawns = spawns
+                    .into_iter()
+                    .map(|future| Box::pin(async move { Either4::T1(future.await) }) as _)
+                    .collect::<Vec<_>>();
+                Ok(Updated {
+                    live_view: Self {
+                        views: (T1, T2, T3, T4),
+                        render,
+                    },
+                    js_commands,
+                    spawns,
                 })
-                .with_all(cmds))
             }
             Either4::T2(msg) => {
                 let Self {
@@ -421,13 +477,21 @@ where
                 } = self;
                 let Updated {
                     live_view: T2,
-                    js_commands: cmds,
+                    js_commands,
+                    spawns,
                 } = T2.update(msg, data).await?;
-                Ok(Updated::new(Self {
-                    views: (T1, T2, T3, T4),
-                    render,
+                let spawns = spawns
+                    .into_iter()
+                    .map(|future| Box::pin(async move { Either4::T2(future.await) }) as _)
+                    .collect::<Vec<_>>();
+                Ok(Updated {
+                    live_view: Self {
+                        views: (T1, T2, T3, T4),
+                        render,
+                    },
+                    js_commands,
+                    spawns,
                 })
-                .with_all(cmds))
             }
             Either4::T3(msg) => {
                 let Self {
@@ -436,13 +500,21 @@ where
                 } = self;
                 let Updated {
                     live_view: T3,
-                    js_commands: cmds,
+                    js_commands,
+                    spawns,
                 } = T3.update(msg, data).await?;
-                Ok(Updated::new(Self {
-                    views: (T1, T2, T3, T4),
-                    render,
+                let spawns = spawns
+                    .into_iter()
+                    .map(|future| Box::pin(async move { Either4::T3(future.await) }) as _)
+                    .collect::<Vec<_>>();
+                Ok(Updated {
+                    live_view: Self {
+                        views: (T1, T2, T3, T4),
+                        render,
+                    },
+                    js_commands,
+                    spawns,
                 })
-                .with_all(cmds))
             }
             Either4::T4(msg) => {
                 let Self {
@@ -451,13 +523,21 @@ where
                 } = self;
                 let Updated {
                     live_view: T4,
-                    js_commands: cmds,
+                    js_commands,
+                    spawns,
                 } = T4.update(msg, data).await?;
-                Ok(Updated::new(Self {
-                    views: (T1, T2, T3, T4),
-                    render,
+                let spawns = spawns
+                    .into_iter()
+                    .map(|future| Box::pin(async move { Either4::T4(future.await) }) as _)
+                    .collect::<Vec<_>>();
+                Ok(Updated {
+                    live_view: Self {
+                        views: (T1, T2, T3, T4),
+                        render,
+                    },
+                    js_commands,
+                    spawns,
                 })
-                .with_all(cmds))
             }
         }
     }
@@ -553,13 +633,21 @@ where
                 } = self;
                 let Updated {
                     live_view: T1,
-                    js_commands: cmds,
+                    js_commands,
+                    spawns,
                 } = T1.update(msg, data).await?;
-                Ok(Updated::new(Self {
-                    views: (T1, T2, T3, T4, T5),
-                    render,
+                let spawns = spawns
+                    .into_iter()
+                    .map(|future| Box::pin(async move { Either5::T1(future.await) }) as _)
+                    .collect::<Vec<_>>();
+                Ok(Updated {
+                    live_view: Self {
+                        views: (T1, T2, T3, T4, T5),
+                        render,
+                    },
+                    js_commands,
+                    spawns,
                 })
-                .with_all(cmds))
             }
             Either5::T2(msg) => {
                 let Self {
@@ -568,13 +656,21 @@ where
                 } = self;
                 let Updated {
                     live_view: T2,
-                    js_commands: cmds,
+                    js_commands,
+                    spawns,
                 } = T2.update(msg, data).await?;
-                Ok(Updated::new(Self {
-                    views: (T1, T2, T3, T4, T5),
-                    render,
+                let spawns = spawns
+                    .into_iter()
+                    .map(|future| Box::pin(async move { Either5::T2(future.await) }) as _)
+                    .collect::<Vec<_>>();
+                Ok(Updated {
+                    live_view: Self {
+                        views: (T1, T2, T3, T4, T5),
+                        render,
+                    },
+                    js_commands,
+                    spawns,
                 })
-                .with_all(cmds))
             }
             Either5::T3(msg) => {
                 let Self {
@@ -583,13 +679,21 @@ where
                 } = self;
                 let Updated {
                     live_view: T3,
-                    js_commands: cmds,
+                    js_commands,
+                    spawns,
                 } = T3.update(msg, data).await?;
-                Ok(Updated::new(Self {
-                    views: (T1, T2, T3, T4, T5),
-                    render,
+                let spawns = spawns
+                    .into_iter()
+                    .map(|future| Box::pin(async move { Either5::T3(future.await) }) as _)
+                    .collect::<Vec<_>>();
+                Ok(Updated {
+                    live_view: Self {
+                        views: (T1, T2, T3, T4, T5),
+                        render,
+                    },
+                    js_commands,
+                    spawns,
                 })
-                .with_all(cmds))
             }
             Either5::T4(msg) => {
                 let Self {
@@ -598,13 +702,21 @@ where
                 } = self;
                 let Updated {
                     live_view: T4,
-                    js_commands: cmds,
+                    js_commands,
+                    spawns,
                 } = T4.update(msg, data).await?;
-                Ok(Updated::new(Self {
-                    views: (T1, T2, T3, T4, T5),
-                    render,
+                let spawns = spawns
+                    .into_iter()
+                    .map(|future| Box::pin(async move { Either5::T4(future.await) }) as _)
+                    .collect::<Vec<_>>();
+                Ok(Updated {
+                    live_view: Self {
+                        views: (T1, T2, T3, T4, T5),
+                        render,
+                    },
+                    js_commands,
+                    spawns,
                 })
-                .with_all(cmds))
             }
             Either5::T5(msg) => {
                 let Self {
@@ -613,13 +725,21 @@ where
                 } = self;
                 let Updated {
                     live_view: T5,
-                    js_commands: cmds,
+                    js_commands,
+                    spawns,
                 } = T5.update(msg, data).await?;
-                Ok(Updated::new(Self {
-                    views: (T1, T2, T3, T4, T5),
-                    render,
+                let spawns = spawns
+                    .into_iter()
+                    .map(|future| Box::pin(async move { Either5::T5(future.await) }) as _)
+                    .collect::<Vec<_>>();
+                Ok(Updated {
+                    live_view: Self {
+                        views: (T1, T2, T3, T4, T5),
+                        render,
+                    },
+                    js_commands,
+                    spawns,
                 })
-                .with_all(cmds))
             }
         }
     }
@@ -779,13 +899,21 @@ where
                 } = self;
                 let Updated {
                     live_view: T1,
-                    js_commands: cmds,
+                    js_commands,
+                    spawns,
                 } = T1.update(msg, data).await?;
-                Ok(Updated::new(Self {
-                    views: (T1, T2, T3, T4, T5, T6),
-                    render,
+                let spawns = spawns
+                    .into_iter()
+                    .map(|future| Box::pin(async move { Either6::T1(future.await) }) as _)
+                    .collect::<Vec<_>>();
+                Ok(Updated {
+                    live_view: Self {
+                        views: (T1, T2, T3, T4, T5, T6),
+                        render,
+                    },
+                    js_commands,
+                    spawns,
                 })
-                .with_all(cmds))
             }
             Either6::T2(msg) => {
                 let Self {
@@ -794,13 +922,21 @@ where
                 } = self;
                 let Updated {
                     live_view: T2,
-                    js_commands: cmds,
+                    js_commands,
+                    spawns,
                 } = T2.update(msg, data).await?;
-                Ok(Updated::new(Self {
-                    views: (T1, T2, T3, T4, T5, T6),
-                    render,
+                let spawns = spawns
+                    .into_iter()
+                    .map(|future| Box::pin(async move { Either6::T2(future.await) }) as _)
+                    .collect::<Vec<_>>();
+                Ok(Updated {
+                    live_view: Self {
+                        views: (T1, T2, T3, T4, T5, T6),
+                        render,
+                    },
+                    js_commands,
+                    spawns,
                 })
-                .with_all(cmds))
             }
             Either6::T3(msg) => {
                 let Self {
@@ -809,13 +945,21 @@ where
                 } = self;
                 let Updated {
                     live_view: T3,
-                    js_commands: cmds,
+                    js_commands,
+                    spawns,
                 } = T3.update(msg, data).await?;
-                Ok(Updated::new(Self {
-                    views: (T1, T2, T3, T4, T5, T6),
-                    render,
+                let spawns = spawns
+                    .into_iter()
+                    .map(|future| Box::pin(async move { Either6::T3(future.await) }) as _)
+                    .collect::<Vec<_>>();
+                Ok(Updated {
+                    live_view: Self {
+                        views: (T1, T2, T3, T4, T5, T6),
+                        render,
+                    },
+                    js_commands,
+                    spawns,
                 })
-                .with_all(cmds))
             }
             Either6::T4(msg) => {
                 let Self {
@@ -824,13 +968,21 @@ where
                 } = self;
                 let Updated {
                     live_view: T4,
-                    js_commands: cmds,
+                    js_commands,
+                    spawns,
                 } = T4.update(msg, data).await?;
-                Ok(Updated::new(Self {
-                    views: (T1, T2, T3, T4, T5, T6),
-                    render,
+                let spawns = spawns
+                    .into_iter()
+                    .map(|future| Box::pin(async move { Either6::T4(future.await) }) as _)
+                    .collect::<Vec<_>>();
+                Ok(Updated {
+                    live_view: Self {
+                        views: (T1, T2, T3, T4, T5, T6),
+                        render,
+                    },
+                    js_commands,
+                    spawns,
                 })
-                .with_all(cmds))
             }
             Either6::T5(msg) => {
                 let Self {
@@ -839,13 +991,21 @@ where
                 } = self;
                 let Updated {
                     live_view: T5,
-                    js_commands: cmds,
+                    js_commands,
+                    spawns,
                 } = T5.update(msg, data).await?;
-                Ok(Updated::new(Self {
-                    views: (T1, T2, T3, T4, T5, T6),
-                    render,
+                let spawns = spawns
+                    .into_iter()
+                    .map(|future| Box::pin(async move { Either6::T5(future.await) }) as _)
+                    .collect::<Vec<_>>();
+                Ok(Updated {
+                    live_view: Self {
+                        views: (T1, T2, T3, T4, T5, T6),
+                        render,
+                    },
+                    js_commands,
+                    spawns,
                 })
-                .with_all(cmds))
             }
             Either6::T6(msg) => {
                 let Self {
@@ -854,13 +1014,21 @@ where
                 } = self;
                 let Updated {
                     live_view: T6,
-                    js_commands: cmds,
+                    js_commands,
+                    spawns,
                 } = T6.update(msg, data).await?;
-                Ok(Updated::new(Self {
-                    views: (T1, T2, T3, T4, T5, T6),
-                    render,
+                let spawns = spawns
+                    .into_iter()
+                    .map(|future| Box::pin(async move { Either6::T6(future.await) }) as _)
+                    .collect::<Vec<_>>();
+                Ok(Updated {
+                    live_view: Self {
+                        views: (T1, T2, T3, T4, T5, T6),
+                        render,
+                    },
+                    js_commands,
+                    spawns,
                 })
-                .with_all(cmds))
             }
         }
     }
@@ -1060,13 +1228,21 @@ where
                 } = self;
                 let Updated {
                     live_view: T1,
-                    js_commands: cmds,
+                    js_commands,
+                    spawns,
                 } = T1.update(msg, data).await?;
-                Ok(Updated::new(Self {
-                    views: (T1, T2, T3, T4, T5, T6, T7),
-                    render,
+                let spawns = spawns
+                    .into_iter()
+                    .map(|future| Box::pin(async move { Either7::T1(future.await) }) as _)
+                    .collect::<Vec<_>>();
+                Ok(Updated {
+                    live_view: Self {
+                        views: (T1, T2, T3, T4, T5, T6, T7),
+                        render,
+                    },
+                    js_commands,
+                    spawns,
                 })
-                .with_all(cmds))
             }
             Either7::T2(msg) => {
                 let Self {
@@ -1075,13 +1251,21 @@ where
                 } = self;
                 let Updated {
                     live_view: T2,
-                    js_commands: cmds,
+                    js_commands,
+                    spawns,
                 } = T2.update(msg, data).await?;
-                Ok(Updated::new(Self {
-                    views: (T1, T2, T3, T4, T5, T6, T7),
-                    render,
+                let spawns = spawns
+                    .into_iter()
+                    .map(|future| Box::pin(async move { Either7::T2(future.await) }) as _)
+                    .collect::<Vec<_>>();
+                Ok(Updated {
+                    live_view: Self {
+                        views: (T1, T2, T3, T4, T5, T6, T7),
+                        render,
+                    },
+                    js_commands,
+                    spawns,
                 })
-                .with_all(cmds))
             }
             Either7::T3(msg) => {
                 let Self {
@@ -1090,13 +1274,21 @@ where
                 } = self;
                 let Updated {
                     live_view: T3,
-                    js_commands: cmds,
+                    js_commands,
+                    spawns,
                 } = T3.update(msg, data).await?;
-                Ok(Updated::new(Self {
-                    views: (T1, T2, T3, T4, T5, T6, T7),
-                    render,
+                let spawns = spawns
+                    .into_iter()
+                    .map(|future| Box::pin(async move { Either7::T3(future.await) }) as _)
+                    .collect::<Vec<_>>();
+                Ok(Updated {
+                    live_view: Self {
+                        views: (T1, T2, T3, T4, T5, T6, T7),
+                        render,
+                    },
+                    js_commands,
+                    spawns,
                 })
-                .with_all(cmds))
             }
             Either7::T4(msg) => {
                 let Self {
@@ -1105,13 +1297,21 @@ where
                 } = self;
                 let Updated {
                     live_view: T4,
-                    js_commands: cmds,
+                    js_commands,
+                    spawns,
                 } = T4.update(msg, data).await?;
-                Ok(Updated::new(Self {
-                    views: (T1, T2, T3, T4, T5, T6, T7),
-                    render,
+                let spawns = spawns
+                    .into_iter()
+                    .map(|future| Box::pin(async move { Either7::T4(future.await) }) as _)
+                    .collect::<Vec<_>>();
+                Ok(Updated {
+                    live_view: Self {
+                        views: (T1, T2, T3, T4, T5, T6, T7),
+                        render,
+                    },
+                    js_commands,
+                    spawns,
                 })
-                .with_all(cmds))
             }
             Either7::T5(msg) => {
                 let Self {
@@ -1120,13 +1320,21 @@ where
                 } = self;
                 let Updated {
                     live_view: T5,
-                    js_commands: cmds,
+                    js_commands,
+                    spawns,
                 } = T5.update(msg, data).await?;
-                Ok(Updated::new(Self {
-                    views: (T1, T2, T3, T4, T5, T6, T7),
-                    render,
+                let spawns = spawns
+                    .into_iter()
+                    .map(|future| Box::pin(async move { Either7::T5(future.await) }) as _)
+                    .collect::<Vec<_>>();
+                Ok(Updated {
+                    live_view: Self {
+                        views: (T1, T2, T3, T4, T5, T6, T7),
+                        render,
+                    },
+                    js_commands,
+                    spawns,
                 })
-                .with_all(cmds))
             }
             Either7::T6(msg) => {
                 let Self {
@@ -1135,13 +1343,21 @@ where
                 } = self;
                 let Updated {
                     live_view: T6,
-                    js_commands: cmds,
+                    js_commands,
+                    spawns,
                 } = T6.update(msg, data).await?;
-                Ok(Updated::new(Self {
-                    views: (T1, T2, T3, T4, T5, T6, T7),
-                    render,
+                let spawns = spawns
+                    .into_iter()
+                    .map(|future| Box::pin(async move { Either7::T6(future.await) }) as _)
+                    .collect::<Vec<_>>();
+                Ok(Updated {
+                    live_view: Self {
+                        views: (T1, T2, T3, T4, T5, T6, T7),
+                        render,
+                    },
+                    js_commands,
+                    spawns,
                 })
-                .with_all(cmds))
             }
             Either7::T7(msg) => {
                 let Self {
@@ -1150,13 +1366,21 @@ where
                 } = self;
                 let Updated {
                     live_view: T7,
-                    js_commands: cmds,
+                    js_commands,
+                    spawns,
                 } = T7.update(msg, data).await?;
-                Ok(Updated::new(Self {
-                    views: (T1, T2, T3, T4, T5, T6, T7),
-                    render,
+                let spawns = spawns
+                    .into_iter()
+                    .map(|future| Box::pin(async move { Either7::T7(future.await) }) as _)
+                    .collect::<Vec<_>>();
+                Ok(Updated {
+                    live_view: Self {
+                        views: (T1, T2, T3, T4, T5, T6, T7),
+                        render,
+                    },
+                    js_commands,
+                    spawns,
                 })
-                .with_all(cmds))
             }
         }
     }
@@ -1385,13 +1609,21 @@ where
                 } = self;
                 let Updated {
                     live_view: T1,
-                    js_commands: cmds,
+                    js_commands,
+                    spawns,
                 } = T1.update(msg, data).await?;
-                Ok(Updated::new(Self {
-                    views: (T1, T2, T3, T4, T5, T6, T7, T8),
-                    render,
+                let spawns = spawns
+                    .into_iter()
+                    .map(|future| Box::pin(async move { Either8::T1(future.await) }) as _)
+                    .collect::<Vec<_>>();
+                Ok(Updated {
+                    live_view: Self {
+                        views: (T1, T2, T3, T4, T5, T6, T7, T8),
+                        render,
+                    },
+                    js_commands,
+                    spawns,
                 })
-                .with_all(cmds))
             }
             Either8::T2(msg) => {
                 let Self {
@@ -1400,13 +1632,21 @@ where
                 } = self;
                 let Updated {
                     live_view: T2,
-                    js_commands: cmds,
+                    js_commands,
+                    spawns,
                 } = T2.update(msg, data).await?;
-                Ok(Updated::new(Self {
-                    views: (T1, T2, T3, T4, T5, T6, T7, T8),
-                    render,
+                let spawns = spawns
+                    .into_iter()
+                    .map(|future| Box::pin(async move { Either8::T2(future.await) }) as _)
+                    .collect::<Vec<_>>();
+                Ok(Updated {
+                    live_view: Self {
+                        views: (T1, T2, T3, T4, T5, T6, T7, T8),
+                        render,
+                    },
+                    js_commands,
+                    spawns,
                 })
-                .with_all(cmds))
             }
             Either8::T3(msg) => {
                 let Self {
@@ -1415,13 +1655,21 @@ where
                 } = self;
                 let Updated {
                     live_view: T3,
-                    js_commands: cmds,
+                    js_commands,
+                    spawns,
                 } = T3.update(msg, data).await?;
-                Ok(Updated::new(Self {
-                    views: (T1, T2, T3, T4, T5, T6, T7, T8),
-                    render,
+                let spawns = spawns
+                    .into_iter()
+                    .map(|future| Box::pin(async move { Either8::T3(future.await) }) as _)
+                    .collect::<Vec<_>>();
+                Ok(Updated {
+                    live_view: Self {
+                        views: (T1, T2, T3, T4, T5, T6, T7, T8),
+                        render,
+                    },
+                    js_commands,
+                    spawns,
                 })
-                .with_all(cmds))
             }
             Either8::T4(msg) => {
                 let Self {
@@ -1430,13 +1678,21 @@ where
                 } = self;
                 let Updated {
                     live_view: T4,
-                    js_commands: cmds,
+                    js_commands,
+                    spawns,
                 } = T4.update(msg, data).await?;
-                Ok(Updated::new(Self {
-                    views: (T1, T2, T3, T4, T5, T6, T7, T8),
-                    render,
+                let spawns = spawns
+                    .into_iter()
+                    .map(|future| Box::pin(async move { Either8::T4(future.await) }) as _)
+                    .collect::<Vec<_>>();
+                Ok(Updated {
+                    live_view: Self {
+                        views: (T1, T2, T3, T4, T5, T6, T7, T8),
+                        render,
+                    },
+                    js_commands,
+                    spawns,
                 })
-                .with_all(cmds))
             }
             Either8::T5(msg) => {
                 let Self {
@@ -1445,13 +1701,21 @@ where
                 } = self;
                 let Updated {
                     live_view: T5,
-                    js_commands: cmds,
+                    js_commands,
+                    spawns,
                 } = T5.update(msg, data).await?;
-                Ok(Updated::new(Self {
-                    views: (T1, T2, T3, T4, T5, T6, T7, T8),
-                    render,
+                let spawns = spawns
+                    .into_iter()
+                    .map(|future| Box::pin(async move { Either8::T5(future.await) }) as _)
+                    .collect::<Vec<_>>();
+                Ok(Updated {
+                    live_view: Self {
+                        views: (T1, T2, T3, T4, T5, T6, T7, T8),
+                        render,
+                    },
+                    js_commands,
+                    spawns,
                 })
-                .with_all(cmds))
             }
             Either8::T6(msg) => {
                 let Self {
@@ -1460,13 +1724,21 @@ where
                 } = self;
                 let Updated {
                     live_view: T6,
-                    js_commands: cmds,
+                    js_commands,
+                    spawns,
                 } = T6.update(msg, data).await?;
-                Ok(Updated::new(Self {
-                    views: (T1, T2, T3, T4, T5, T6, T7, T8),
-                    render,
+                let spawns = spawns
+                    .into_iter()
+                    .map(|future| Box::pin(async move { Either8::T6(future.await) }) as _)
+                    .collect::<Vec<_>>();
+                Ok(Updated {
+                    live_view: Self {
+                        views: (T1, T2, T3, T4, T5, T6, T7, T8),
+                        render,
+                    },
+                    js_commands,
+                    spawns,
                 })
-                .with_all(cmds))
             }
             Either8::T7(msg) => {
                 let Self {
@@ -1475,13 +1747,21 @@ where
                 } = self;
                 let Updated {
                     live_view: T7,
-                    js_commands: cmds,
+                    js_commands,
+                    spawns,
                 } = T7.update(msg, data).await?;
-                Ok(Updated::new(Self {
-                    views: (T1, T2, T3, T4, T5, T6, T7, T8),
-                    render,
+                let spawns = spawns
+                    .into_iter()
+                    .map(|future| Box::pin(async move { Either8::T7(future.await) }) as _)
+                    .collect::<Vec<_>>();
+                Ok(Updated {
+                    live_view: Self {
+                        views: (T1, T2, T3, T4, T5, T6, T7, T8),
+                        render,
+                    },
+                    js_commands,
+                    spawns,
                 })
-                .with_all(cmds))
             }
             Either8::T8(msg) => {
                 let Self {
@@ -1490,13 +1770,21 @@ where
                 } = self;
                 let Updated {
                     live_view: T8,
-                    js_commands: cmds,
+                    js_commands,
+                    spawns,
                 } = T8.update(msg, data).await?;
-                Ok(Updated::new(Self {
-                    views: (T1, T2, T3, T4, T5, T6, T7, T8),
-                    render,
+                let spawns = spawns
+                    .into_iter()
+                    .map(|future| Box::pin(async move { Either8::T8(future.await) }) as _)
+                    .collect::<Vec<_>>();
+                Ok(Updated {
+                    live_view: Self {
+                        views: (T1, T2, T3, T4, T5, T6, T7, T8),
+                        render,
+                    },
+                    js_commands,
+                    spawns,
                 })
-                .with_all(cmds))
             }
         }
     }

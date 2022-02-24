@@ -67,8 +67,6 @@
 //! }
 //! ```
 
-use std::fmt;
-
 use crate::{
     event_data::EventData,
     js_command::JsCommand,
@@ -78,13 +76,14 @@ use crate::{
 };
 use http::{HeaderMap, Uri};
 use serde::Serialize;
+use std::fmt;
 
 /// Spawn a live view on a background task and get a handle that can simulate mounting the view.
 pub fn run_live_view<L>(view: L) -> TestViewHandleBuilder<L::Message, L::Error>
 where
     L: LiveView,
 {
-    let view_task_handle = crate::life_cycle::spawn_view(view);
+    let view_task_handle = crate::life_cycle::spawn_view(view, None);
 
     TestViewHandleBuilder {
         handle: view_task_handle,
@@ -129,6 +128,10 @@ impl<M, E> TestViewHandleBuilder<M, E> {
     /// connected to the view. Thus [`ViewHandle::send`] will always return an error.
     /// [`TestViewHandle::send`] should be used to send messages to the view from tests, as this is
     /// deterministic and yields the updated HTML template.
+    ///
+    /// Also, the futures passed to [`Updated::spawn`] will be ignored, for the same reason.
+    ///
+    /// [`Updated::spawn`]: crate::live_view::Updated::spawn
     pub async fn mount(self) -> Result<TestViewHandle<M, E>, E> {
         let (handle, rx) = ViewHandle::new();
         drop(rx);

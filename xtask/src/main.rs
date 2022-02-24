@@ -245,13 +245,25 @@ fn codegen() -> Result {
                                 let Self { views: (#(#types,)*), render } = self;
                                 let Updated {
                                     live_view: #ty,
-                                    js_commands: cmds,
+                                    js_commands,
+                                    spawns,
                                 } = #ty.update(msg, data).await?;
-                                Ok(Updated::new(Self {
-                                    views: (#(#types,)*),
-                                    render,
+                                let spawns = spawns
+                                    .into_iter()
+                                    .map(|future| {
+                                        Box::pin(async move {
+                                            #either_name::#ty(future.await)
+                                        }) as _
+                                    })
+                                    .collect::<Vec<_>>();
+                                Ok(Updated {
+                                    live_view: Self {
+                                        views: (#(#types,)*),
+                                        render,
+                                    },
+                                    js_commands,
+                                    spawns,
                                 })
-                                .with_all(cmds))
                             }
                         }
                     });

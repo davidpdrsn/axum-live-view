@@ -7,7 +7,7 @@ use axum::{
 };
 use futures_util::Stream;
 use serde::{de::DeserializeOwned, Serialize};
-use std::fmt;
+use std::{fmt, future::Future, pin::Pin};
 use tokio::sync::mpsc;
 
 mod combine;
@@ -144,18 +144,43 @@ pub trait LiveView: Sized + Send + Sync + 'static {
 }
 
 /// An updated live view as returned by [`LiveView::update`].
-#[derive(Debug, Clone)]
-pub struct Updated<T> {
+pub struct Updated<T>
+where
+    T: LiveView,
+{
     pub(crate) live_view: T,
     pub(crate) js_commands: Vec<JsCommand>,
+    pub(crate) spawns: Vec<Pin<Box<dyn Future<Output = T::Message> + Send + 'static>>>,
 }
 
-impl<T> Updated<T> {
+impl<T> fmt::Debug for Updated<T>
+where
+    T: LiveView + fmt::Debug,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Self {
+            live_view,
+            js_commands,
+            spawns: _,
+        } = self;
+
+        f.debug_struct("Updated")
+            .field("live_view", &live_view)
+            .field("js_commands", &js_commands)
+            .finish()
+    }
+}
+
+impl<T> Updated<T>
+where
+    T: LiveView,
+{
     /// Create a new `Updated` from the given view.
     pub fn new(live_view: T) -> Self {
         Self {
             live_view,
             js_commands: Default::default(),
+            spawns: Default::default(),
         }
     }
 
@@ -163,6 +188,8 @@ impl<T> Updated<T> {
     ///
     /// [`JsCommand`] can be used to perform updates that can't otherwise be done with
     /// [`LiveView::render`], such as setting the `<title>` or navigating to another page.
+    ///
+    /// Calling this method multiple times will not override previous values.
     pub fn with(mut self, js_command: JsCommand) -> Self {
         self.js_commands.push(js_command);
         self
@@ -172,6 +199,8 @@ impl<T> Updated<T> {
     ///
     /// [`JsCommand`] can be used to perform updates that can't otherwise be done with
     /// [`LiveView::render`], such as setting the `<title>` or navigating to another page.
+    ///
+    /// Calling this method multiple times will not override previous values.
     pub fn with_all<I>(mut self, commands: I) -> Self
     where
         I: IntoIterator<Item = JsCommand>,
@@ -180,21 +209,35 @@ impl<T> Updated<T> {
         self
     }
 
-    /// Map the contained view with a function.
+    /// Spawn a future to run when this `Updated` is passed back to axum-live-view.
     ///
-    /// This does not alter the attached [`JsCommand`]s.
-    pub fn map<F, K>(self, f: F) -> Updated<K>
+    /// The future must yield a message which is trigger [`LiveView::update`] to be called.
+    ///
+    /// This can be used to perform an async operation, have it run in the background so the view
+    /// is free to handle other messages, and get called when the future yields a message.
+    ///
+    /// Calling this method multiple times will not override previous values.
+    ///
+    /// Note that if the view was spawned with [`test::run_live_view`] the futures
+    /// will _not_ be spawned but will simply be dropped. [`TestViewHandle::send`] should be used
+    /// to send messages to the view from tests, as this is deterministic and yields the updated
+    /// HTML template.
+    ///
+    /// [`TestViewHandle::send`]: crate::test::TestViewHandle::send
+    /// [`test::run_live_view`]: crate::test::run_live_view
+    pub fn spawn<F>(mut self, future: F) -> Self
     where
-        F: FnOnce(T) -> K,
+        F: Future<Output = T::Message> + Send + 'static,
     {
-        Updated {
-            live_view: f(self.live_view),
-            js_commands: self.js_commands,
-        }
+        self.spawns.push(Box::pin(future));
+        self
     }
 }
 
-impl<T> Extend<JsCommand> for Updated<T> {
+impl<T> Extend<JsCommand> for Updated<T>
+where
+    T: LiveView,
+{
     fn extend<I>(&mut self, iter: I)
     where
         I: IntoIterator<Item = JsCommand>,
@@ -262,9 +305,16 @@ where
         let Updated {
             live_view,
             js_commands,
+            spawns,
         } = self.view.update(msg, data).await.map_err(&self.f)?;
+
         self.view = live_view;
-        Ok(Updated::new(self).with_all(js_commands))
+
+        Ok(Updated {
+            live_view: self,
+            js_commands,
+            spawns,
+        })
     }
 
     fn render(&self) -> Html<Self::Message> {

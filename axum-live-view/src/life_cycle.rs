@@ -78,9 +78,9 @@ where
     R: TryStream<Ok = MessageFromSocket<L::Message>> + Unpin,
     R::Error: fmt::Display + Send + Sync + 'static,
 {
-    let view = spawn_view(view);
-
     let (handle, rx) = ViewHandle::new();
+
+    let view = spawn_view(view, Some(handle.clone()));
 
     view.mount(uri, headers, handle)
         .await
@@ -160,7 +160,10 @@ where
     Ok(())
 }
 
-pub(crate) fn spawn_view<L>(mut view: L) -> ViewTaskHandle<L::Message, L::Error>
+pub(crate) fn spawn_view<L>(
+    mut view: L,
+    view_handle: Option<ViewHandle<L::Message>>,
+) -> ViewTaskHandle<L::Message, L::Error>
 where
     L: LiveView,
 {
@@ -200,6 +203,7 @@ where
                     let Updated {
                         live_view: new_view,
                         js_commands,
+                        spawns,
                     } = match view.update(msg, event_data).await {
                         Ok(updated) => updated,
                         Err(err) => {
@@ -207,6 +211,16 @@ where
                             break;
                         }
                     };
+
+                    if let Some(view_handle) = &view_handle {
+                        for future in spawns {
+                            let view_handle = view_handle.clone();
+                            crate::util::spawn_unit(async move {
+                                let msg = future.await;
+                                let _ = view_handle.send(msg).await;
+                            });
+                        }
+                    }
 
                     view = new_view;
 

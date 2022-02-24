@@ -6,6 +6,8 @@ use std::time::Duration;
 
 /// A JavaScript command that can be sent along with view updates to perform actions
 /// [`LiveView::render`] can't otherwise do.
+///
+/// [`LiveView::render`]: crate::live_view::LiveView::render
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct JsCommand {
     pub(crate) kind: JsCommandKind,
