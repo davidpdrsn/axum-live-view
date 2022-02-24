@@ -49,10 +49,12 @@ pub(crate) enum JsCommandKind {
     HistoryPushState { uri: String },
 }
 
-fn command(kind: JsCommandKind) -> JsCommand {
-    JsCommand {
-        kind,
-        delay_ms: None,
+impl From<JsCommandKind> for JsCommand {
+    fn from(kind: JsCommandKind) -> Self {
+        JsCommand {
+            kind,
+            delay_ms: None,
+        }
     }
 }
 
@@ -68,9 +70,10 @@ fn command(kind: JsCommandKind) -> JsCommand {
 /// axum_live_view::js_command::navigate_to("/some/other/page".parse().unwrap());
 /// ```
 pub fn navigate_to(uri: Uri) -> JsCommand {
-    command(JsCommandKind::NavigateTo {
+    JsCommandKind::NavigateTo {
         uri: uri.to_string(),
-    })
+    }
+    .into()
 }
 
 /// Add a class to elements matching a CSS selector.
@@ -81,10 +84,11 @@ pub fn navigate_to(uri: Uri) -> JsCommand {
 /// axum_live_view::js_command::add_class(".thing", "hidden");
 /// ```
 pub fn add_class(selector: impl Into<String>, klass: impl Into<String>) -> JsCommand {
-    command(JsCommandKind::AddClass {
+    JsCommandKind::AddClass {
         selector: selector.into(),
         klass: klass.into(),
-    })
+    }
+    .into()
 }
 
 /// Remove a class from elements matching a CSS selector.
@@ -95,10 +99,11 @@ pub fn add_class(selector: impl Into<String>, klass: impl Into<String>) -> JsCom
 /// axum_live_view::js_command::remove_class(".thing", "hidden");
 /// ```
 pub fn remove_class(selector: impl Into<String>, klass: impl Into<String>) -> JsCommand {
-    command(JsCommandKind::RemoveClass {
+    JsCommandKind::RemoveClass {
         selector: selector.into(),
         klass: klass.into(),
-    })
+    }
+    .into()
 }
 
 /// Toggle a class from elements matching a CSS selector.
@@ -109,10 +114,11 @@ pub fn remove_class(selector: impl Into<String>, klass: impl Into<String>) -> Js
 /// axum_live_view::js_command::toggle_class(".thing", "hidden");
 /// ```
 pub fn toggle_class(selector: impl Into<String>, klass: impl Into<String>) -> JsCommand {
-    command(JsCommandKind::ToggleClass {
+    JsCommandKind::ToggleClass {
         selector: selector.into(),
         klass: klass.into(),
-    })
+    }
+    .into()
 }
 
 /// Clear the value of input fields matching a CSS selector.
@@ -123,9 +129,10 @@ pub fn toggle_class(selector: impl Into<String>, klass: impl Into<String>) -> Js
 /// axum_live_view::js_command::clear_value(".search-query");
 /// ```
 pub fn clear_value(selector: impl Into<String>) -> JsCommand {
-    command(JsCommandKind::ClearValue {
+    JsCommandKind::ClearValue {
         selector: selector.into(),
-    })
+    }
+    .into()
 }
 
 /// Change the `<title>`.
@@ -136,9 +143,10 @@ pub fn clear_value(selector: impl Into<String>) -> JsCommand {
 /// axum_live_view::js_command::set_title("My page - (2 notifications)");
 /// ```
 pub fn set_title(title: impl Into<String>) -> JsCommand {
-    command(JsCommandKind::SetTitle {
+    JsCommandKind::SetTitle {
         title: title.into(),
-    })
+    }
+    .into()
 }
 
 /// Change the location without reloading the page.
@@ -153,7 +161,8 @@ pub fn set_title(title: impl Into<String>) -> JsCommand {
 ///
 /// [`History.pushState`]: https://developer.mozilla.org/en-US/docs/Web/API/History/pushState
 pub fn history_push_state(uri: Uri) -> JsCommand {
-    command(JsCommandKind::HistoryPushState {
+    JsCommandKind::HistoryPushState {
         uri: uri.to_string(),
-    })
+    }
+    .into()
 }
