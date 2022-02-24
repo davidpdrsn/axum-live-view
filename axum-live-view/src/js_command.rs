@@ -19,7 +19,7 @@ impl JsCommand {
     ///
     /// The duration will be rounded the nearest millisecond.
     ///
-    /// Uses [`setTimeout`] on the browser.
+    /// Uses [`setTimeout`] in the browser.
     ///
     /// # Example
     ///
