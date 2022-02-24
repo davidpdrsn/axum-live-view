@@ -116,7 +116,10 @@ where
                     views: (T1,),
                     render,
                 } = self;
-                let (T1, cmds) = T1.update(msg, data).await?.into_parts();
+                let Updated {
+                    live_view: T1,
+                    js_commands: cmds,
+                } = T1.update(msg, data).await?;
                 Ok(Updated::new(Self {
                     views: (T1,),
                     render,
@@ -184,7 +187,10 @@ where
                     views: (T1, T2),
                     render,
                 } = self;
-                let (T1, cmds) = T1.update(msg, data).await?.into_parts();
+                let Updated {
+                    live_view: T1,
+                    js_commands: cmds,
+                } = T1.update(msg, data).await?;
                 Ok(Updated::new(Self {
                     views: (T1, T2),
                     render,
@@ -196,7 +202,10 @@ where
                     views: (T1, T2),
                     render,
                 } = self;
-                let (T2, cmds) = T2.update(msg, data).await?.into_parts();
+                let Updated {
+                    live_view: T2,
+                    js_commands: cmds,
+                } = T2.update(msg, data).await?;
                 Ok(Updated::new(Self {
                     views: (T1, T2),
                     render,
@@ -273,7 +282,10 @@ where
                     views: (T1, T2, T3),
                     render,
                 } = self;
-                let (T1, cmds) = T1.update(msg, data).await?.into_parts();
+                let Updated {
+                    live_view: T1,
+                    js_commands: cmds,
+                } = T1.update(msg, data).await?;
                 Ok(Updated::new(Self {
                     views: (T1, T2, T3),
                     render,
@@ -285,7 +297,10 @@ where
                     views: (T1, T2, T3),
                     render,
                 } = self;
-                let (T2, cmds) = T2.update(msg, data).await?.into_parts();
+                let Updated {
+                    live_view: T2,
+                    js_commands: cmds,
+                } = T2.update(msg, data).await?;
                 Ok(Updated::new(Self {
                     views: (T1, T2, T3),
                     render,
@@ -297,7 +312,10 @@ where
                     views: (T1, T2, T3),
                     render,
                 } = self;
-                let (T3, cmds) = T3.update(msg, data).await?.into_parts();
+                let Updated {
+                    live_view: T3,
+                    js_commands: cmds,
+                } = T3.update(msg, data).await?;
                 Ok(Updated::new(Self {
                     views: (T1, T2, T3),
                     render,
@@ -386,7 +404,10 @@ where
                     views: (T1, T2, T3, T4),
                     render,
                 } = self;
-                let (T1, cmds) = T1.update(msg, data).await?.into_parts();
+                let Updated {
+                    live_view: T1,
+                    js_commands: cmds,
+                } = T1.update(msg, data).await?;
                 Ok(Updated::new(Self {
                     views: (T1, T2, T3, T4),
                     render,
@@ -398,7 +419,10 @@ where
                     views: (T1, T2, T3, T4),
                     render,
                 } = self;
-                let (T2, cmds) = T2.update(msg, data).await?.into_parts();
+                let Updated {
+                    live_view: T2,
+                    js_commands: cmds,
+                } = T2.update(msg, data).await?;
                 Ok(Updated::new(Self {
                     views: (T1, T2, T3, T4),
                     render,
@@ -410,7 +434,10 @@ where
                     views: (T1, T2, T3, T4),
                     render,
                 } = self;
-                let (T3, cmds) = T3.update(msg, data).await?.into_parts();
+                let Updated {
+                    live_view: T3,
+                    js_commands: cmds,
+                } = T3.update(msg, data).await?;
                 Ok(Updated::new(Self {
                     views: (T1, T2, T3, T4),
                     render,
@@ -422,7 +449,10 @@ where
                     views: (T1, T2, T3, T4),
                     render,
                 } = self;
-                let (T4, cmds) = T4.update(msg, data).await?.into_parts();
+                let Updated {
+                    live_view: T4,
+                    js_commands: cmds,
+                } = T4.update(msg, data).await?;
                 Ok(Updated::new(Self {
                     views: (T1, T2, T3, T4),
                     render,
@@ -521,7 +551,10 @@ where
                     views: (T1, T2, T3, T4, T5),
                     render,
                 } = self;
-                let (T1, cmds) = T1.update(msg, data).await?.into_parts();
+                let Updated {
+                    live_view: T1,
+                    js_commands: cmds,
+                } = T1.update(msg, data).await?;
                 Ok(Updated::new(Self {
                     views: (T1, T2, T3, T4, T5),
                     render,
@@ -533,7 +566,10 @@ where
                     views: (T1, T2, T3, T4, T5),
                     render,
                 } = self;
-                let (T2, cmds) = T2.update(msg, data).await?.into_parts();
+                let Updated {
+                    live_view: T2,
+                    js_commands: cmds,
+                } = T2.update(msg, data).await?;
                 Ok(Updated::new(Self {
                     views: (T1, T2, T3, T4, T5),
                     render,
@@ -545,7 +581,10 @@ where
                     views: (T1, T2, T3, T4, T5),
                     render,
                 } = self;
-                let (T3, cmds) = T3.update(msg, data).await?.into_parts();
+                let Updated {
+                    live_view: T3,
+                    js_commands: cmds,
+                } = T3.update(msg, data).await?;
                 Ok(Updated::new(Self {
                     views: (T1, T2, T3, T4, T5),
                     render,
@@ -557,7 +596,10 @@ where
                     views: (T1, T2, T3, T4, T5),
                     render,
                 } = self;
-                let (T4, cmds) = T4.update(msg, data).await?.into_parts();
+                let Updated {
+                    live_view: T4,
+                    js_commands: cmds,
+                } = T4.update(msg, data).await?;
                 Ok(Updated::new(Self {
                     views: (T1, T2, T3, T4, T5),
                     render,
@@ -569,7 +611,10 @@ where
                     views: (T1, T2, T3, T4, T5),
                     render,
                 } = self;
-                let (T5, cmds) = T5.update(msg, data).await?.into_parts();
+                let Updated {
+                    live_view: T5,
+                    js_commands: cmds,
+                } = T5.update(msg, data).await?;
                 Ok(Updated::new(Self {
                     views: (T1, T2, T3, T4, T5),
                     render,
@@ -732,7 +777,10 @@ where
                     views: (T1, T2, T3, T4, T5, T6),
                     render,
                 } = self;
-                let (T1, cmds) = T1.update(msg, data).await?.into_parts();
+                let Updated {
+                    live_view: T1,
+                    js_commands: cmds,
+                } = T1.update(msg, data).await?;
                 Ok(Updated::new(Self {
                     views: (T1, T2, T3, T4, T5, T6),
                     render,
@@ -744,7 +792,10 @@ where
                     views: (T1, T2, T3, T4, T5, T6),
                     render,
                 } = self;
-                let (T2, cmds) = T2.update(msg, data).await?.into_parts();
+                let Updated {
+                    live_view: T2,
+                    js_commands: cmds,
+                } = T2.update(msg, data).await?;
                 Ok(Updated::new(Self {
                     views: (T1, T2, T3, T4, T5, T6),
                     render,
@@ -756,7 +807,10 @@ where
                     views: (T1, T2, T3, T4, T5, T6),
                     render,
                 } = self;
-                let (T3, cmds) = T3.update(msg, data).await?.into_parts();
+                let Updated {
+                    live_view: T3,
+                    js_commands: cmds,
+                } = T3.update(msg, data).await?;
                 Ok(Updated::new(Self {
                     views: (T1, T2, T3, T4, T5, T6),
                     render,
@@ -768,7 +822,10 @@ where
                     views: (T1, T2, T3, T4, T5, T6),
                     render,
                 } = self;
-                let (T4, cmds) = T4.update(msg, data).await?.into_parts();
+                let Updated {
+                    live_view: T4,
+                    js_commands: cmds,
+                } = T4.update(msg, data).await?;
                 Ok(Updated::new(Self {
                     views: (T1, T2, T3, T4, T5, T6),
                     render,
@@ -780,7 +837,10 @@ where
                     views: (T1, T2, T3, T4, T5, T6),
                     render,
                 } = self;
-                let (T5, cmds) = T5.update(msg, data).await?.into_parts();
+                let Updated {
+                    live_view: T5,
+                    js_commands: cmds,
+                } = T5.update(msg, data).await?;
                 Ok(Updated::new(Self {
                     views: (T1, T2, T3, T4, T5, T6),
                     render,
@@ -792,7 +852,10 @@ where
                     views: (T1, T2, T3, T4, T5, T6),
                     render,
                 } = self;
-                let (T6, cmds) = T6.update(msg, data).await?.into_parts();
+                let Updated {
+                    live_view: T6,
+                    js_commands: cmds,
+                } = T6.update(msg, data).await?;
                 Ok(Updated::new(Self {
                     views: (T1, T2, T3, T4, T5, T6),
                     render,
@@ -995,7 +1058,10 @@ where
                     views: (T1, T2, T3, T4, T5, T6, T7),
                     render,
                 } = self;
-                let (T1, cmds) = T1.update(msg, data).await?.into_parts();
+                let Updated {
+                    live_view: T1,
+                    js_commands: cmds,
+                } = T1.update(msg, data).await?;
                 Ok(Updated::new(Self {
                     views: (T1, T2, T3, T4, T5, T6, T7),
                     render,
@@ -1007,7 +1073,10 @@ where
                     views: (T1, T2, T3, T4, T5, T6, T7),
                     render,
                 } = self;
-                let (T2, cmds) = T2.update(msg, data).await?.into_parts();
+                let Updated {
+                    live_view: T2,
+                    js_commands: cmds,
+                } = T2.update(msg, data).await?;
                 Ok(Updated::new(Self {
                     views: (T1, T2, T3, T4, T5, T6, T7),
                     render,
@@ -1019,7 +1088,10 @@ where
                     views: (T1, T2, T3, T4, T5, T6, T7),
                     render,
                 } = self;
-                let (T3, cmds) = T3.update(msg, data).await?.into_parts();
+                let Updated {
+                    live_view: T3,
+                    js_commands: cmds,
+                } = T3.update(msg, data).await?;
                 Ok(Updated::new(Self {
                     views: (T1, T2, T3, T4, T5, T6, T7),
                     render,
@@ -1031,7 +1103,10 @@ where
                     views: (T1, T2, T3, T4, T5, T6, T7),
                     render,
                 } = self;
-                let (T4, cmds) = T4.update(msg, data).await?.into_parts();
+                let Updated {
+                    live_view: T4,
+                    js_commands: cmds,
+                } = T4.update(msg, data).await?;
                 Ok(Updated::new(Self {
                     views: (T1, T2, T3, T4, T5, T6, T7),
                     render,
@@ -1043,7 +1118,10 @@ where
                     views: (T1, T2, T3, T4, T5, T6, T7),
                     render,
                 } = self;
-                let (T5, cmds) = T5.update(msg, data).await?.into_parts();
+                let Updated {
+                    live_view: T5,
+                    js_commands: cmds,
+                } = T5.update(msg, data).await?;
                 Ok(Updated::new(Self {
                     views: (T1, T2, T3, T4, T5, T6, T7),
                     render,
@@ -1055,7 +1133,10 @@ where
                     views: (T1, T2, T3, T4, T5, T6, T7),
                     render,
                 } = self;
-                let (T6, cmds) = T6.update(msg, data).await?.into_parts();
+                let Updated {
+                    live_view: T6,
+                    js_commands: cmds,
+                } = T6.update(msg, data).await?;
                 Ok(Updated::new(Self {
                     views: (T1, T2, T3, T4, T5, T6, T7),
                     render,
@@ -1067,7 +1148,10 @@ where
                     views: (T1, T2, T3, T4, T5, T6, T7),
                     render,
                 } = self;
-                let (T7, cmds) = T7.update(msg, data).await?.into_parts();
+                let Updated {
+                    live_view: T7,
+                    js_commands: cmds,
+                } = T7.update(msg, data).await?;
                 Ok(Updated::new(Self {
                     views: (T1, T2, T3, T4, T5, T6, T7),
                     render,
@@ -1299,7 +1383,10 @@ where
                     views: (T1, T2, T3, T4, T5, T6, T7, T8),
                     render,
                 } = self;
-                let (T1, cmds) = T1.update(msg, data).await?.into_parts();
+                let Updated {
+                    live_view: T1,
+                    js_commands: cmds,
+                } = T1.update(msg, data).await?;
                 Ok(Updated::new(Self {
                     views: (T1, T2, T3, T4, T5, T6, T7, T8),
                     render,
@@ -1311,7 +1398,10 @@ where
                     views: (T1, T2, T3, T4, T5, T6, T7, T8),
                     render,
                 } = self;
-                let (T2, cmds) = T2.update(msg, data).await?.into_parts();
+                let Updated {
+                    live_view: T2,
+                    js_commands: cmds,
+                } = T2.update(msg, data).await?;
                 Ok(Updated::new(Self {
                     views: (T1, T2, T3, T4, T5, T6, T7, T8),
                     render,
@@ -1323,7 +1413,10 @@ where
                     views: (T1, T2, T3, T4, T5, T6, T7, T8),
                     render,
                 } = self;
-                let (T3, cmds) = T3.update(msg, data).await?.into_parts();
+                let Updated {
+                    live_view: T3,
+                    js_commands: cmds,
+                } = T3.update(msg, data).await?;
                 Ok(Updated::new(Self {
                     views: (T1, T2, T3, T4, T5, T6, T7, T8),
                     render,
@@ -1335,7 +1428,10 @@ where
                     views: (T1, T2, T3, T4, T5, T6, T7, T8),
                     render,
                 } = self;
-                let (T4, cmds) = T4.update(msg, data).await?.into_parts();
+                let Updated {
+                    live_view: T4,
+                    js_commands: cmds,
+                } = T4.update(msg, data).await?;
                 Ok(Updated::new(Self {
                     views: (T1, T2, T3, T4, T5, T6, T7, T8),
                     render,
@@ -1347,7 +1443,10 @@ where
                     views: (T1, T2, T3, T4, T5, T6, T7, T8),
                     render,
                 } = self;
-                let (T5, cmds) = T5.update(msg, data).await?.into_parts();
+                let Updated {
+                    live_view: T5,
+                    js_commands: cmds,
+                } = T5.update(msg, data).await?;
                 Ok(Updated::new(Self {
                     views: (T1, T2, T3, T4, T5, T6, T7, T8),
                     render,
@@ -1359,7 +1458,10 @@ where
                     views: (T1, T2, T3, T4, T5, T6, T7, T8),
                     render,
                 } = self;
-                let (T6, cmds) = T6.update(msg, data).await?.into_parts();
+                let Updated {
+                    live_view: T6,
+                    js_commands: cmds,
+                } = T6.update(msg, data).await?;
                 Ok(Updated::new(Self {
                     views: (T1, T2, T3, T4, T5, T6, T7, T8),
                     render,
@@ -1371,7 +1473,10 @@ where
                     views: (T1, T2, T3, T4, T5, T6, T7, T8),
                     render,
                 } = self;
-                let (T7, cmds) = T7.update(msg, data).await?.into_parts();
+                let Updated {
+                    live_view: T7,
+                    js_commands: cmds,
+                } = T7.update(msg, data).await?;
                 Ok(Updated::new(Self {
                     views: (T1, T2, T3, T4, T5, T6, T7, T8),
                     render,
@@ -1383,7 +1488,10 @@ where
                     views: (T1, T2, T3, T4, T5, T6, T7, T8),
                     render,
                 } = self;
-                let (T8, cmds) = T8.update(msg, data).await?.into_parts();
+                let Updated {
+                    live_view: T8,
+                    js_commands: cmds,
+                } = T8.update(msg, data).await?;
                 Ok(Updated::new(Self {
                     views: (T1, T2, T3, T4, T5, T6, T7, T8),
                     render,

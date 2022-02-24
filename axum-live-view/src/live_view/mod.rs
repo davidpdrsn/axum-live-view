@@ -146,8 +146,8 @@ pub trait LiveView: Sized + Send + Sync + 'static {
 /// An updated live view as returned by [`LiveView::update`].
 #[derive(Debug, Clone)]
 pub struct Updated<T> {
-    live_view: T,
-    js_commands: Vec<JsCommand>,
+    pub(crate) live_view: T,
+    pub(crate) js_commands: Vec<JsCommand>,
 }
 
 impl<T> Updated<T> {
@@ -191,10 +191,6 @@ impl<T> Updated<T> {
             live_view: f(self.live_view),
             js_commands: self.js_commands,
         }
-    }
-
-    pub(crate) fn into_parts(self) -> (T, Vec<JsCommand>) {
-        (self.live_view, self.js_commands)
     }
 }
 
@@ -263,14 +259,12 @@ where
         msg: Self::Message,
         data: Option<EventData>,
     ) -> Result<Updated<Self>, Self::Error> {
-        let (view, cmds) = self
-            .view
-            .update(msg, data)
-            .await
-            .map_err(&self.f)?
-            .into_parts();
-        self.view = view;
-        Ok(Updated::new(self).with_all(cmds))
+        let Updated {
+            live_view,
+            js_commands,
+        } = self.view.update(msg, data).await.map_err(&self.f)?;
+        self.view = live_view;
+        Ok(Updated::new(self).with_all(js_commands))
     }
 
     fn render(&self) -> Html<Self::Message> {

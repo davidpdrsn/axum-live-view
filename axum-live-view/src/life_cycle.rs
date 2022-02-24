@@ -1,5 +1,9 @@
 use crate::{
-    event_data::EventData, html::Html, js_command::JsCommand, live_view::ViewHandle, LiveView,
+    event_data::EventData,
+    html::Html,
+    js_command::JsCommand,
+    live_view::{Updated, ViewHandle},
+    LiveView,
 };
 use futures_util::{
     sink::{Sink, SinkExt},
@@ -193,8 +197,11 @@ where
                     reply_tx,
                     event_data,
                 } => {
-                    let (new_view, js_commands) = match view.update(msg, event_data).await {
-                        Ok(updated) => updated.into_parts(),
+                    let Updated {
+                        live_view: new_view,
+                        js_commands,
+                    } = match view.update(msg, event_data).await {
+                        Ok(updated) => updated,
                         Err(err) => {
                             let _ = reply_tx.send(Err(err));
                             break;

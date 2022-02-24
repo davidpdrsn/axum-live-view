@@ -243,7 +243,10 @@ fn codegen() -> Result {
                         quote! {
                             #either_name::#ty(msg) => {
                                 let Self { views: (#(#types,)*), render } = self;
-                                let (#ty, cmds) = #ty.update(msg, data).await?.into_parts();
+                                let Updated {
+                                    live_view: #ty,
+                                    js_commands: cmds,
+                                } = #ty.update(msg, data).await?;
                                 Ok(Updated::new(Self {
                                     views: (#(#types,)*),
                                     render,
