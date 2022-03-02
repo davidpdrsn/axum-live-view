@@ -33,7 +33,14 @@ function connect(options: LiveViewOptions) {
     return
   }
 
-  const socket = new WebSocket(`ws://${window.location.host}${window.location.pathname}`);
+  var proto: string
+  if (location.protocol.indexOf("https") === -1) {
+    proto = "ws"
+  } else {
+    proto = "wss"
+  }
+
+  const socket = new WebSocket(`${proto}://${window.location.host}${window.location.pathname}`);
 
   var state: State = {}
 
