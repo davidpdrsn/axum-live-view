@@ -649,7 +649,7 @@ impl NodeToTokens for HtmlNode {
 
 impl NodeToTokens for Doctype {
     fn node_to_tokens(&self, fixed: &mut FixedParts, _out: &mut TokenStream) {
-        fixed.append("<!DOCTYPE html>".to_owned());
+        fixed.append("<!DOCTYPE html>");
     }
 }
 
@@ -663,7 +663,7 @@ impl NodeToTokens for TagNode {
             attrs.node_to_tokens(fixed, out);
         }
 
-        fixed.append(">".to_owned());
+        fixed.append(">");
         if let Some(TagClose {
             inner: inner_nodes,
             close,
@@ -683,18 +683,18 @@ impl NodeToTokens for Attr {
         match self {
             Attr::Normal { ident, value } => match value {
                 NormalAttrValue::LitStr(lit_str) => {
-                    fixed.append(" ".to_owned());
+                    fixed.append(" ");
                     ident.node_to_tokens(fixed, out);
-                    fixed.append(format!("={:?}", lit_str.value()));
+                    fixed.append(format!("={}", lit_str.value()));
                 }
                 NormalAttrValue::Block(block) => {
-                    fixed.append(" ".to_owned());
+                    fixed.append(" ");
                     ident.node_to_tokens(fixed, out);
-                    fixed.append("=".to_owned());
+                    fixed.append("=");
                     fixed.start_new_part();
                     out.extend(quote! {
                         #[allow(unused_braces)]
-                        __dynamic.push_fragment(format!("{:?}", #block));
+                        __dynamic.push_fragment(format!("{}", #block));
                     });
                 }
                 NormalAttrValue::If(if_) => {
@@ -705,16 +705,16 @@ impl NodeToTokens for Attr {
                     if_.node_to_tokens(fixed, out);
                 }
                 NormalAttrValue::Unit(_) => {
-                    fixed.append(" ".to_owned());
+                    fixed.append(" ");
                     ident.node_to_tokens(fixed, out);
                 }
                 NormalAttrValue::None => {}
             },
             Attr::Axm { ident, value } => match value {
                 AxmAttrValue::Block(block) => {
-                    fixed.append(" ".to_owned());
+                    fixed.append(" ");
                     ident.node_to_tokens(fixed, out);
-                    fixed.append("=".to_owned());
+                    fixed.append("=");
                     fixed.start_new_part();
                     out.extend(quote! {
                         #[allow(unused_braces)]
@@ -736,8 +736,8 @@ impl NodeToTokens for Attr {
 impl NodeToTokens for AttrIdent {
     fn node_to_tokens(&self, fixed: &mut FixedParts, _out: &mut TokenStream) {
         match self {
-            AttrIdent::Lit(ident) => fixed.append(ident.to_string()),
-            AttrIdent::Axm(ident) => fixed.append(ident.to_string()),
+            AttrIdent::Lit(ident) => fixed.append(ident),
+            AttrIdent::Axm(ident) => fixed.append(ident),
         }
     }
 }
