@@ -3,6 +3,7 @@ use crate::{
     html::Html,
     js_command::JsCommand,
     live_view::{Updated, ViewHandle},
+    util::ReceiverStream,
     LiveView,
 };
 use futures_util::{
@@ -18,7 +19,6 @@ use serde::{
 use serde_json::Value;
 use std::{fmt, marker::PhantomData};
 use tokio::sync::{mpsc, oneshot};
-use tokio_stream::wrappers::ReceiverStream;
 
 /// Type used to embed live views in HTML templates.
 pub struct EmbedLiveView<'a, L> {
@@ -98,7 +98,7 @@ where
             data: EventMessageFromSocketData::None,
         })
     });
-    let mut stream = tokio_stream::StreamExt::merge(read.into_stream(), rx_stream);
+    let mut stream = crate::util::StreamExt::merge(read.into_stream(), rx_stream);
 
     loop {
         let msg = match stream.next().await {
