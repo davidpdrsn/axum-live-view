@@ -1,3 +1,8 @@
+mod receiver_stream;
+mod stream_ext;
+
+pub(crate) use self::{receiver_stream::ReceiverStream, stream_ext::StreamExt};
+
 /// Spawn a future that is required to yield `()`.
 ///
 /// This means the future is required to handle all errors.

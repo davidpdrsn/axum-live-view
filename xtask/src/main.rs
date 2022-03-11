@@ -243,12 +243,27 @@ fn codegen() -> Result {
                         quote! {
                             #either_name::#ty(msg) => {
                                 let Self { views: (#(#types,)*), render } = self;
-                                let (#ty, cmds) = #ty.update(msg, data).await?.into_parts();
-                                Ok(Updated::new(Self {
-                                    views: (#(#types,)*),
-                                    render,
+                                let Updated {
+                                    live_view: #ty,
+                                    js_commands,
+                                    spawns,
+                                } = #ty.update(msg, data).await?;
+                                let spawns = spawns
+                                    .into_iter()
+                                    .map(|future| {
+                                        Box::pin(async move {
+                                            #either_name::#ty(future.await)
+                                        }) as _
+                                    })
+                                    .collect::<Vec<_>>();
+                                Ok(Updated {
+                                    live_view: Self {
+                                        views: (#(#types,)*),
+                                        render,
+                                    },
+                                    js_commands,
+                                    spawns,
                                 })
-                                .with_all(cmds))
                             }
                         }
                     });
@@ -317,14 +332,10 @@ fn codegen() -> Result {
         use axum::http::{HeaderMap, Uri};
         use serde::{Deserialize, Serialize};
 
-        pub fn combine<V, F>(views: V, render: F) -> Combine<V, F> {
-            Combine { views, render }
-        }
-
         #[allow(missing_debug_implementations)]
         pub struct Combine<V, F> {
-            views: V,
-            render: F,
+            pub(super) views: V,
+            pub(super) render: F,
         }
 
         #eithers

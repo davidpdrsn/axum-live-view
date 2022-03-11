@@ -1,5 +1,10 @@
 use crate::{
-    event_data::EventData, html::Html, js_command::JsCommand, live_view::ViewHandle, LiveView,
+    event_data::EventData,
+    html::Html,
+    js_command::JsCommand,
+    live_view::{Updated, ViewHandle},
+    util::ReceiverStream,
+    LiveView,
 };
 use futures_util::{
     sink::{Sink, SinkExt},
@@ -14,8 +19,8 @@ use serde::{
 use serde_json::Value;
 use std::{fmt, marker::PhantomData};
 use tokio::sync::{mpsc, oneshot};
-use tokio_stream::wrappers::ReceiverStream;
 
+/// Type used to embed live views in HTML templates.
 pub struct EmbedLiveView<'a, L> {
     view: Option<&'a mut Option<L>>,
 }
@@ -29,6 +34,7 @@ impl<'a, L> EmbedLiveView<'a, L> {
         Self { view: Some(view) }
     }
 
+    /// Embed a live view in a HTML template.
     pub fn embed(self, view: L) -> Html<L::Message>
     where
         L: LiveView,
@@ -42,6 +48,11 @@ impl<'a, L> EmbedLiveView<'a, L> {
         html
     }
 
+    /// Check whether the request was a WebSocket upgrade request.
+    ///
+    /// This can be used to initialize the view differently depending on which part of the live
+    /// view life cycle we're in. See the [root module docs](crate) for more details on the life
+    /// cycle.
     pub fn connected(&self) -> bool {
         self.view.is_some()
     }
@@ -67,9 +78,9 @@ where
     R: TryStream<Ok = MessageFromSocket<L::Message>> + Unpin,
     R::Error: fmt::Display + Send + Sync + 'static,
 {
-    let view = spawn_view(view);
-
     let (handle, rx) = ViewHandle::new();
+
+    let view = spawn_view(view, Some(handle.clone()));
 
     view.mount(uri, headers, handle)
         .await
@@ -87,7 +98,7 @@ where
             data: EventMessageFromSocketData::None,
         })
     });
-    let mut stream = tokio_stream::StreamExt::merge(read.into_stream(), rx_stream);
+    let mut stream = crate::util::StreamExt::merge(read.into_stream(), rx_stream);
 
     loop {
         let msg = match stream.next().await {
@@ -149,7 +160,10 @@ where
     Ok(())
 }
 
-pub(crate) fn spawn_view<L>(mut view: L) -> ViewTaskHandle<L::Message, L::Error>
+pub(crate) fn spawn_view<L>(
+    mut view: L,
+    view_handle: Option<ViewHandle<L::Message>>,
+) -> ViewTaskHandle<L::Message, L::Error>
 where
     L: LiveView,
 {
@@ -186,13 +200,27 @@ where
                     reply_tx,
                     event_data,
                 } => {
-                    let (new_view, js_commands) = match view.update(msg, event_data).await {
-                        Ok(updated) => updated.into_parts(),
+                    let Updated {
+                        live_view: new_view,
+                        js_commands,
+                        spawns,
+                    } = match view.update(msg, event_data).await {
+                        Ok(updated) => updated,
                         Err(err) => {
                             let _ = reply_tx.send(Err(err));
                             break;
                         }
                     };
+
+                    if let Some(view_handle) = &view_handle {
+                        for future in spawns {
+                            let view_handle = view_handle.clone();
+                            crate::util::spawn_unit(async move {
+                                let msg = future.await;
+                                let _ = view_handle.send(msg).await;
+                            });
+                        }
+                    }
 
                     view = new_view;
 
@@ -227,6 +255,14 @@ impl<M, E> Clone for ViewTaskHandle<M, E> {
         Self {
             tx: self.tx.clone(),
         }
+    }
+}
+
+impl<M, E> fmt::Debug for ViewTaskHandle<M, E> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ViewTaskHandle")
+            .field("tx", &self.tx)
+            .finish()
     }
 }
 

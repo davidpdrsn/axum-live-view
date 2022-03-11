@@ -1,3 +1,7 @@
+//! Internal macro crate for [axum-live-view].
+//!
+//! [axum-live-view]: https://crates.io/crates/axum-live-view
+
 #![warn(
     clippy::all,
     clippy::dbg_macro,
@@ -30,8 +34,8 @@
     rust_2018_idioms,
     future_incompatible,
     nonstandard_style,
-    // missing_debug_implementations,
-    // missing_docs
+    missing_debug_implementations,
+    missing_docs
 )]
 #![deny(unreachable_pub, private_in_public)]
 #![allow(elided_lifetimes_in_paths, clippy::type_complexity)]
@@ -50,6 +54,7 @@ use syn::{
 };
 
 #[proc_macro]
+#[allow(missing_docs)]
 pub fn html(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let tree = match syn::parse::<Tree>(input) {
         Ok(tree) => tree,
@@ -502,8 +507,15 @@ impl Parse for Arm {
         input.parse::<Token![=>]>()?;
 
         let mut nodes = Vec::new();
-        while input.fork().parse::<HtmlNode>().is_ok() {
-            let node = input.parse::<HtmlNode>()?;
+        let content;
+        let x = if input.peek(syn::token::Brace) {
+            syn::braced!(content in input);
+            &content
+        } else {
+            input
+        };
+        while x.fork().parse::<HtmlNode>().is_ok() {
+            let node = x.parse::<HtmlNode>()?;
             nodes.push(node);
         }
 
@@ -644,7 +656,7 @@ impl NodeToTokens for HtmlNode {
 
 impl NodeToTokens for Doctype {
     fn node_to_tokens(&self, fixed: &mut FixedParts, _out: &mut TokenStream) {
-        fixed.append("<!DOCTYPE html>".to_owned());
+        fixed.append("<!DOCTYPE html>");
     }
 }
 
@@ -658,7 +670,7 @@ impl NodeToTokens for TagNode {
             attrs.node_to_tokens(fixed, out);
         }
 
-        fixed.append(">".to_owned());
+        fixed.append(">");
         if let Some(TagClose {
             inner: inner_nodes,
             close,
@@ -678,18 +690,18 @@ impl NodeToTokens for Attr {
         match self {
             Attr::Normal { ident, value } => match value {
                 NormalAttrValue::LitStr(lit_str) => {
-                    fixed.append(" ".to_owned());
+                    fixed.append(" ");
                     ident.node_to_tokens(fixed, out);
-                    fixed.append(format!("={:?}", lit_str.value()));
+                    fixed.append(format!("={}", lit_str.value()));
                 }
                 NormalAttrValue::Block(block) => {
-                    fixed.append(" ".to_owned());
+                    fixed.append(" ");
                     ident.node_to_tokens(fixed, out);
-                    fixed.append("=".to_owned());
+                    fixed.append("=");
                     fixed.start_new_part();
                     out.extend(quote! {
                         #[allow(unused_braces)]
-                        __dynamic.push_fragment(format!("{:?}", #block));
+                        __dynamic.push_fragment(format!("{}", #block));
                     });
                 }
                 NormalAttrValue::If(if_) => {
@@ -700,16 +712,16 @@ impl NodeToTokens for Attr {
                     if_.node_to_tokens(fixed, out);
                 }
                 NormalAttrValue::Unit(_) => {
-                    fixed.append(" ".to_owned());
+                    fixed.append(" ");
                     ident.node_to_tokens(fixed, out);
                 }
                 NormalAttrValue::None => {}
             },
             Attr::Axm { ident, value } => match value {
                 AxmAttrValue::Block(block) => {
-                    fixed.append(" ".to_owned());
+                    fixed.append(" ");
                     ident.node_to_tokens(fixed, out);
-                    fixed.append("=".to_owned());
+                    fixed.append("=");
                     fixed.start_new_part();
                     out.extend(quote! {
                         #[allow(unused_braces)]
@@ -731,8 +743,8 @@ impl NodeToTokens for Attr {
 impl NodeToTokens for AttrIdent {
     fn node_to_tokens(&self, fixed: &mut FixedParts, _out: &mut TokenStream) {
         match self {
-            AttrIdent::Lit(ident) => fixed.append(ident.to_string()),
-            AttrIdent::Axm(ident) => fixed.append(ident.to_string()),
+            AttrIdent::Lit(ident) => fixed.append(ident),
+            AttrIdent::Axm(ident) => fixed.append(ident),
         }
     }
 }
