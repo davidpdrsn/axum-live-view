@@ -35,7 +35,10 @@ license-files = [
 [bans]
 multiple-versions = "deny"
 highlight = "all"
-skip-tree = []
+skip-tree = [
+    # will be updated with axum 0.5
+    { name = "tungstenite" },
+]
 skip = [
     # rustls uses old version (dev dep)
     { name = "spin", version = "=0.5.2" },
