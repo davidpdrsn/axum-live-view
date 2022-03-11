@@ -4,7 +4,7 @@ use axum::{
     http::{HeaderMap, Uri},
     response::IntoResponse,
     routing::get,
-    AddExtensionLayer, Router,
+    Router,
 };
 use axum_live_view::{
     event_data::EventData,
@@ -34,8 +34,8 @@ async fn main() {
         .route("/bundle.js", axum_live_view::precompiled_js())
         .layer(
             ServiceBuilder::new()
-                .layer(AddExtensionLayer::new(messages))
-                .layer(AddExtensionLayer::new(tx)),
+                .layer(Extension(messages))
+                .layer(Extension(tx)),
         );
 
     let addr = SocketAddr::from(([0, 0, 0, 0], 3000));

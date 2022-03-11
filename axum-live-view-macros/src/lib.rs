@@ -507,8 +507,15 @@ impl Parse for Arm {
         input.parse::<Token![=>]>()?;
 
         let mut nodes = Vec::new();
-        while input.fork().parse::<HtmlNode>().is_ok() {
-            let node = input.parse::<HtmlNode>()?;
+        let content;
+        let x = if input.peek(syn::token::Brace) {
+            syn::braced!(content in input);
+            &content
+        } else {
+            input
+        };
+        while x.fork().parse::<HtmlNode>().is_ok() {
+            let node = x.parse::<HtmlNode>()?;
             nodes.push(node);
         }
 
