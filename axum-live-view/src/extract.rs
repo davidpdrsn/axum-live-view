@@ -1,6 +1,5 @@
 //! Extractor for embedding live views in HTML templates.
 
-use self::rejection::*;
 use crate::{html::Html, life_cycle::run_view, LiveView};
 use async_trait::async_trait;
 use axum::{
@@ -15,7 +14,7 @@ use futures_util::{
     sink::SinkExt,
     stream::{StreamExt, TryStreamExt},
 };
-use std::fmt::Debug;
+use std::{convert::Infallible, fmt::Debug};
 
 pub use crate::life_cycle::EmbedLiveView;
 
@@ -36,14 +35,12 @@ impl<B> FromRequest<B> for LiveViewUpgrade
 where
     B: Send,
 {
-    type Rejection = LiveViewUpgradeRejection;
+    type Rejection = Infallible;
 
     async fn from_request(req: &mut RequestParts<B>) -> Result<Self, Self::Rejection> {
         if let Ok(ws) = WebSocketUpgrade::from_request(req).await {
             let uri = req.uri().clone();
-            let headers = req.headers().cloned().ok_or_else(|| {
-                LiveViewUpgradeRejection::HeadersAlreadyExtracted(Default::default())
-            })?;
+            let headers = req.headers().clone();
 
             Ok(Self {
                 inner: LiveViewUpgradeInner::Ws(Box::new((ws, uri, headers))),
@@ -162,48 +159,5 @@ where
 
     if let Err(err) = run_view(write, read, view, uri, headers).await {
         tracing::error!(%err, "encountered while processing socket");
-    }
-}
-
-pub mod rejection {
-    //! Rejection types.
-
-    use axum::{
-        extract::rejection::HeadersAlreadyExtracted,
-        response::{IntoResponse, Response},
-    };
-    use std::fmt;
-
-    /// Rejection returned by [`LiveViewUpgrade`](super::LiveViewUpgrade) if the request doesn't
-    /// match.
-    #[derive(Debug)]
-    #[non_exhaustive]
-    pub enum LiveViewUpgradeRejection {
-        #[allow(missing_docs)]
-        HeadersAlreadyExtracted(HeadersAlreadyExtracted),
-    }
-
-    impl IntoResponse for LiveViewUpgradeRejection {
-        fn into_response(self) -> Response {
-            match self {
-                Self::HeadersAlreadyExtracted(inner) => inner.into_response(),
-            }
-        }
-    }
-
-    impl fmt::Display for LiveViewUpgradeRejection {
-        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            match self {
-                Self::HeadersAlreadyExtracted(inner) => write!(f, "{}", inner),
-            }
-        }
-    }
-
-    impl std::error::Error for LiveViewUpgradeRejection {
-        fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-            match self {
-                Self::HeadersAlreadyExtracted(inner) => Some(inner),
-            }
-        }
     }
 }
