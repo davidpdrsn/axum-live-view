@@ -1,10 +1,7 @@
 //! Server-rendered live views.
 
 use crate::{event_data::EventData, html::Html, js_command::JsCommand};
-use axum::{
-    async_trait,
-    http::{HeaderMap, Uri},
-};
+use axum::http::{HeaderMap, Uri};
 use futures_util::Stream;
 use serde::{de::DeserializeOwned, Serialize};
 use std::{fmt, future::Future, pin::Pin};
@@ -82,16 +79,9 @@ mod combine;
 ///     Decrement,
 /// }
 /// ```
-#[async_trait]
 pub trait LiveView: Sized + Send + Sync + 'static {
     /// The message type this view receives.
     type Message: Serialize + DeserializeOwned + PartialEq + Send + Sync + 'static;
-
-    /// The error type that [`mount`] and [`update`] might fail with.
-    ///
-    /// [`mount`]: LiveView::mount
-    /// [`update`]: LiveView::update
-    type Error: fmt::Display + Send + Sync + 'static;
 
     /// Perform additional setup of the view once its fully connected to the WebSocket.
     ///
@@ -105,42 +95,20 @@ pub trait LiveView: Sized + Send + Sync + 'static {
     /// The provided [`ViewHandle`] can be used to send messages to the view that don't come from
     /// the client. See the documentation for [`ViewHandle`] for examples.
     #[allow(unused_variables)]
-    async fn mount(
-        &mut self,
-        uri: Uri,
-        request_headers: &HeaderMap,
-        handle: ViewHandle<Self::Message>,
-    ) -> Result<(), Self::Error> {
-        Ok(())
-    }
+    fn mount(&mut self, uri: Uri, request_headers: &HeaderMap, handle: ViewHandle<Self::Message>) {}
 
     /// React to a message and asynchronously update the view.
     ///
     /// If an error is returned the view will be shutdown, the JavaScript client will reconnect,
     /// and a fresh instance of the view will be created. Ideally you should handle errors
     /// gracefully and present them to the end user.
-    async fn update(
-        self,
-        msg: Self::Message,
-        data: Option<EventData>,
-    ) -> Result<Updated<Self>, Self::Error>;
+    fn update(self, msg: Self::Message, data: Option<EventData>) -> Updated<Self>;
 
     /// Render the views HTML.
     ///
     /// This method will be called after [`update`](LiveView::update) and the changes will be
     /// effeciently sent to the client.
     fn render(&self) -> Html<Self::Message>;
-
-    /// Map the error type of this view into another type.
-    ///
-    /// Used with [`combine`](fn@combine) to combine views that have otherwise different error types.
-    fn map_err<F, E2>(self, f: F) -> MapErr<Self, F>
-    where
-        F: Fn(Self::Error) -> E2 + Send + Sync + 'static,
-        E2: fmt::Display + Send + Sync + 'static,
-    {
-        assert_live_view::<_, Self::Message, E2>(MapErr { view: self, f })
-    }
 }
 
 /// An updated live view as returned by [`LiveView::update`].
@@ -243,82 +211,6 @@ where
         I: IntoIterator<Item = JsCommand>,
     {
         self.js_commands.extend(iter);
-    }
-}
-
-/// Helper function used to verify that some type is actually a `LiveView`.
-#[inline]
-fn assert_live_view<V, M, E>(v: V) -> V
-where
-    V: LiveView<Message = M, Error = E>,
-{
-    v
-}
-
-/// A [`LiveView`] that has had its error type mapped via function.
-///
-/// Created with [`LiveView::map_err`].
-pub struct MapErr<V, F> {
-    view: V,
-    f: F,
-}
-
-impl<V, F> fmt::Debug for MapErr<V, F>
-where
-    V: fmt::Debug,
-{
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("MapErr")
-            .field("view", &self.view)
-            .field("f", &format_args!("{}", std::any::type_name::<F>()))
-            .finish()
-    }
-}
-
-#[async_trait]
-impl<V, F, E2> LiveView for MapErr<V, F>
-where
-    V: LiveView,
-    F: Fn(V::Error) -> E2 + Send + Sync + 'static,
-    E2: fmt::Display + Send + Sync + 'static,
-{
-    type Message = V::Message;
-    type Error = E2;
-
-    async fn mount(
-        &mut self,
-        uri: Uri,
-        request_headers: &HeaderMap,
-        handle: ViewHandle<Self::Message>,
-    ) -> Result<(), Self::Error> {
-        self.view
-            .mount(uri, request_headers, handle)
-            .await
-            .map_err(&self.f)
-    }
-
-    async fn update(
-        mut self,
-        msg: Self::Message,
-        data: Option<EventData>,
-    ) -> Result<Updated<Self>, Self::Error> {
-        let Updated {
-            live_view,
-            js_commands,
-            spawns,
-        } = self.view.update(msg, data).await.map_err(&self.f)?;
-
-        self.view = live_view;
-
-        Ok(Updated {
-            live_view: self,
-            js_commands,
-            spawns,
-        })
-    }
-
-    fn render(&self) -> Html<Self::Message> {
-        self.view.render()
     }
 }
 
