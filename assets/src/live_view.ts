@@ -188,12 +188,78 @@ const axm = {
   mousemove: "axm-mousemove",
 }
 
+const axm_file = {
+  progress: "axm-file-progress",
+  loadStart: "axm-file-loadstart",
+  loadEnd: "axm-file-loadend",
+  abort: "axm-file-abort",
+  load: "axm-file-load",
+};
+
 const axm_window = {
   keydown: "axm-window-keydown",
   keyup: "axm-window-keyup",
   focus: "axm-window-focus",
   blur: "axm-window-blur",
   scroll: "axm-scroll",
+};
+
+function subscribeFileUploadEvents(node: HTMLInputElement) {
+  if (!node) {
+    return;
+  }
+
+  function dispatchFileEvent(name: string, event: ProgressEvent, file: File) {
+    const fileEvent = new CustomEvent<FileProgressEvent>(name, {
+      detail: {
+        lengthComputable: event.lengthComputable,
+        loaded: event.loaded,
+        total: event.total,
+        file,
+      },
+    });
+    node.dispatchEvent(fileEvent);
+  }
+
+  node.addEventListener("change", (_: Event) => {
+    Array
+    .from(node.files as FileList)
+    .forEach((file: File) => {
+      let reader = new FileReader();
+
+      if (node.hasAttribute(axm_file.progress)) {
+        reader.onprogress = (event: ProgressEvent) => {
+          dispatchFileEvent(axm_file.progress, event, file);
+        };
+      }
+      if (node.hasAttribute(axm_file.load)) {
+        reader.onload = (event: ProgressEvent) => {
+          dispatchFileEvent(axm_file.load, event, file);
+        };
+      }
+      if (node.hasAttribute(axm_file.loadStart)) {
+        reader.onloadstart = (event: ProgressEvent) => {
+          dispatchFileEvent(axm_file.loadStart, event, file);
+        };
+      }
+      if (node.hasAttribute(axm_file.loadEnd)) {
+        reader.onloadend = (event: ProgressEvent) => {
+          dispatchFileEvent(axm_file.loadEnd, event, file);
+        };
+      }
+      if (node.hasAttribute(axm_file.abort)) {
+        reader.onabort = (event: ProgressEvent) => {
+          dispatchFileEvent(axm_file.abort, event, file);
+        };
+      }
+
+      // TODO: Think about which of the instance methods of the reader
+      // is the most appropriate here:
+      // https://developer.mozilla.org/en-US/docs/Web/API/FileReader#instance_methods
+
+      reader.readAsArrayBuffer(file);
+    });
+  });
 }
 
 function bindInitialEvents(socket: WebSocket, options: LiveViewOptions) {
@@ -298,6 +364,31 @@ function addEventListeners(
         }
       })
     }
+  });
+
+  Object
+  .values(axm_window)
+  .forEach((axm_file_event) => {
+    if (!(element instanceof HTMLInputElement)) { return }
+    if (!element.hasAttribute(axm.input)) {
+      return;
+    }
+
+    subscribeFileUploadEvents(element);
+
+    on(socket, options, element, element, axm_file_event, axm_file_event, (msg, event) => {
+      if (event instanceof CustomEvent<FileProgressEvent>) {
+        let detail = event.detail;
+        const data: FileData = {
+          lc: detail.lengthComputable,
+          t: detail.total,
+          l: detail.loaded,
+          f: detail.file
+        }
+        return { t: "file", m: msg, d: data }
+      }
+      return undefined;
+    });
   });
 
   [
@@ -468,6 +559,7 @@ type MessageToView =
   | Mouse
   | Scroll
   | HealthPing
+  | FileEvent
 
 interface HealthPing { t: "h" }
 
@@ -514,6 +606,26 @@ interface KeyData {
   c: boolean,
   s: boolean,
   me: boolean,
+}
+
+interface FileData {
+  lc: boolean,
+  l: number,
+  t: number,
+  f: File
+}
+
+interface FileProgressEvent {
+  lengthComputable: boolean;
+  loaded: number;
+  total: number;
+  file: File;
+}
+
+interface FileEvent {
+  t: "file",
+  m: string | JSON,
+  d: FileData
 }
 
 interface Mouse {
