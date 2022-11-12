@@ -2,6 +2,9 @@
   "dependencies": {
     "axum-live-view": "file:../assets"
   },
+  "scripts": {
+    "build": "./node_modules/.bin/webpack -c webpack.config.js"
+  },
   "private": true,
   "devDependencies": {
     "webpack-cli": "^4.9.1"
