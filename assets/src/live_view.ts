@@ -230,7 +230,7 @@ function listenForFileUploadEvents(node: HTMLInputElement) {
         fileSize: file.size,
         fileType: file.type,
         fileWebkitRelativePath: file.webkitRelativePath,
-        result: reader.result ? reader.result as ArrayBuffer: null,
+        result: reader.result ? reader.result as string: null,
         readyState: reader.readyState as 0 | 1 | 2,
         error: reader.error
       },
@@ -275,7 +275,7 @@ function listenForFileUploadEvents(node: HTMLInputElement) {
       // TODO: Think about which of the instance methods of the reader
       // is the most appropriate here:
       // https://developer.mozilla.org/en-US/docs/Web/API/FileReader#instance_methods
-      reader.readAsArrayBuffer(file);
+      reader.readAsText(file);
     });
   });
 }
@@ -650,7 +650,7 @@ interface FileData {
   ft: string,
   rs: 0 | 1 | 2,
   e: DOMException | null,
-  r: ArrayBuffer | null,
+  r: string | null,
 }
 
 /**
@@ -669,7 +669,7 @@ interface FileProgressEvent {
   fileType: string,
   readyState: 0 | 1 | 2,
   error: DOMException | null,
-  result: ArrayBuffer | null,
+  result: string | null,
 }
 
 /**
