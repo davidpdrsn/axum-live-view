@@ -282,7 +282,9 @@ impl Parse for AttrIdent {
                     "click" | "input" | "change" | "submit" | "focus" | "blur" | "keydown"
                     | "keyup" | "window-keydown" | "window-keyup" | "window-focus"
                     | "window-blur" | "mouseenter" | "mouseover" | "mouseleave" | "mouseout"
-                    | "mousemove" | "scroll" => Ok(Self::Axm(out)),
+                    | "mousemove" | "scroll" 
+                    | "file-progress" | "file-load" | "file-loadstart" | "file-loadend" | "file-abort"
+                     => Ok(Self::Axm(out)),
                     "throttle" | "debounce" | "key" => Ok(Self::Lit(out)),
                     _ => Err(syn::Error::new(
                         idents_span,
