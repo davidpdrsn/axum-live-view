@@ -388,7 +388,7 @@ function addEventListeners(
       listenForFileUploadEvents(element);
 
       Object
-      .values(axm_window)
+      .values(axm_file)
       .forEach((axm_file_event) => {
         on(socket, options, element, element, axm_file_event, axm_file_event, (msg, event) => {
           if (event instanceof CustomEvent<FileProgressEvent>) {
