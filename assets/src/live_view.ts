@@ -205,8 +205,14 @@ const axm_window = {
 };
 
 /**
+ * Given a <input type="file"> node,
+ * listen for changes of the attached files
+ * and for every such file, propagate outwards the inner
+ * FileReader's events as CustomEvent<FileProgressEvent>
+ * of the form `axm-file-(progress|load|loadstart|loadend|abort)`
+ * directly from the node.
  * 
- * @param node An HTMLInputElement of type "file"
+ * @param node An HTMLInputElement with type="file"
  * @returns 
  */
 function listenForFileUploadEvents(node: HTMLInputElement) {
@@ -374,6 +380,9 @@ function addEventListeners(
     }
   });
 
+  // For elements of the form <input type="file" axm-input ...>
+  // listen for custom events `axm-file-*` and propagate
+  // them as file upload events into the socket.
   if(element instanceof HTMLInputElement) {
     if (element.hasAttribute(axm.input) && element.getAttribute("type") === "file") {
       listenForFileUploadEvents(element);
@@ -618,6 +627,10 @@ interface KeyData {
   me: boolean,
 }
 
+/**
+ * Short version of the keys of FileProgressEvent,
+ * used for transport efficiency.
+ */
 interface FileData {
   lc: boolean,
   l: number,
@@ -628,6 +641,11 @@ interface FileData {
   r: ArrayBuffer | null,
 }
 
+/**
+ * A subset of properties from
+ * a ProgressEvent, File, and FileReader
+ * that represents a file upload collectively.
+ */
 interface FileProgressEvent {
   lengthComputable: boolean;
   loaded: number;
@@ -638,6 +656,10 @@ interface FileProgressEvent {
   result: ArrayBuffer | null;
 }
 
+/**
+ * A representation of a file upload
+ * event along with some message for context.
+ */
 interface FileEvent {
   t: "file",
   m: string | JSON,
