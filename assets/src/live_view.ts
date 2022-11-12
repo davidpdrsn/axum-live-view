@@ -204,23 +204,32 @@ const axm_window = {
   scroll: "axm-scroll",
 };
 
-function subscribeFileUploadEvents(node: HTMLInputElement) {
-  if (!node) {
-    return;
-  }
+/**
+ * 
+ * @param node An HTMLInputElement of type "file"
+ * @returns 
+ */
+function listenForFileUploadEvents(node: HTMLInputElement) {
+  if (!node) { return }
+  if (node.getAttribute("type") !== "file") { return }
 
-  function dispatchFileEvent(name: string, event: ProgressEvent, file: File) {
+  function dispatchFileEvent(name: string, event: ProgressEvent, file: File, reader: FileReader) {
     const fileEvent = new CustomEvent<FileProgressEvent>(name, {
       detail: {
         lengthComputable: event.lengthComputable,
         loaded: event.loaded,
         total: event.total,
         file,
+        result: reader.result ? reader.result as ArrayBuffer: null,
+        readyState: reader.readyState as 0 | 1 | 2,
+        error: reader.error
       },
     });
     node.dispatchEvent(fileEvent);
   }
 
+  // Should we have some special consideration for absence/presence
+  // of a "multiple" attribute?
   node.addEventListener("change", (_: Event) => {
     Array
     .from(node.files as FileList)
@@ -229,34 +238,33 @@ function subscribeFileUploadEvents(node: HTMLInputElement) {
 
       if (node.hasAttribute(axm_file.progress)) {
         reader.onprogress = (event: ProgressEvent) => {
-          dispatchFileEvent(axm_file.progress, event, file);
+          dispatchFileEvent(axm_file.progress, event, file, reader);
         };
       }
       if (node.hasAttribute(axm_file.load)) {
         reader.onload = (event: ProgressEvent) => {
-          dispatchFileEvent(axm_file.load, event, file);
+          dispatchFileEvent(axm_file.load, event, file, reader);
         };
       }
       if (node.hasAttribute(axm_file.loadStart)) {
         reader.onloadstart = (event: ProgressEvent) => {
-          dispatchFileEvent(axm_file.loadStart, event, file);
+          dispatchFileEvent(axm_file.loadStart, event, file, reader);
         };
       }
       if (node.hasAttribute(axm_file.loadEnd)) {
         reader.onloadend = (event: ProgressEvent) => {
-          dispatchFileEvent(axm_file.loadEnd, event, file);
+          dispatchFileEvent(axm_file.loadEnd, event, file, reader);
         };
       }
       if (node.hasAttribute(axm_file.abort)) {
         reader.onabort = (event: ProgressEvent) => {
-          dispatchFileEvent(axm_file.abort, event, file);
+          dispatchFileEvent(axm_file.abort, event, file, reader);
         };
       }
 
       // TODO: Think about which of the instance methods of the reader
       // is the most appropriate here:
       // https://developer.mozilla.org/en-US/docs/Web/API/FileReader#instance_methods
-
       reader.readAsArrayBuffer(file);
     });
   });
@@ -366,30 +374,32 @@ function addEventListeners(
     }
   });
 
-  Object
-  .values(axm_window)
-  .forEach((axm_file_event) => {
-    if (!(element instanceof HTMLInputElement)) { return }
-    if (!element.hasAttribute(axm.input)) {
-      return;
+  if(element instanceof HTMLInputElement) {
+    if (element.hasAttribute(axm.input) && element.getAttribute("type") === "file") {
+      listenForFileUploadEvents(element);
+
+      Object
+      .values(axm_window)
+      .forEach((axm_file_event) => {
+        on(socket, options, element, element, axm_file_event, axm_file_event, (msg, event) => {
+          if (event instanceof CustomEvent<FileProgressEvent>) {
+            let detail: FileProgressEvent = event.detail;
+            const data: FileData = {
+              lc: detail.lengthComputable,
+              t: detail.total,
+              l: detail.loaded,
+              f: detail.file,
+              r: detail.result,
+              rs: detail.readyState,
+              e: detail.error
+            }
+            return { t: "file", m: msg, d: data }
+          }
+          return undefined;
+        });
+      });
     }
-
-    subscribeFileUploadEvents(element);
-
-    on(socket, options, element, element, axm_file_event, axm_file_event, (msg, event) => {
-      if (event instanceof CustomEvent<FileProgressEvent>) {
-        let detail = event.detail;
-        const data: FileData = {
-          lc: detail.lengthComputable,
-          t: detail.total,
-          l: detail.loaded,
-          f: detail.file
-        }
-        return { t: "file", m: msg, d: data }
-      }
-      return undefined;
-    });
-  });
+  }  
 
   [
     ["keydown", axm.keydown],
@@ -612,7 +622,10 @@ interface FileData {
   lc: boolean,
   l: number,
   t: number,
-  f: File
+  f: File,
+  rs: 0 | 1 | 2,
+  e: DOMException | null
+  r: ArrayBuffer | null,
 }
 
 interface FileProgressEvent {
@@ -620,6 +633,9 @@ interface FileProgressEvent {
   loaded: number;
   total: number;
   file: File;
+  readyState: 0 | 1 | 2;
+  error: DOMException | null;
+  result: ArrayBuffer | null;
 }
 
 interface FileEvent {
