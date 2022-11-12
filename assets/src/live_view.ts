@@ -225,7 +225,11 @@ function listenForFileUploadEvents(node: HTMLInputElement) {
         lengthComputable: event.lengthComputable,
         loaded: event.loaded,
         total: event.total,
-        file,
+        fileLastModified: file.lastModified,
+        fileName: file.name,
+        fileSize: file.size,
+        fileType: file.type,
+        fileWebkitRelativePath: file.webkitRelativePath,
         result: reader.result ? reader.result as ArrayBuffer: null,
         readyState: reader.readyState as 0 | 1 | 2,
         error: reader.error
@@ -397,7 +401,11 @@ function addEventListeners(
               lc: detail.lengthComputable,
               t: detail.total,
               l: detail.loaded,
-              f: detail.file,
+              flm: detail.fileLastModified,
+              fs: detail.fileSize,
+              ft: detail.fileType,
+              fn: detail.fileName,
+              fwrp: detail.fileWebkitRelativePath,
               r: detail.result,
               rs: detail.readyState,
               e: detail.error
@@ -635,9 +643,13 @@ interface FileData {
   lc: boolean,
   l: number,
   t: number,
-  f: File,
+  flm: number,
+  fn: string,
+  fwrp: string,
+  fs: number,
+  ft: string,
   rs: 0 | 1 | 2,
-  e: DOMException | null
+  e: DOMException | null,
   r: ArrayBuffer | null,
 }
 
@@ -647,13 +659,17 @@ interface FileData {
  * that represents a file upload collectively.
  */
 interface FileProgressEvent {
-  lengthComputable: boolean;
-  loaded: number;
-  total: number;
-  file: File;
-  readyState: 0 | 1 | 2;
-  error: DOMException | null;
-  result: ArrayBuffer | null;
+  lengthComputable: boolean,
+  loaded: number,
+  total: number,
+  fileLastModified: number,
+  fileName: string,
+  fileWebkitRelativePath: string,
+  fileSize: number,
+  fileType: string,
+  readyState: 0 | 1 | 2,
+  error: DOMException | null,
+  result: ArrayBuffer | null,
 }
 
 /**
