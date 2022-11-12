@@ -33,6 +33,10 @@ mod inner {
         ///
         /// See [`Scroll`] for more details.
         Scroll(Scroll),
+        /// A file upload event.
+        /// 
+        /// See [`FileEvent`] for more details.
+        FileEvent(FileEvent)
     }
 
     impl_from!(EventData::Form);
@@ -144,7 +148,32 @@ mod inner {
                 })),
                 EventMessageFromSocketData::Scroll { scroll_x, scroll_y } => {
                     Some(EventData::Scroll(Scroll { scroll_x, scroll_y }))
-                }
+                },
+                EventMessageFromSocketData::File { 
+                    length_computable, 
+                    loaded, 
+                    total, 
+                    file_last_modified, 
+                    file_name, 
+                    file_webkit_relative_path, 
+                    file_size, 
+                    file_type, 
+                    ready_state, 
+                    dom_exception, 
+                    result
+                } => Some(EventData::FileEvent(FileEvent {
+                    length_computable,
+                    loaded,
+                    total,
+                    file_last_modified,
+                    file_webkit_relative_path,
+                    file_name,
+                    file_size,
+                    file_type,
+                    ready_state,
+                    dom_exception,
+                    result
+                }))
             }
         }
     }
@@ -452,6 +481,153 @@ mod inner {
             scroll_x: f64,
             scroll_y: f64,
         }
+    }
+
+    builder! {
+
+        #[builder_name = FileEventBuilder]
+        #[derive(Debug, Clone)]
+        /// A file event.
+        /// 
+        /// This event type is sent for `axm-file-*` bindings
+        /// no elements that have `axm-input` and have `type="file"`.
+        pub struct FileEvent {
+            length_computable: bool,
+            loaded: u64,
+            total: u64,
+            file_last_modified: u64,
+            file_name: String,
+            file_webkit_relative_path: String,
+            file_size: u64,
+            file_type: String,
+            ready_state: u8,
+            dom_exception: serde_json::Value,
+            result: String,
+        }
+    }
+
+    impl FileEvent {
+        /// A boolean flag indicating if the total work to be done, 
+        /// and the amount of work already done, 
+        /// by the underlying process is calculable. 
+        /// In other words, it tells if the progress is measurable or not.
+        /// 
+        /// See [MDN] for more details.
+        /// 
+        /// [mdn]: https://developer.mozilla.org/en-US/docs/Web/API/ProgressEvent/lengthComputable
+        pub fn length_computable(&self) -> bool {
+            self.length_computable
+        }
+
+        /// A 64-bit unsigned integer value indicating the amount of work already 
+        /// performed by the underlying process. The ratio of work done can be 
+        /// calculated by dividing total by the value of this property. 
+        /// 
+        /// When downloading a resource using HTTP, 
+        /// this only counts the body of the HTTP message, 
+        /// and doesn't include headers and other overhead.
+        /// 
+        /// See [MDN] for more details.
+        /// 
+        /// [mdn]: https://developer.mozilla.org/en-US/docs/Web/API/ProgressEvent/loaded
+        pub fn loaded(&self) -> u64 {
+            self.loaded
+        }
+
+        /// A 64-bit unsigned integer representing the total amount of work that 
+        /// the underlying process is in the progress of performing. 
+        /// 
+        /// When downloading a resource using HTTP, 
+        /// this is the Content-Length (the size of the body of the message), 
+        /// and doesn't include the headers and other overhead.
+        /// 
+        /// See [MDN] for more details.
+        /// 
+        /// [mdn]: https://developer.mozilla.org/en-US/docs/Web/API/ProgressEvent/total
+        pub fn total(&self) -> u64 {
+            self.total
+        }
+
+        /// The last modified time of the file, 
+        /// in millisecond since the UNIX epoch (January 1st, 1970 at Midnight)
+        /// 
+        /// See [MDN] for more details.
+        /// 
+        /// [mdn]: https://developer.mozilla.org/en-US/docs/Web/API/File/lastModified
+        pub fn file_last_modified(&self) -> u64 {
+            self.file_last_modified
+        }
+
+        /// The name of the file referenced by the File object.
+        /// 
+        /// See [MDN] for more details.
+        /// 
+        /// [mdn]: https://developer.mozilla.org/en-US/docs/Web/API/File/name
+        pub fn file_name(&self) -> &str {
+            &self.file_name
+        }
+
+        /// The path the URL of the File is relative to.
+        /// 
+        /// See [MDN] for more details.
+        /// 
+        /// [mdn]: https://developer.mozilla.org/en-US/docs/Web/API/File/webkitRelativePath
+        pub fn file_webkit_relative_path(&self) -> &str {
+            &self.file_webkit_relative_path
+        }
+
+        /// The size of the file in bytes.
+        /// 
+        /// See [MDN] for more details.
+        /// 
+        /// [mdn]: https://developer.mozilla.org/en-US/docs/Web/API/Blob/size
+        pub fn file_size(&self) -> u64 {
+            self.file_size
+        }
+
+        /// The [MIME] type of the file.
+        /// 
+        /// See [MDN] for more details.
+        /// 
+        /// [mime]: https://developer.mozilla.org/en-US/docs/Web/HTTP/Basics_of_HTTP/MIME_types
+        /// [mdn]: https://developer.mozilla.org/en-US/docs/Web/API/File/type
+        pub fn file_type(&self) -> &str {
+            &self.file_type
+        }
+
+        /// A number indicating the state of the FileReader. This is one of the following:
+        /// 
+        /// - `0`: No data has been loaded yet.
+        /// - `1`: Data is currently being loaded.
+        /// - `2`: The entire read request has been completed.
+        /// 
+        /// See [MDN] for more details.
+        /// 
+        /// [mdn]: https://developer.mozilla.org/en-US/docs/Web/API/FileReader/readyState
+        pub fn ready_state(&self) -> u8 {
+            self.ready_state
+        }
+        /// The file's contents. 
+        /// This property is only valid after the read operation is complete, 
+        /// and the format of the data is a utf-8 encoded string that can be decoded for
+        /// the actual raw bytes.
+        /// 
+        /// See [MDN] for more details.
+        /// 
+        /// [mdn]: https://developer.mozilla.org/en-US/docs/Web/API/FileReader/result
+        pub fn result(&self) -> &str {
+            &self.result
+        }
+
+        /// A DOMException representing the error that occurred while reading the file.
+        /// 
+        /// See [MDN] for more details.
+        /// 
+        /// [mdn]: https://developer.mozilla.org/en-US/docs/Web/API/FileReader/error
+        pub fn dom_exception(&self) -> &serde_json::Value {
+            &self.dom_exception
+        }
+
     }
 
     impl Scroll {
