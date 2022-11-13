@@ -3,7 +3,7 @@
 mod inner {
     use crate::life_cycle::{self, EventMessageFromSocketData};
     use serde::{de::DeserializeOwned, Serialize};
-    use std::fmt;
+    use std::fmt::{self, Display};
 
     /// The data for an event that happened on the client.
     ///
@@ -44,6 +44,7 @@ mod inner {
     impl_from!(EventData::Key);
     impl_from!(EventData::Mouse);
     impl_from!(EventData::Scroll);
+    impl_from!(EventData::FileEvent);
 
     impl EventData {
         /// Get the inner [`Form`] if any.
@@ -85,6 +86,15 @@ mod inner {
         /// Get the inner [`Scroll`] if any.
         pub fn as_scroll(&self) -> Option<&Scroll> {
             if let Self::Scroll(inner) = self {
+                Some(inner)
+            } else {
+                None
+            }
+        }
+
+        /// Get the inner [`FileEvent`] if any.
+        pub fn as_file_event(&self) -> Option<&FileEvent> {
+            if let Self::FileEvent(inner) = self {
                 Some(inner)
             } else {
                 None
@@ -503,6 +513,20 @@ mod inner {
             ready_state: u8,
             dom_exception: serde_json::Value,
             result: String,
+        }
+    }
+
+    impl Display for FileEvent {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            writeln!(f, "length_computable={}", self.length_computable);
+            writeln!(f, "total={}", self.total);
+            writeln!(f, "file_last_modified={}", self.file_last_modified);
+            writeln!(f, "file_name={}", self.file_name);
+            writeln!(f, "file_webkit_relative_path={}", self.file_webkit_relative_path);
+            writeln!(f, "file_size={}", self.file_size);
+            writeln!(f, "file_type={}", self.file_type);
+            writeln!(f, "ready_state={}", self.ready_state);
+            writeln!(f, "dom_exception={}", self.dom_exception)
         }
     }
 
