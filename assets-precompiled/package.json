@@ -3,7 +3,7 @@
     "axum-live-view": "file:../assets"
   },
   "scripts": {
-    "build": "./node_modules/.bin/webpack -c webpack.config.js"
+    "build": "cd ../assets/ && npm run build && cd ../assets-precompiled && ./node_modules/.bin/webpack -c webpack.config.js && gzip -c axum_live_view.min.js > axum_live_view.min.js.gz"
   },
   "private": true,
   "devDependencies": {
