@@ -98,6 +98,20 @@ impl LiveView for FormView {
             }
             Msg::Changed(msg) => {
                 tracing::info!("change: {:?}", msg);
+            },
+            Msg::FileInputChanged => {
+                tracing::info!("file input change: {:?}", msg);
+            },
+            Msg::FileLoaded => {
+                tracing::info!("file loaded!");
+                // let file_event = data.unwrap().as_file_event().unwrap();
+                // let exc = file_event.dom_exception();
+                // tracing::info!("{:?}", exc);
+                tracing::info!("{}", data.unwrap().as_file_event().unwrap());
+            },
+            Msg::FileProgress => {
+                tracing::info!("file progress!");
+                tracing::info!("{}", data.unwrap().as_file_event().unwrap());
             }
         }
 
@@ -118,6 +132,10 @@ impl LiveView for FormView {
                             "Value: " { &self.text_input_value }
                         </div>
                     }
+                </label>
+                <label>
+                    <div>"File input"</div>
+                    <input type="file" axm-input={ Msg::FileInputChanged } axm-file-progress={ Msg::FileProgress }/>
                 </label>
 
                 <label>
@@ -214,6 +232,9 @@ enum Msg {
     Changed(Input),
     Focus,
     Blur,
+    FileInputChanged,
+    FileLoaded,
+    FileProgress
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
