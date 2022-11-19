@@ -45,17 +45,15 @@ struct Clock {
     format: Vec<time::format_description::FormatItem<'static>>,
 }
 
-#[async_trait]
 impl LiveView for Clock {
     type Message = ();
-    type Error = Infallible;
 
-    async fn mount(
+    fn mount(
         &mut self,
         _uri: axum::http::Uri,
         _request_headers: &axum::http::HeaderMap,
         handle: axum_live_view::live_view::ViewHandle<Self::Message>,
-    ) -> Result<(), Self::Error> {
+    ) {
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(std::time::Duration::from_millis(1));
             loop {
@@ -65,15 +63,10 @@ impl LiveView for Clock {
                 }
             }
         });
-        Ok(())
     }
 
-    async fn update(
-        mut self,
-        _msg: Self::Message,
-        _data: Option<EventData>,
-    ) -> Result<Updated<Self>, Self::Error> {
-        Ok(Updated::new(self))
+    fn update(self, _msg: Self::Message, _data: Option<EventData>) -> Updated<Self> {
+        Updated::new(self)
     }
 
     fn render(&self) -> Html<Self::Message> {

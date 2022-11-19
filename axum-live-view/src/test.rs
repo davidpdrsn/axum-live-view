@@ -3,7 +3,6 @@
 //! # Example
 //!
 //! ```
-//! use axum::async_trait;
 //! use axum_live_view::{
 //!     Html,
 //!     LiveView,
@@ -36,7 +35,6 @@
 //!     count: u64,
 //! }
 //!
-//! #[async_trait]
 //! impl LiveView for Counter {
 //!     type Message = Msg;
 //!     type Error = Infallible;
@@ -212,16 +210,12 @@ impl<M> fmt::Debug for TestViewHandle<M> {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use crate as axum_live_view;
     use crate::event_data::Input;
     use crate::{live_view::Updated, Html};
-    use async_trait::async_trait;
     use axum_live_view_macros::html;
     use serde::Deserialize;
-    use std::convert::Infallible;
-
-    #[allow(unused_imports)]
-    use super::*;
 
     #[tokio::test]
     async fn test_something() {

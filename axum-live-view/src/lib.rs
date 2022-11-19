@@ -8,7 +8,7 @@
 //! # Example
 //!
 //! ```rust
-//! use axum::{async_trait, response::IntoResponse, routing::get, Router};
+//! use axum::{response::IntoResponse, routing::get, Router};
 //! use axum_live_view::{
 //!     event_data::EventData, html, live_view::Updated, Html, LiveView, LiveViewUpgrade,
 //! };
@@ -85,7 +85,6 @@
 //! }
 //!
 //! // ...that implements the `LiveView` trait.
-//! #[async_trait]
 //! impl LiveView for Counter {
 //!     // This is the type of update messages our HTML contains. They will be sent
 //!     // to the view in the `update` method

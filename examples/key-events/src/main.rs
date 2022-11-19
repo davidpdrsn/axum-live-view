@@ -44,19 +44,13 @@ struct View {
     prev: Option<Msg>,
 }
 
-#[async_trait]
 impl LiveView for View {
     type Message = Msg;
-    type Error = Infallible;
 
-    async fn update(
-        mut self,
-        msg: Msg,
-        _data: Option<EventData>,
-    ) -> Result<Updated<Self>, Self::Error> {
+    fn update(mut self, msg: Msg, _data: Option<EventData>) -> Updated<Self> {
         self.count += 1;
         self.prev = Some(msg);
-        Ok(Updated::new(self))
+        Updated::new(self)
     }
 
     fn render(&self) -> Html<Self::Message> {

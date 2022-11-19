@@ -16,7 +16,6 @@ mod combine;
 /// # Example
 ///
 /// ```
-/// use axum::async_trait;
 /// use axum_live_view::{
 ///     Html,
 ///     LiveView,
@@ -31,7 +30,6 @@ mod combine;
 ///     count: u64,
 /// }
 ///
-/// #[async_trait]
 /// impl LiveView for Counter {
 ///     type Message = Msg;
 ///     type Error = Infallible;
@@ -237,7 +235,7 @@ impl<M> ViewHandle<M> {
     /// This can for example to be used to re-render a view on an interval:
     ///
     /// ```
-    /// use axum::{async_trait, response::IntoResponse, http::{Uri, HeaderMap}};
+    /// use axum::{response::IntoResponse, http::{Uri, HeaderMap}};
     /// use axum_live_view::{
     ///     Html,
     ///     LiveView,
@@ -248,7 +246,6 @@ impl<M> ViewHandle<M> {
     ///
     /// struct MyView;
     ///
-    /// #[async_trait]
     /// impl LiveView for MyView {
     ///     type Message = Msg;
     ///
@@ -377,7 +374,7 @@ impl std::error::Error for ViewHandleSendError {}
 /// # Example
 ///
 /// ```
-/// use axum::{async_trait, response::IntoResponse};
+/// use axum::response::IntoResponse;
 /// use axum_live_view::{
 ///     Html,
 ///     LiveView,
@@ -392,7 +389,6 @@ impl std::error::Error for ViewHandleSendError {}
 /// // `Foo` and `Bar` are live views with different message types
 /// struct Foo {}
 ///
-/// #[async_trait]
 /// impl LiveView for Foo {
 ///     type Message = FooMsg;
 ///
@@ -415,7 +411,6 @@ impl std::error::Error for ViewHandleSendError {}
 ///
 /// struct Bar {}
 ///
-/// #[async_trait]
 /// impl LiveView for Bar {
 ///     type Message = BarMsg;
 ///
@@ -467,7 +462,7 @@ impl std::error::Error for ViewHandleSendError {}
 /// error types if necessary:
 ///
 /// ```
-/// use axum::{async_trait, response::IntoResponse};
+/// use axum::response::IntoResponse;
 /// use axum_live_view::{
 ///     Html,
 ///     LiveView,
@@ -482,7 +477,6 @@ impl std::error::Error for ViewHandleSendError {}
 /// // `Foo` and `Bar` are live views with different message types _and different error types_
 /// struct Foo {}
 ///
-/// #[async_trait]
 /// impl LiveView for Foo {
 ///     type Message = FooMsg;
 ///     type Error = std::io::Error;
@@ -505,7 +499,6 @@ impl std::error::Error for ViewHandleSendError {}
 ///
 /// struct Bar {}
 ///
-/// #[async_trait]
 /// impl LiveView for Bar {
 ///     type Message = BarMsg;
 ///     type Error = Infallible;
