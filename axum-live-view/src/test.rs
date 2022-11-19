@@ -18,13 +18,13 @@
 //! # async fn main() {
 //! // Run our view in the background
 //! let view = Counter::default();
-//! let view_handle = run_live_view(view).mount().await.unwrap();
+//! let view_handle = run_live_view(view).mount().await;
 //!
 //! // Check the initial HTML
 //! assert!(view_handle.render().await.contains("0"));
 //!
 //! // Send the view a message and make sure the HTML changes correctly
-//! let (html, js_commands) = view_handle.send(Msg::Increment, None).await.unwrap();
+//! let (html, js_commands) = view_handle.send(Msg::Increment, None).await;
 //! assert!(html.contains("1"));
 //! assert!(js_commands.is_empty());
 //! # }
@@ -37,18 +37,17 @@
 //!
 //! impl LiveView for Counter {
 //!     type Message = Msg;
-//!     type Error = Infallible;
 //!
-//!     async fn update(
+//!     fn update(
 //!         mut self,
 //!         msg: Msg,
 //!         data: Option<EventData>,
-//!     ) -> Result<Updated<Self>, Self::Error> {
+//!     ) -> Updated<Self> {
 //!         match msg {
 //!             Msg::Increment => self.count += 1,
 //!             Msg::Decrement => self.count -= 1,
 //!         }
-//!         Ok(Updated::new(self))
+//!         Updated::new(self)
 //!     }
 //!
 //!     fn render(&self) -> Html<Self::Message> {

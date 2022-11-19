@@ -86,12 +86,11 @@ impl LiveViewUpgrade {
     /// impl LiveView for MyView {
     ///     // ...
     ///     # type Message = Msg;
-    ///     # type Error = Infallible;
-    ///     # async fn update(
+    ///     # fn update(
     ///     #     mut self,
     ///     #     msg: Msg,
     ///     #     data: Option<EventData>,
-    ///     # ) -> Result<Updated<Self>, Self::Error> {
+    ///     # ) -> Updated<Self> {
     ///     #     todo!()
     ///     # }
     ///     # fn render(&self) -> Html<Self::Message> {
