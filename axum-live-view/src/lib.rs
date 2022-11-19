@@ -329,7 +329,7 @@ pub const PRECOMPILED_JS: &str = include_str!("../../assets-precompiled/axum_liv
 /// use axum_live_view::precompiled_js;
 ///
 /// let app = Router::new().route("/assets/live_view.js", precompiled_js());
-/// # let _: Router<axum::body::Body> = app;
+/// # let _: Router = app;
 /// ```
 ///
 /// [webpack]: https://webpack.js.org
