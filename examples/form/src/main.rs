@@ -1,9 +1,9 @@
-use axum::{async_trait, response::IntoResponse, routing::get, Router};
+use axum::{response::IntoResponse, routing::get, Router};
 use axum_live_view::{
     event_data::EventData, html, live_view::Updated, Html, LiveView, LiveViewUpgrade,
 };
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, convert::Infallible, net::SocketAddr};
+use std::{collections::HashMap, net::SocketAddr};
 
 #[tokio::main]
 async fn main() {
@@ -46,16 +46,10 @@ struct FormView {
     values: Option<FormValues>,
 }
 
-#[async_trait]
 impl LiveView for FormView {
     type Message = Msg;
-    type Error = Infallible;
 
-    async fn update(
-        mut self,
-        msg: Msg,
-        data: Option<EventData>,
-    ) -> Result<Updated<Self>, Infallible> {
+    fn update(mut self, msg: Msg, data: Option<EventData>) -> Updated<Self> {
         match msg {
             Msg::Validate => {
                 let values: FormValues = data.unwrap().as_form().unwrap().deserialize().unwrap();
@@ -101,7 +95,7 @@ impl LiveView for FormView {
             }
         }
 
-        Ok(Updated::new(self))
+        Updated::new(self)
     }
 
     fn render(&self) -> Html<Self::Message> {

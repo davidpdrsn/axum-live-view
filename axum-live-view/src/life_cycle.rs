@@ -163,7 +163,7 @@ where
 pub(crate) fn spawn_view<L>(
     mut view: L,
     view_handle: Option<ViewHandle<L::Message>>,
-) -> ViewTaskHandle<L::Message, L::Error>
+) -> ViewTaskHandle<L::Message>
 where
     L: LiveView,
 {
@@ -179,15 +179,9 @@ where
                     headers,
                     handle,
                     reply_tx,
-                } => match view.mount(uri, &headers, handle).await {
-                    Ok(value) => {
-                        let _ = reply_tx.send(Ok(value));
-                    }
-                    Err(err) => {
-                        let _ = reply_tx.send(Err(err));
-                        break;
-                    }
-                },
+                } => {
+                    let _ = reply_tx.send(view.mount(uri, &headers, handle));
+                }
                 ViewRequest::Render { reply_tx } => {
                     let _ = reply_tx
                         .send(serde_json::to_value(&markup).expect("failed to serialize HTML"));
@@ -204,13 +198,7 @@ where
                         live_view: new_view,
                         js_commands,
                         spawns,
-                    } = match view.update(msg, event_data).await {
-                        Ok(updated) => updated,
-                        Err(err) => {
-                            let _ = reply_tx.send(Err(err));
-                            break;
-                        }
-                    };
+                    } = view.update(msg, event_data);
 
                     if let Some(view_handle) = &view_handle {
                         for future in spawns {
@@ -237,7 +225,7 @@ where
                         (Some(diff), false) => UpdateResponse::DiffAndJsCommands(diff, js_commands),
                     };
 
-                    let _ = reply_tx.send(Ok(response));
+                    let _ = reply_tx.send(response);
                 }
             }
         }
@@ -246,11 +234,11 @@ where
     ViewTaskHandle { tx }
 }
 
-pub(crate) struct ViewTaskHandle<M, E> {
-    tx: mpsc::Sender<ViewRequest<M, E>>,
+pub(crate) struct ViewTaskHandle<M> {
+    tx: mpsc::Sender<ViewRequest<M>>,
 }
 
-impl<M, E> Clone for ViewTaskHandle<M, E> {
+impl<M> Clone for ViewTaskHandle<M> {
     fn clone(&self) -> Self {
         Self {
             tx: self.tx.clone(),
@@ -258,7 +246,7 @@ impl<M, E> Clone for ViewTaskHandle<M, E> {
     }
 }
 
-impl<M, E> fmt::Debug for ViewTaskHandle<M, E> {
+impl<M> fmt::Debug for ViewTaskHandle<M> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ViewTaskHandle")
             .field("tx", &self.tx)
@@ -266,13 +254,13 @@ impl<M, E> fmt::Debug for ViewTaskHandle<M, E> {
     }
 }
 
-impl<M, E> ViewTaskHandle<M, E> {
+impl<M> ViewTaskHandle<M> {
     pub(crate) async fn mount(
         &self,
         uri: Uri,
         headers: HeaderMap,
         handle: ViewHandle<M>,
-    ) -> Result<(), ViewRequestError<E>> {
+    ) -> Result<(), ViewRequestError> {
         let (reply_tx, reply_rx) = oneshot::channel();
 
         let request = ViewRequest::Mount {
@@ -288,8 +276,7 @@ impl<M, E> ViewTaskHandle<M, E> {
             .map_err(|_| ViewRequestError::ChannelClosed(ChannelClosed))?;
 
         match reply_rx.await {
-            Ok(Ok(val)) => Ok(val),
-            Ok(Err(err)) => Err(ViewRequestError::ViewError(err)),
+            Ok(()) => Ok(()),
             Err(_) => Err(ViewRequestError::ChannelClosed(ChannelClosed)),
         }
     }
@@ -318,7 +305,7 @@ impl<M, E> ViewTaskHandle<M, E> {
         &self,
         msg: M,
         event_data: Option<EventData>,
-    ) -> Result<UpdateResponse, ViewRequestError<E>> {
+    ) -> Result<UpdateResponse, ViewRequestError> {
         let (reply_tx, reply_rx) = oneshot::channel();
 
         let request = ViewRequest::Update {
@@ -333,19 +320,18 @@ impl<M, E> ViewTaskHandle<M, E> {
             .map_err(|_| ViewRequestError::ChannelClosed(ChannelClosed))?;
 
         match reply_rx.await {
-            Ok(Ok(val)) => Ok(val),
-            Ok(Err(err)) => Err(ViewRequestError::ViewError(err)),
+            Ok(updated) => Ok(updated),
             Err(_) => Err(ViewRequestError::ChannelClosed(ChannelClosed)),
         }
     }
 }
 
-enum ViewRequest<M, E> {
+enum ViewRequest<M> {
     Mount {
         uri: Uri,
         headers: HeaderMap,
         handle: ViewHandle<M>,
-        reply_tx: oneshot::Sender<Result<(), E>>,
+        reply_tx: oneshot::Sender<()>,
     },
     Render {
         reply_tx: oneshot::Sender<Value>,
@@ -356,36 +342,27 @@ enum ViewRequest<M, E> {
     Update {
         msg: M,
         event_data: Option<EventData>,
-        reply_tx: oneshot::Sender<Result<UpdateResponse, E>>,
+        reply_tx: oneshot::Sender<UpdateResponse>,
     },
 }
 
 #[derive(Debug)]
-pub(crate) enum ViewRequestError<E> {
+pub(crate) enum ViewRequestError {
     ChannelClosed(ChannelClosed),
-    ViewError(E),
 }
 
-impl<E> fmt::Display for ViewRequestError<E>
-where
-    E: fmt::Display,
-{
+impl fmt::Display for ViewRequestError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::ChannelClosed(err) => err.fmt(f),
-            Self::ViewError(err) => err.fmt(f),
         }
     }
 }
 
-impl<E> std::error::Error for ViewRequestError<E>
-where
-    E: std::error::Error + 'static,
-{
+impl std::error::Error for ViewRequestError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::ChannelClosed(_) => None,
-            Self::ViewError(err) => Some(&*err),
         }
     }
 }

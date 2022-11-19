@@ -209,7 +209,7 @@ fn codegen() -> Result {
                 let types = (1..=n).map(|n| format_ident!("T{}", n)).collect::<Vec<_>>();
 
                 let live_view_bounds = types.iter().map(|ty| {
-                    quote! { #ty: LiveView<Error = E>, }
+                    quote! { #ty: LiveView, }
                 });
 
                 let either_name = format_ident!("Either{}", n);
@@ -234,7 +234,7 @@ fn codegen() -> Result {
                             uri.clone(),
                             request_headers,
                             handle.clone().with(#either_name::#types),
-                        ).await?;
+                        );
                     )*
                 };
 
@@ -247,7 +247,7 @@ fn codegen() -> Result {
                                     live_view: #ty,
                                     js_commands,
                                     spawns,
-                                } = #ty.update(msg, data).await?;
+                                } = #ty.update(msg, data);
                                 let spawns = spawns
                                     .into_iter()
                                     .map(|future| {
@@ -256,14 +256,14 @@ fn codegen() -> Result {
                                         }) as _
                                     })
                                     .collect::<Vec<_>>();
-                                Ok(Updated {
+                                Updated {
                                     live_view: Self {
                                         views: (#(#types,)*),
                                         render,
                                     },
                                     js_commands,
                                     spawns,
-                                })
+                                }
                             }
                         }
                     });
@@ -282,31 +282,27 @@ fn codegen() -> Result {
 
                 quote! {
                     #[allow(non_snake_case)]
-                    #[async_trait]
-                    impl<F, E, #(#types,)*> LiveView for Combine<(#(#types,)*), F>
+                    impl<F, #(#types,)*> LiveView for Combine<(#(#types,)*), F>
                     where
                         #(#live_view_bounds)*
                         F: Fn( #(#fn_bound_args,)* ) -> Html<#either> + Send + Sync + 'static,
-                        E: std::fmt::Display + Send + Sync + 'static,
                     {
                         type Message = #either;
-                        type Error = E;
 
-                        async fn mount(
+                        fn mount(
                             &mut self,
                             uri: Uri,
                             request_headers: &HeaderMap,
                             handle: ViewHandle<Self::Message>,
-                        ) -> Result<(), Self::Error> {
+                        ) {
                             #mount
-                            Ok(())
                         }
 
-                        async fn update(
+                        fn update(
                             mut self,
                             msg: Self::Message,
                             data: Option<EventData>,
-                        ) -> Result<Updated<Self>, Self::Error> {
+                        ) -> Updated<Self> {
                             #update
                         }
 
@@ -328,7 +324,6 @@ fn codegen() -> Result {
             live_view::{Updated, ViewHandle},
             LiveView,
         };
-        use async_trait::async_trait;
         use axum::http::{HeaderMap, Uri};
         use serde::{Deserialize, Serialize};
 

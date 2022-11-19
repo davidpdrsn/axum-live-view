@@ -1,5 +1,4 @@
 use axum::{
-    async_trait,
     extract::Extension,
     http::{HeaderMap, Uri},
     response::IntoResponse,
@@ -95,17 +94,10 @@ struct MessagesList {
     tx: broadcast::Sender<NewMessagePing>,
 }
 
-#[async_trait]
 impl LiveView for MessagesList {
     type Message = ();
-    type Error = Infallible;
 
-    async fn mount(
-        &mut self,
-        _: Uri,
-        _: &HeaderMap,
-        handle: ViewHandle<Self::Message>,
-    ) -> Result<(), Self::Error> {
+    fn mount(&mut self, _: Uri, _: &HeaderMap, handle: ViewHandle<Self::Message>) {
         let mut rx = self.tx.subscribe();
         tokio::spawn(async move {
             while let Ok(NewMessagePing) = rx.recv().await {
@@ -114,16 +106,10 @@ impl LiveView for MessagesList {
                 }
             }
         });
-
-        Ok(())
     }
 
-    async fn update(
-        mut self,
-        _msg: (),
-        _data: Option<EventData>,
-    ) -> Result<Updated<Self>, Self::Error> {
-        Ok(Updated::new(self))
+    fn update(mut self, _msg: (), _data: Option<EventData>) -> Updated<Self> {
+        Updated::new(self)
     }
 
     fn render(&self) -> Html<Self::Message> {
@@ -154,16 +140,10 @@ struct SendMessageForm {
     tx: broadcast::Sender<NewMessagePing>,
 }
 
-#[async_trait]
 impl LiveView for SendMessageForm {
     type Message = FormMsg;
-    type Error = Infallible;
 
-    async fn update(
-        mut self,
-        msg: FormMsg,
-        data: Option<EventData>,
-    ) -> Result<Updated<Self>, Self::Error> {
+    fn update(mut self, msg: FormMsg, data: Option<EventData>) -> Updated<Self> {
         let mut js_commands = Vec::new();
 
         match msg {
@@ -201,7 +181,7 @@ impl LiveView for SendMessageForm {
             }
         }
 
-        Ok(Updated::new(self).with_all(js_commands))
+        Updated::new(self).with_all(js_commands)
     }
 
     fn render(&self) -> Html<Self::Message> {

@@ -59,7 +59,7 @@ impl LiveViewUpgrade {
     /// # Example
     ///
     /// ```rust
-    /// use axum::{async_trait, response::IntoResponse};
+    /// use axum::response::IntoResponse;
     /// use axum_live_view::{
     ///     event_data::EventData, html, live_view::Updated, Html, LiveView, LiveViewUpgrade,
     /// };
@@ -83,16 +83,14 @@ impl LiveViewUpgrade {
     /// #[derive(Default)]
     /// struct MyView;
     ///
-    /// #[async_trait]
     /// impl LiveView for MyView {
     ///     // ...
     ///     # type Message = Msg;
-    ///     # type Error = Infallible;
-    ///     # async fn update(
+    ///     # fn update(
     ///     #     mut self,
     ///     #     msg: Msg,
     ///     #     data: Option<EventData>,
-    ///     # ) -> Result<Updated<Self>, Self::Error> {
+    ///     # ) -> Updated<Self> {
     ///     #     todo!()
     ///     # }
     ///     # fn render(&self) -> Html<Self::Message> {

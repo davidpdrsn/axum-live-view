@@ -8,7 +8,7 @@
 //! # Example
 //!
 //! ```rust
-//! use axum::{async_trait, response::IntoResponse, routing::get, Router};
+//! use axum::{response::IntoResponse, routing::get, Router};
 //! use axum_live_view::{
 //!     event_data::EventData, html, live_view::Updated, Html, LiveView, LiveViewUpgrade,
 //! };
@@ -85,31 +85,21 @@
 //! }
 //!
 //! // ...that implements the `LiveView` trait.
-//! #[async_trait]
 //! impl LiveView for Counter {
 //!     // This is the type of update messages our HTML contains. They will be sent
 //!     // to the view in the `update` method
 //!     type Message = Msg;
-//!
-//!     // This is the error type our `update` method might fail with.
-//!     //
-//!     // If a live view crashes the browser will simply call the endpoint again to
-//!     // establish a new websocket connection and thus a new instance of your view
-//!     // will be created.
-//!     //
-//!     // Our live view never returns any errors so we use `Infallible`.
-//!     type Error = Infallible;
 //!
 //!     // Update the view based on which message it receives.
 //!     //
 //!     // `EventData` contains data from the event that happened in the
 //!     // browser. This might be values of input fields or which key was pressed in
 //!     // a keyboard event.
-//!     async fn update(
+//!     fn update(
 //!         mut self,
 //!         msg: Msg,
 //!         data: Option<EventData>,
-//!     ) -> Result<Updated<Self>, Self::Error> {
+//!     ) -> Updated<Self> {
 //!         match msg {
 //!             Msg::Increment => {
 //!                 self.count += 1;
@@ -121,7 +111,7 @@
 //!             }
 //!         }
 //!
-//!         Ok(Updated::new(self))
+//!         Updated::new(self)
 //!     }
 //!
 //!     // Render the live view into an HTML template. This function is called during
@@ -155,8 +145,6 @@
 //!     // WebSocket connects. This can be used to perform auth, load data that
 //!     // isn't needed for the first response, and spawn a task that can send
 //!     // messages to the view itself from other parts of the application.
-//!     //
-//!     // `LiveView::mount` simply returns `Ok(())`.
 //! }
 //!
 //! #[derive(Serialize, Deserialize, Debug, PartialEq)]
