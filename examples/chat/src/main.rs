@@ -108,7 +108,7 @@ impl LiveView for MessagesList {
         });
     }
 
-    fn update(mut self, _msg: (), _data: Option<EventData>) -> Updated<Self> {
+    fn update(self, _msg: (), _data: Option<EventData>) -> Updated<Self> {
         Updated::new(self)
     }
 
