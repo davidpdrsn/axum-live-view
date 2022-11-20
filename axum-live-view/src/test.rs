@@ -3,7 +3,6 @@
 //! # Example
 //!
 //! ```
-//! use axum::async_trait;
 //! use axum_live_view::{
 //!     Html,
 //!     LiveView,
@@ -19,13 +18,13 @@
 //! # async fn main() {
 //! // Run our view in the background
 //! let view = Counter::default();
-//! let view_handle = run_live_view(view).mount().await.unwrap();
+//! let view_handle = run_live_view(view).mount().await;
 //!
 //! // Check the initial HTML
 //! assert!(view_handle.render().await.contains("0"));
 //!
 //! // Send the view a message and make sure the HTML changes correctly
-//! let (html, js_commands) = view_handle.send(Msg::Increment, None).await.unwrap();
+//! let (html, js_commands) = view_handle.send(Msg::Increment, None).await;
 //! assert!(html.contains("1"));
 //! assert!(js_commands.is_empty());
 //! # }
@@ -36,21 +35,19 @@
 //!     count: u64,
 //! }
 //!
-//! #[async_trait]
 //! impl LiveView for Counter {
 //!     type Message = Msg;
-//!     type Error = Infallible;
 //!
-//!     async fn update(
+//!     fn update(
 //!         mut self,
 //!         msg: Msg,
 //!         data: Option<EventData>,
-//!     ) -> Result<Updated<Self>, Self::Error> {
+//!     ) -> Updated<Self> {
 //!         match msg {
 //!             Msg::Increment => self.count += 1,
 //!             Msg::Decrement => self.count -= 1,
 //!         }
-//!         Ok(Updated::new(self))
+//!         Updated::new(self)
 //!     }
 //!
 //!     fn render(&self) -> Html<Self::Message> {
@@ -79,7 +76,7 @@ use serde::Serialize;
 use std::fmt;
 
 /// Spawn a live view on a background task and get a handle that can simulate mounting the view.
-pub fn run_live_view<L>(view: L) -> TestViewHandleBuilder<L::Message, L::Error>
+pub fn run_live_view<L>(view: L) -> TestViewHandleBuilder<L::Message>
 where
     L: LiveView,
 {
@@ -97,16 +94,16 @@ where
 /// Created with [`run_live_view`].
 ///
 /// See the [module docs](self) for an example of how test live views.
-pub struct TestViewHandleBuilder<M, E>
+pub struct TestViewHandleBuilder<M>
 where
     M: 'static,
 {
-    handle: ViewTaskHandle<M, E>,
+    handle: ViewTaskHandle<M>,
     uri: Option<Uri>,
     headers: Option<HeaderMap>,
 }
 
-impl<M, E> TestViewHandleBuilder<M, E> {
+impl<M> TestViewHandleBuilder<M> {
     /// Set the URI [`LiveView::mount`] will be called with.
     pub fn mount_uri(mut self, uri: Uri) -> Self {
         self.uri = Some(uri);
@@ -132,7 +129,7 @@ impl<M, E> TestViewHandleBuilder<M, E> {
     /// Also, the futures passed to [`Updated::spawn`] will be ignored, for the same reason.
     ///
     /// [`Updated::spawn`]: crate::live_view::Updated::spawn
-    pub async fn mount(self) -> Result<TestViewHandle<M, E>, E> {
+    pub async fn mount(self) -> TestViewHandle<M> {
         let (handle, rx) = ViewHandle::new();
         drop(rx);
 
@@ -141,17 +138,16 @@ impl<M, E> TestViewHandleBuilder<M, E> {
 
         match self.handle.mount(uri, headers, handle).await {
             Ok(()) => {}
-            Err(ViewRequestError::ViewError(err)) => return Err(err),
             Err(ViewRequestError::ChannelClosed(_)) => unreachable!(),
         }
 
-        Ok(TestViewHandle {
+        TestViewHandle {
             handle: self.handle,
-        })
+        }
     }
 }
 
-impl<M, E> fmt::Debug for TestViewHandleBuilder<M, E> {
+impl<M> fmt::Debug for TestViewHandleBuilder<M> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("TestViewHandleBuilder")
             .field("handle", &self.handle)
@@ -166,14 +162,14 @@ impl<M, E> fmt::Debug for TestViewHandleBuilder<M, E> {
 /// Used to send messages to the view and check that the HTML changes correctly.
 ///
 /// See the [module docs](self) for an example of how test live views.
-pub struct TestViewHandle<M, E>
+pub struct TestViewHandle<M>
 where
     M: 'static,
 {
-    handle: ViewTaskHandle<M, E>,
+    handle: ViewTaskHandle<M>,
 }
 
-impl<M, E> TestViewHandle<M, E>
+impl<M> TestViewHandle<M>
 where
     M: Serialize,
 {
@@ -189,26 +185,21 @@ where
     ///
     /// This calls [`LiveView::update`] on the view followed by [`LiveView::render`] and returns
     /// the HTML template and any [`JsCommand`]s included.
-    pub async fn send(
-        &self,
-        msg: M,
-        data: Option<EventData>,
-    ) -> Result<(String, Vec<JsCommand>), E> {
+    pub async fn send(&self, msg: M, data: Option<EventData>) -> (String, Vec<JsCommand>) {
         let js_commands = match self.handle.update(msg, data).await {
             Ok(UpdateResponse::Diff(_) | UpdateResponse::Empty) => Vec::new(),
             Ok(UpdateResponse::JsCommands(cmds) | UpdateResponse::DiffAndJsCommands(_, cmds)) => {
                 cmds
             }
-            Err(ViewRequestError::ViewError(err)) => return Err(err),
             Err(ViewRequestError::ChannelClosed(_)) => unreachable!(),
         };
 
         let html = self.handle.render_to_string().await.unwrap();
-        Ok((html, js_commands))
+        (html, js_commands)
     }
 }
 
-impl<M, E> fmt::Debug for TestViewHandle<M, E> {
+impl<M> fmt::Debug for TestViewHandle<M> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("TestViewHandle")
             .field("handle", &self.handle)
@@ -218,43 +209,38 @@ impl<M, E> fmt::Debug for TestViewHandle<M, E> {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use crate as axum_live_view;
     use crate::event_data::Input;
     use crate::{live_view::Updated, Html};
-    use async_trait::async_trait;
     use axum_live_view_macros::html;
     use serde::Deserialize;
-    use std::convert::Infallible;
-
-    #[allow(unused_imports)]
-    use super::*;
 
     #[tokio::test]
     async fn test_something() {
-        let view = run_live_view(Counter::default()).mount().await.unwrap();
+        let view = run_live_view(Counter::default()).mount().await;
 
         let html = view.render().await;
         assert!(html.contains('0'));
 
-        let (html, _) = view.send(Msg::Incr, None).await.unwrap();
+        let (html, _) = view.send(Msg::Incr, None).await;
         assert!(html.contains('1'));
 
-        let (html, _) = view.send(Msg::Incr, None).await.unwrap();
+        let (html, _) = view.send(Msg::Incr, None).await;
         assert!(html.contains('2'));
 
-        let (html, _) = view.send(Msg::Decr, None).await.unwrap();
+        let (html, _) = view.send(Msg::Decr, None).await;
         assert!(html.contains('1'));
 
-        let (html, _) = view.send(Msg::Decr, None).await.unwrap();
+        let (html, _) = view.send(Msg::Decr, None).await;
         assert!(html.contains('0'));
 
-        let (html, _) = view.send(Msg::Decr, None).await.unwrap();
+        let (html, _) = view.send(Msg::Decr, None).await;
         assert!(html.contains('0'));
 
         let (html, _) = view
             .send(Msg::IncrBy, Some(Input::String("10".to_owned()).into()))
-            .await
-            .unwrap();
+            .await;
         assert!(html.contains("10"));
     }
 
@@ -263,16 +249,10 @@ mod tests {
         count: u64,
     }
 
-    #[async_trait]
     impl LiveView for Counter {
         type Message = Msg;
-        type Error = Infallible;
 
-        async fn update(
-            mut self,
-            msg: Msg,
-            data: Option<EventData>,
-        ) -> Result<Updated<Self>, Self::Error> {
+        fn update(mut self, msg: Msg, data: Option<EventData>) -> Updated<Self> {
             match msg {
                 Msg::Incr => self.count += 1,
                 Msg::Decr => {
@@ -292,7 +272,7 @@ mod tests {
                 }
             }
 
-            Ok(Updated::new(self))
+            Updated::new(self)
         }
 
         fn render(&self) -> Html<Self::Message> {

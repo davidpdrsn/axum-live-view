@@ -1,10 +1,7 @@
 //! Server-rendered live views.
 
 use crate::{event_data::EventData, html::Html, js_command::JsCommand};
-use axum::{
-    async_trait,
-    http::{HeaderMap, Uri},
-};
+use axum::http::{HeaderMap, Uri};
 use futures_util::Stream;
 use serde::{de::DeserializeOwned, Serialize};
 use std::{fmt, future::Future, pin::Pin};
@@ -19,7 +16,6 @@ mod combine;
 /// # Example
 ///
 /// ```
-/// use axum::async_trait;
 /// use axum_live_view::{
 ///     Html,
 ///     LiveView,
@@ -34,17 +30,15 @@ mod combine;
 ///     count: u64,
 /// }
 ///
-/// #[async_trait]
 /// impl LiveView for Counter {
 ///     type Message = Msg;
-///     type Error = Infallible;
 ///
 ///     // Update the view based on which message it receives.
-///     async fn update(
+///     fn update(
 ///         mut self,
 ///         msg: Msg,
 ///         data: Option<EventData>,
-///     ) -> Result<Updated<Self>, Self::Error> {
+///     ) -> Updated<Self> {
 ///         match msg {
 ///             Msg::Increment => {
 ///                 self.count += 1;
@@ -56,7 +50,7 @@ mod combine;
 ///             }
 ///         }
 ///
-///         Ok(Updated::new(self))
+///         Updated::new(self)
 ///     }
 ///
 ///     // Render the live view into an HTML template.
@@ -82,16 +76,9 @@ mod combine;
 ///     Decrement,
 /// }
 /// ```
-#[async_trait]
 pub trait LiveView: Sized + Send + Sync + 'static {
     /// The message type this view receives.
     type Message: Serialize + DeserializeOwned + PartialEq + Send + Sync + 'static;
-
-    /// The error type that [`mount`] and [`update`] might fail with.
-    ///
-    /// [`mount`]: LiveView::mount
-    /// [`update`]: LiveView::update
-    type Error: fmt::Display + Send + Sync + 'static;
 
     /// Perform additional setup of the view once its fully connected to the WebSocket.
     ///
@@ -105,42 +92,20 @@ pub trait LiveView: Sized + Send + Sync + 'static {
     /// The provided [`ViewHandle`] can be used to send messages to the view that don't come from
     /// the client. See the documentation for [`ViewHandle`] for examples.
     #[allow(unused_variables)]
-    async fn mount(
-        &mut self,
-        uri: Uri,
-        request_headers: &HeaderMap,
-        handle: ViewHandle<Self::Message>,
-    ) -> Result<(), Self::Error> {
-        Ok(())
-    }
+    fn mount(&mut self, uri: Uri, request_headers: &HeaderMap, handle: ViewHandle<Self::Message>) {}
 
     /// React to a message and asynchronously update the view.
     ///
     /// If an error is returned the view will be shutdown, the JavaScript client will reconnect,
     /// and a fresh instance of the view will be created. Ideally you should handle errors
     /// gracefully and present them to the end user.
-    async fn update(
-        self,
-        msg: Self::Message,
-        data: Option<EventData>,
-    ) -> Result<Updated<Self>, Self::Error>;
+    fn update(self, msg: Self::Message, data: Option<EventData>) -> Updated<Self>;
 
     /// Render the views HTML.
     ///
     /// This method will be called after [`update`](LiveView::update) and the changes will be
     /// effeciently sent to the client.
     fn render(&self) -> Html<Self::Message>;
-
-    /// Map the error type of this view into another type.
-    ///
-    /// Used with [`combine`](fn@combine) to combine views that have otherwise different error types.
-    fn map_err<F, E2>(self, f: F) -> MapErr<Self, F>
-    where
-        F: Fn(Self::Error) -> E2 + Send + Sync + 'static,
-        E2: fmt::Display + Send + Sync + 'static,
-    {
-        assert_live_view::<_, Self::Message, E2>(MapErr { view: self, f })
-    }
 }
 
 /// An updated live view as returned by [`LiveView::update`].
@@ -246,82 +211,6 @@ where
     }
 }
 
-/// Helper function used to verify that some type is actually a `LiveView`.
-#[inline]
-fn assert_live_view<V, M, E>(v: V) -> V
-where
-    V: LiveView<Message = M, Error = E>,
-{
-    v
-}
-
-/// A [`LiveView`] that has had its error type mapped via function.
-///
-/// Created with [`LiveView::map_err`].
-pub struct MapErr<V, F> {
-    view: V,
-    f: F,
-}
-
-impl<V, F> fmt::Debug for MapErr<V, F>
-where
-    V: fmt::Debug,
-{
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("MapErr")
-            .field("view", &self.view)
-            .field("f", &format_args!("{}", std::any::type_name::<F>()))
-            .finish()
-    }
-}
-
-#[async_trait]
-impl<V, F, E2> LiveView for MapErr<V, F>
-where
-    V: LiveView,
-    F: Fn(V::Error) -> E2 + Send + Sync + 'static,
-    E2: fmt::Display + Send + Sync + 'static,
-{
-    type Message = V::Message;
-    type Error = E2;
-
-    async fn mount(
-        &mut self,
-        uri: Uri,
-        request_headers: &HeaderMap,
-        handle: ViewHandle<Self::Message>,
-    ) -> Result<(), Self::Error> {
-        self.view
-            .mount(uri, request_headers, handle)
-            .await
-            .map_err(&self.f)
-    }
-
-    async fn update(
-        mut self,
-        msg: Self::Message,
-        data: Option<EventData>,
-    ) -> Result<Updated<Self>, Self::Error> {
-        let Updated {
-            live_view,
-            js_commands,
-            spawns,
-        } = self.view.update(msg, data).await.map_err(&self.f)?;
-
-        self.view = live_view;
-
-        Ok(Updated {
-            live_view: self,
-            js_commands,
-            spawns,
-        })
-    }
-
-    fn render(&self) -> Html<Self::Message> {
-        self.view.render()
-    }
-}
-
 /// A handle to a [`LiveView`] that can be used to send messages to the view that don't come from
 /// the client.
 ///
@@ -345,7 +234,7 @@ impl<M> ViewHandle<M> {
     /// This can for example to be used to re-render a view on an interval:
     ///
     /// ```
-    /// use axum::{async_trait, response::IntoResponse, http::{Uri, HeaderMap}};
+    /// use axum::{response::IntoResponse, http::{Uri, HeaderMap}};
     /// use axum_live_view::{
     ///     Html,
     ///     LiveView,
@@ -356,16 +245,15 @@ impl<M> ViewHandle<M> {
     ///
     /// struct MyView;
     ///
-    /// #[async_trait]
     /// impl LiveView for MyView {
     ///     type Message = Msg;
     ///
-    ///     async fn mount(
+    ///     fn mount(
     ///         &mut self,
     ///         uri: Uri,
     ///         request_headers: &HeaderMap,
     ///         handle: ViewHandle<Self::Message>,
-    ///     ) -> Result<(), Self::Error> {
+    ///     ) {
     ///         tokio::spawn(async move {
     ///             let mut interval = tokio::time::interval(Duration::from_secs(1));
     ///             loop {
@@ -376,17 +264,14 @@ impl<M> ViewHandle<M> {
     ///                 }
     ///             }
     ///         });
-    ///
-    ///         Ok(())
     ///     }
     ///
     ///     // ...
-    ///     # type Error = Infallible;
-    ///     # async fn update(
-    ///     #     mut self,
+    ///     # fn update(
+    ///     #     self,
     ///     #     msg: Msg,
     ///     #     data: Option<axum_live_view::event_data::EventData>,
-    ///     # ) -> Result<axum_live_view::live_view::Updated<Self>, Self::Error> {
+    ///     # ) -> axum_live_view::live_view::Updated<Self> {
     ///     #     unimplemented!()
     ///     # }
     ///     # fn render(&self) -> axum_live_view::Html<Self::Message> {
@@ -485,7 +370,7 @@ impl std::error::Error for ViewHandleSendError {}
 /// # Example
 ///
 /// ```
-/// use axum::{async_trait, response::IntoResponse};
+/// use axum::response::IntoResponse;
 /// use axum_live_view::{
 ///     Html,
 ///     LiveView,
@@ -500,17 +385,15 @@ impl std::error::Error for ViewHandleSendError {}
 /// // `Foo` and `Bar` are live views with different message types
 /// struct Foo {}
 ///
-/// #[async_trait]
 /// impl LiveView for Foo {
 ///     type Message = FooMsg;
 ///
 ///     // ...
-///     # type Error = Infallible;
-///     # async fn update(
+///     # fn update(
 ///     #     mut self,
 ///     #     msg: FooMsg,
 ///     #     data: Option<EventData>,
-///     # ) -> Result<Updated<Self>, Self::Error> {
+///     # ) -> Updated<Self> {
 ///     #     unimplemented!()
 ///     # }
 ///     # fn render(&self) -> Html<Self::Message> {
@@ -523,17 +406,15 @@ impl std::error::Error for ViewHandleSendError {}
 ///
 /// struct Bar {}
 ///
-/// #[async_trait]
 /// impl LiveView for Bar {
 ///     type Message = BarMsg;
 ///
 ///     // ...
-///     # type Error = Infallible;
-///     # async fn update(
+///     # fn update(
 ///     #     mut self,
 ///     #     msg: BarMsg,
 ///     #     data: Option<EventData>,
-///     # ) -> Result<Updated<Self>, Self::Error> {
+///     # ) -> Updated<Self> {
 ///     #     unimplemented!()
 ///     # }
 ///     # fn render(&self) -> Html<Self::Message> {
@@ -549,99 +430,6 @@ impl std::error::Error for ViewHandleSendError {}
 ///         // instantiate each view
 ///         let foo = Foo {};
 ///         let bar = Bar {};
-///
-///         // combine them into one view
-///         let combined_view = axum_live_view::live_view::combine(
-///             // a tuple with each view we want to combine
-///             (foo, bar),
-///             // a closure that takes each view and returns the combined HTML
-///             |foo, bar| {
-///                 html! {
-///                     <div class="foo">{ foo }</div>
-///                     <div class="bar">{ bar }</div>
-///                 }
-///             });
-///
-///         html! {
-///             { embed_live_view.embed(combined_view) }
-///         }
-///     })
-/// }
-/// ```
-///
-/// # Combining views with different error types
-///
-/// `combine` requires the views to have the same error type. Use [`LiveView::map_err`] to convert
-/// error types if necessary:
-///
-/// ```
-/// use axum::{async_trait, response::IntoResponse};
-/// use axum_live_view::{
-///     Html,
-///     LiveView,
-///     LiveViewUpgrade,
-///     html,
-///     event_data::EventData,
-///     live_view::Updated,
-/// };
-/// use std::convert::Infallible;
-/// use serde::{Deserialize, Serialize};
-///
-/// // `Foo` and `Bar` are live views with different message types _and different error types_
-/// struct Foo {}
-///
-/// #[async_trait]
-/// impl LiveView for Foo {
-///     type Message = FooMsg;
-///     type Error = std::io::Error;
-///
-///     // ...
-///     # async fn update(
-///     #     mut self,
-///     #     msg: FooMsg,
-///     #     data: Option<EventData>,
-///     # ) -> Result<Updated<Self>, Self::Error> {
-///     #     unimplemented!()
-///     # }
-///     # fn render(&self) -> Html<Self::Message> {
-///     #     unimplemented!()
-///     # }
-/// }
-///
-/// #[derive(Serialize, Deserialize, Debug, PartialEq)]
-/// enum FooMsg {}
-///
-/// struct Bar {}
-///
-/// #[async_trait]
-/// impl LiveView for Bar {
-///     type Message = BarMsg;
-///     type Error = Infallible;
-///
-///     // ...
-///     # async fn update(
-///     #     mut self,
-///     #     msg: BarMsg,
-///     #     data: Option<EventData>,
-///     # ) -> Result<Updated<Self>, Self::Error> {
-///     #     unimplemented!()
-///     # }
-///     # fn render(&self) -> Html<Self::Message> {
-///     #     unimplemented!()
-///     # }
-/// }
-///
-/// #[derive(Serialize, Deserialize, Debug, PartialEq)]
-/// enum BarMsg {}
-///
-/// async fn handle(live: LiveViewUpgrade) -> impl IntoResponse {
-///     live.response(|embed_live_view| {
-///         // instantiate each view
-///         let foo = Foo {};
-///
-///         let bar = Bar {};
-///         // convert `Infallible` into a `std::io::Error` so it matches `Foo`'s error type
-///         let bar = bar.map_err(|err: Infallible| match err {});
 ///
 ///         // combine them into one view
 ///         let combined_view = axum_live_view::live_view::combine(

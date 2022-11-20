@@ -1,9 +1,9 @@
-use axum::{async_trait, response::IntoResponse, routing::get, Router};
+use axum::{response::IntoResponse, routing::get, Router};
 use axum_live_view::{
     event_data::EventData, html, live_view::Updated, Html, LiveView, LiveViewUpgrade,
 };
 use serde::{Deserialize, Serialize};
-use std::{convert::Infallible, net::SocketAddr};
+use std::net::SocketAddr;
 
 #[tokio::main]
 async fn main() {
@@ -43,16 +43,10 @@ struct Counter {
     count: u64,
 }
 
-#[async_trait]
 impl LiveView for Counter {
     type Message = Msg;
-    type Error = Infallible;
 
-    async fn update(
-        mut self,
-        msg: Msg,
-        _data: Option<EventData>,
-    ) -> Result<Updated<Self>, Self::Error> {
+    fn update(mut self, msg: Msg, _data: Option<EventData>) -> Updated<Self> {
         match msg {
             Msg::Incr => self.count += 1,
             Msg::Decr => {
@@ -62,7 +56,7 @@ impl LiveView for Counter {
             }
         }
 
-        Ok(Updated::new(self))
+        Updated::new(self)
     }
 
     fn render(&self) -> Html<Self::Message> {
