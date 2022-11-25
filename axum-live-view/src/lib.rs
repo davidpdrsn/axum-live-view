@@ -338,7 +338,7 @@ pub const PRECOMPILED_JS: &str = include_str!("../../assets-precompiled/axum_liv
 #[allow(clippy::declare_interior_mutable_const)]
 pub fn precompiled_js<S, B>() -> axum::routing::MethodRouter<S, B>
 where
-    B: Send + 'static,
+    B: axum::body::HttpBody + Send + 'static,
     S: Clone + Send + Sync + 'static,
 {
     use axum::{
