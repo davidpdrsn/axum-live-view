@@ -520,6 +520,30 @@ pub(crate) enum EventMessageFromSocketData {
         #[serde(rename = "sy")]
         scroll_y: f64,
     },
+    File {
+        #[serde(rename = "lc")]
+        length_computable: bool,
+        #[serde(rename = "l")]
+        loaded: u64,
+        #[serde(rename = "t")]
+        total: u64,
+        #[serde(rename = "flm")]
+        file_last_modified: u64,
+        #[serde(rename = "fn")]
+        file_name: String,
+        #[serde(rename = "fwrp")]
+        file_webkit_relative_path: String,
+        #[serde(rename = "fs")]
+        file_size: u64,
+        #[serde(rename = "ft")]
+        file_type: String,
+        #[serde(rename = "rs")]
+        ready_state: u8,
+        #[serde(rename = "e")]
+        dom_exception: serde_json::Value,
+        #[serde(rename = "r")]
+        result: String
+    }
 }
 
 #[derive(Deserialize, PartialEq, Debug)]

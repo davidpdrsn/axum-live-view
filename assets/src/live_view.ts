@@ -188,12 +188,96 @@ const axm = {
   mousemove: "axm-mousemove",
 }
 
+const axm_file = {
+  progress: "axm-file-progress",
+  loadStart: "axm-file-loadstart",
+  loadEnd: "axm-file-loadend",
+  abort: "axm-file-abort",
+  load: "axm-file-load",
+};
+
 const axm_window = {
   keydown: "axm-window-keydown",
   keyup: "axm-window-keyup",
   focus: "axm-window-focus",
   blur: "axm-window-blur",
   scroll: "axm-scroll",
+};
+
+/**
+ * Given a <input type="file"> node,
+ * listen for changes of the attached files
+ * and for every such file, propagate outwards the inner
+ * FileReader's events as CustomEvent<FileProgressEvent>
+ * of the form `axm-file-(progress|load|loadstart|loadend|abort)`
+ * directly from the node.
+ * 
+ * @param node An HTMLInputElement with type="file"
+ * @returns 
+ */
+function listenForFileUploadEvents(node: HTMLInputElement) {
+  if (!node) { return }
+  if (node.getAttribute("type") !== "file") { return }
+
+  function dispatchFileEvent(name: string, event: ProgressEvent, file: File, reader: FileReader) {
+    const fileEvent = new CustomEvent<FileProgressEvent>(name, {
+      detail: {
+        lengthComputable: event.lengthComputable,
+        loaded: event.loaded,
+        total: event.total,
+        fileLastModified: file.lastModified,
+        fileName: file.name,
+        fileSize: file.size,
+        fileType: file.type,
+        fileWebkitRelativePath: file.webkitRelativePath,
+        result: reader.result ? reader.result as string: null,
+        readyState: reader.readyState as 0 | 1 | 2,
+        error: reader.error
+      },
+    });
+    node.dispatchEvent(fileEvent);
+  }
+
+  // Should we have some special consideration for absence/presence
+  // of a "multiple" attribute?
+  node.addEventListener("change", (_: Event) => {
+    Array
+    .from(node.files as FileList)
+    .forEach((file: File) => {
+      let reader = new FileReader();
+
+      if (node.hasAttribute(axm_file.progress)) {
+        reader.onprogress = (event: ProgressEvent) => {
+          dispatchFileEvent(axm_file.progress, event, file, reader);
+        };
+      }
+      if (node.hasAttribute(axm_file.load)) {
+        reader.onload = (event: ProgressEvent) => {
+          dispatchFileEvent(axm_file.load, event, file, reader);
+        };
+      }
+      if (node.hasAttribute(axm_file.loadStart)) {
+        reader.onloadstart = (event: ProgressEvent) => {
+          dispatchFileEvent(axm_file.loadStart, event, file, reader);
+        };
+      }
+      if (node.hasAttribute(axm_file.loadEnd)) {
+        reader.onloadend = (event: ProgressEvent) => {
+          dispatchFileEvent(axm_file.loadEnd, event, file, reader);
+        };
+      }
+      if (node.hasAttribute(axm_file.abort)) {
+        reader.onabort = (event: ProgressEvent) => {
+          dispatchFileEvent(axm_file.abort, event, file, reader);
+        };
+      }
+
+      // TODO: Think about which of the instance methods of the reader
+      // is the most appropriate here:
+      // https://developer.mozilla.org/en-US/docs/Web/API/FileReader#instance_methods
+      reader.readAsText(file);
+    });
+  });
 }
 
 function bindInitialEvents(socket: WebSocket, options: LiveViewOptions) {
@@ -299,6 +383,40 @@ function addEventListeners(
       })
     }
   });
+
+  // For elements of the form <input type="file" axm-input ...>
+  // listen for custom events `axm-file-*` and propagate
+  // them as file upload events into the socket.
+  if(element instanceof HTMLInputElement) {
+    if (element.hasAttribute(axm.input) && element.getAttribute("type") === "file") {
+      listenForFileUploadEvents(element);
+
+      Object
+      .values(axm_file)
+      .forEach((axm_file_event) => {
+        on(socket, options, element, element, axm_file_event, axm_file_event, (msg, event) => {
+          if (event instanceof CustomEvent<FileProgressEvent>) {
+            let detail: FileProgressEvent = event.detail;
+            const data: FileData = {
+              lc: detail.lengthComputable,
+              t: detail.total,
+              l: detail.loaded,
+              flm: detail.fileLastModified,
+              fs: detail.fileSize,
+              ft: detail.fileType,
+              fn: detail.fileName,
+              fwrp: detail.fileWebkitRelativePath,
+              r: detail.result,
+              rs: detail.readyState,
+              e: detail.error
+            }
+            return { t: "file", m: msg, d: data }
+          }
+          return undefined;
+        });
+      });
+    }
+  }  
 
   [
     ["keydown", axm.keydown],
@@ -468,6 +586,7 @@ type MessageToView =
   | Mouse
   | Scroll
   | HealthPing
+  | FileEvent
 
 interface HealthPing { t: "h" }
 
@@ -514,6 +633,53 @@ interface KeyData {
   c: boolean,
   s: boolean,
   me: boolean,
+}
+
+/**
+ * Short version of the keys of FileProgressEvent,
+ * used for transport efficiency.
+ */
+interface FileData {
+  lc: boolean,
+  l: number,
+  t: number,
+  flm: number,
+  fn: string,
+  fwrp: string,
+  fs: number,
+  ft: string,
+  rs: 0 | 1 | 2,
+  e: DOMException | null,
+  r: string | null,
+}
+
+/**
+ * A subset of properties from
+ * a ProgressEvent, File, and FileReader
+ * that represents a file upload collectively.
+ */
+interface FileProgressEvent {
+  lengthComputable: boolean,
+  loaded: number,
+  total: number,
+  fileLastModified: number,
+  fileName: string,
+  fileWebkitRelativePath: string,
+  fileSize: number,
+  fileType: string,
+  readyState: 0 | 1 | 2,
+  error: DOMException | null,
+  result: string | null,
+}
+
+/**
+ * A representation of a file upload
+ * event along with some message for context.
+ */
+interface FileEvent {
+  t: "file",
+  m: string | JSON,
+  d: FileData
 }
 
 interface Mouse {
