@@ -18,7 +18,7 @@ precompiled-js = []
 anyhow = "1.0"
 async-stream = "0.3"
 async-trait = "0.1"
-axum = { version = "0.5", features = ["ws"] }
+axum = { version = "0.6.0", features = ["ws"] }
 axum-live-view-macros = { path = "../axum-live-view-macros", version = "0.1" }
 bytes = "1.0"
 futures-util = { version = "0.3", default-features = false, features = ["alloc"] }

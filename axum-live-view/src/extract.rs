@@ -5,7 +5,7 @@ use async_trait::async_trait;
 use axum::{
     extract::{
         ws::{self, WebSocket, WebSocketUpgrade},
-        FromRequest, RequestParts,
+        FromRequestParts,
     },
     http::{HeaderMap, Uri},
     response::{IntoResponse, Response},
@@ -14,6 +14,7 @@ use futures_util::{
     sink::SinkExt,
     stream::{StreamExt, TryStreamExt},
 };
+use http::request::Parts;
 use std::{convert::Infallible, fmt::Debug};
 
 pub use crate::life_cycle::EmbedLiveView;
@@ -31,16 +32,16 @@ enum LiveViewUpgradeInner {
 }
 
 #[async_trait]
-impl<B> FromRequest<B> for LiveViewUpgrade
+impl<S> FromRequestParts<S> for LiveViewUpgrade
 where
-    B: Send,
+    S: Send + Sync + 'static,
 {
     type Rejection = Infallible;
 
-    async fn from_request(req: &mut RequestParts<B>) -> Result<Self, Self::Rejection> {
-        if let Ok(ws) = WebSocketUpgrade::from_request(req).await {
-            let uri = req.uri().clone();
-            let headers = req.headers().clone();
+    async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
+        if let Ok(ws) = WebSocketUpgrade::from_request_parts(parts, state).await {
+            let uri = parts.uri.clone();
+            let headers = parts.headers.clone();
 
             Ok(Self {
                 inner: LiveViewUpgradeInner::Ws(Box::new((ws, uri, headers))),

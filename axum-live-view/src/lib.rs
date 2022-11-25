@@ -329,16 +329,17 @@ pub const PRECOMPILED_JS: &str = include_str!("../../assets-precompiled/axum_liv
 /// use axum_live_view::precompiled_js;
 ///
 /// let app = Router::new().route("/assets/live_view.js", precompiled_js());
-/// # let _: Router<axum::body::Body> = app;
+/// # let _: Router = app;
 /// ```
 ///
 /// [webpack]: https://webpack.js.org
 #[cfg(feature = "precompiled-js")]
 #[cfg_attr(docsrs, doc(cfg(feature = "precompiled-js")))]
 #[allow(clippy::declare_interior_mutable_const)]
-pub fn precompiled_js<B>() -> axum::routing::MethodRouter<B>
+pub fn precompiled_js<S, B>() -> axum::routing::MethodRouter<S, B>
 where
-    B: Send + 'static,
+    B: axum::body::HttpBody + Send + 'static,
+    S: Clone + Send + Sync + 'static,
 {
     use axum::{
         http::{header, HeaderMap, HeaderValue, StatusCode},
