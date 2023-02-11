@@ -13,7 +13,6 @@ use axum_live_view::{
 };
 use serde::{Deserialize, Serialize};
 use std::{
-    convert::Infallible,
     net::SocketAddr,
     sync::{Arc, Mutex},
 };
