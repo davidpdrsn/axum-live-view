@@ -1,5 +1,6 @@
 #![allow(clippy::try_err)]
 
+use clap::Parser;
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 use std::{
@@ -7,7 +8,6 @@ use std::{
     path::{Path, PathBuf},
     process::Command,
 };
-use structopt::StructOpt;
 
 type Result<T = ()> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
@@ -22,7 +22,7 @@ macro_rules! ensure {
 }
 
 fn main() -> Result {
-    let opt = Opt::from_args();
+    let opt = Opt::parse();
 
     match opt {
         Opt::Ts(Ts::Install(opt)) => ts_install(opt)?,
@@ -34,14 +34,16 @@ fn main() -> Result {
     Ok(())
 }
 
-#[derive(Debug, StructOpt)]
+#[derive(Debug, Parser)]
 enum Opt {
+    #[clap(subcommand)]
     Ts(Ts),
+    #[clap(subcommand)]
     Codegen,
 }
 
 /// Typescript related commands
-#[derive(Debug, StructOpt)]
+#[derive(Debug, Parser)]
 enum Ts {
     Install(TsInstall),
     Build(TsBuild),
@@ -49,10 +51,10 @@ enum Ts {
 }
 
 /// Build the typescript assets
-#[derive(Debug, StructOpt)]
+#[derive(Debug, Parser)]
 struct TsBuild {
     /// Only perform type checking, don't emit any files
-    #[structopt(short, long)]
+    #[arg(short, long)]
     check: bool,
 }
 
@@ -74,8 +76,8 @@ fn ts_build(opt: TsBuild) -> Result {
     Ok(())
 }
 
-/// Install typescript dependecies
-#[derive(Debug, StructOpt)]
+/// Install typescript dependencies
+#[derive(Debug, Parser)]
 struct TsInstall {}
 
 fn ts_install(opt: TsInstall) -> Result {
@@ -91,12 +93,12 @@ fn ts_install(opt: TsInstall) -> Result {
 }
 
 /// Precompile JavaScript
-#[derive(Debug, StructOpt)]
+#[derive(Debug, Parser)]
 struct TsPrecompile {
-    #[structopt(long)]
+    #[arg(long)]
     check: bool,
 
-    #[structopt(long)]
+    #[arg(long)]
     no_install: bool,
 }
 
