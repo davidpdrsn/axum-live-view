@@ -127,6 +127,17 @@ fn attribute_with_dash() {
 }
 
 #[test]
+fn attribute_with_all_valid_characters() {
+    let view: Html<()> = html! {
+        <div class="col-md" @on:click.test-one_2="test">"foo"</div>
+    };
+    assert_eq!(
+        view.render(),
+        "<div class=col-md @on:click.test-one_2=test>foo</div>"
+    );
+}
+
+#[test]
 fn interpolate_class() {
     let size = 8;
     let view: Html<String> = html! {

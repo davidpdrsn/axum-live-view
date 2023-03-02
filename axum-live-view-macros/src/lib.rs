@@ -265,16 +265,51 @@ impl Parse for AttrIdent {
         } else if input.parse::<Token![for]>().is_ok() {
             Ok(Self::Lit("for".to_owned()))
         } else {
-            let idents = Punctuated::<Ident, Token![-]>::parse_separated_nonempty(input)?;
-            let idents_span = idents.span();
             let mut out = String::new();
-            let mut iter = idents.iter().peekable();
-            while let Some(ident) = iter.next() {
-                if iter.peek().is_some() {
-                    let _ = write!(out, "{}-", ident);
-                } else {
-                    let _ = write!(out, "{}", ident);
+            let span = input.span();
+
+            let mut allow_idented = true;
+
+            loop {
+                if input.is_empty() {
+                    break;
                 }
+
+                if allow_idented && input.peek(Ident) {
+                    let _ = write!(out, "{}", input.parse::<Ident>()?);
+                    allow_idented = false;
+                    continue;
+                }
+
+                if input.peek(Token![-]) {
+                    input.parse::<Token![-]>()?;
+                    let _ = write!(out, "-");
+                    allow_idented = true;
+                    continue;
+                }
+
+                if input.peek(Token![@]) {
+                    input.parse::<Token![@]>()?;
+                    let _ = write!(out, "@");
+                    allow_idented = true;
+                    continue;
+                }
+
+                if input.peek(Token![:]) {
+                    input.parse::<Token![:]>()?;
+                    let _ = write!(out, ":");
+                    allow_idented = true;
+                    continue;
+                }
+
+                if input.peek(Token![.]) {
+                    input.parse::<Token![.]>()?;
+                    let _ = write!(out, ".");
+                    allow_idented = true;
+                    continue;
+                }
+
+                break;
             }
 
             match out.strip_prefix("axm-") {
@@ -285,8 +320,8 @@ impl Parse for AttrIdent {
                     | "mousemove" | "scroll" => Ok(Self::Axm(out)),
                     "throttle" | "debounce" | "key" => Ok(Self::Lit(out)),
                     _ => Err(syn::Error::new(
-                        idents_span,
-                        format!("unknown `{out}` attribute"),
+                        span,
+                        format!("unknown `{out:?}` attribute"),
                     )),
                 },
                 None => Ok(Self::Lit(out)),
