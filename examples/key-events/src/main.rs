@@ -1,9 +1,9 @@
-use axum::{async_trait, response::IntoResponse, routing::get, Router};
+use axum::{response::IntoResponse, routing::get, Router};
 use axum_live_view::{
     event_data::EventData, html, live_view::Updated, Html, LiveView, LiveViewUpgrade,
 };
 use serde::{Deserialize, Serialize};
-use std::{convert::Infallible, net::SocketAddr};
+use std::net::SocketAddr;
 
 #[tokio::main]
 async fn main() {

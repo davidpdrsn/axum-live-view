@@ -160,5 +160,9 @@ enum Msg {
 }
 ```
 
+## Contributing
+
+You may have to recompile typescript for CI checks to pass: `cargo xtask ts precompile`.
+
 [phx]: https://github.com/phoenixframework/phoenix_live_view
 [axum]: https://github.com/tokio-rs/axum
