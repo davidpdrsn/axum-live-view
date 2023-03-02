@@ -692,7 +692,7 @@ impl NodeToTokens for Attr {
                 NormalAttrValue::LitStr(lit_str) => {
                     fixed.append(" ");
                     ident.node_to_tokens(fixed, out);
-                    fixed.append(format!("={}", lit_str.value()));
+                    fixed.append(format!(r#"="{}""#, lit_str.value()));
                 }
                 NormalAttrValue::Block(block) => {
                     fixed.append(" ");
