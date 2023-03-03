@@ -379,7 +379,7 @@ fn optional_attribute() {
     assert_eq!(view.render(), "<input required>");
 
     let view: Html<()> = html! {
-        <input required=if true { () } />
+        <input required=if true { Some(()) } />
     };
     assert_eq!(view.render(), "<input required>");
 
