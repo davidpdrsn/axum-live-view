@@ -107,7 +107,7 @@ fn attribute() {
     let view: Html<()> = html! {
         <div class="col-md">"foo"</div>
     };
-    assert_eq!(view.render(), "<div class=col-md>foo</div>");
+    assert_eq!(view.render(), r#"<div class="col-md">foo</div>"#);
 }
 
 #[test]
@@ -115,7 +115,10 @@ fn multiple_attributes() {
     let view: Html<()> = html! {
         <div class="col-md" id="the-thing">"foo"</div>
     };
-    assert_eq!(view.render(), "<div class=col-md id=the-thing>foo</div>");
+    assert_eq!(
+        view.render(),
+        r#"<div class="col-md" id="the-thing">foo</div>"#
+    );
 }
 
 #[test]
@@ -123,7 +126,7 @@ fn attribute_with_dash() {
     let view: Html<()> = html! {
         <div on-click="\"do thing\"">"foo"</div>
     };
-    assert_eq!(view.render(), "<div on-click=\"do thing\">foo</div>");
+    assert_eq!(view.render(), r#"<div on-click=""do thing"">foo</div>"#);
 }
 
 #[test]
@@ -148,7 +151,7 @@ fn empty_tag() {
     let view: Html<()> = html! {
         <img src="foo.png" />
     };
-    assert_eq!(view.render(), "<img src=foo.png>");
+    assert_eq!(view.render(), r#"<img src="foo.png">"#);
 }
 
 #[test]
@@ -305,7 +308,7 @@ fn keyword_attribute() {
     let view: Html<()> = html! {
         <input type="text" />
     };
-    assert_eq!(view.render(), "<input type=text>");
+    assert_eq!(view.render(), r#"<input type="text">"#);
 }
 
 #[test]
@@ -341,10 +344,10 @@ fn optional_attribute() {
     assert_eq!(view.render(), "<input required>");
 
     let view: Html<()> = html! { <input required=Some("true") /> };
-    assert_eq!(view.render(), "<input required=true>");
+    assert_eq!(view.render(), r#"<input required="true">"#);
 
     let view: Html<()> = html! { <input required=Some(Some("true")) /> };
-    assert_eq!(view.render(), "<input required=true>");
+    assert_eq!(view.render(), r#"<input required="true">"#);
 
     let view: Html<()> = html! { <input required=Some(Some(None)) /> };
     assert_eq!(view.render(), "<input>");
@@ -358,12 +361,12 @@ fn optional_attribute() {
     let view: Html<()> = html! {
         <input required=if true { "true" } />
     };
-    assert_eq!(view.render(), "<input required=true>");
+    assert_eq!(view.render(), r#"<input required="true">"#);
 
     let view: Html<()> = html! {
         <input required=if false { "wat" } else { "true" } />
     };
-    assert_eq!(view.render(), "<input required=true>");
+    assert_eq!(view.render(), r#"<input required="true">"#);
 
     let view: Html<()> = html! {
         <input required=if true { () } />
@@ -376,7 +379,7 @@ fn optional_attribute() {
     assert_eq!(view.render(), "<input required>");
 
     let view: Html<()> = html! {
-        <input required=if true { Some(()) } />
+        <input required=if true { () } />
     };
     assert_eq!(view.render(), "<input required>");
 
@@ -398,7 +401,7 @@ fn optional_attribute() {
     let view: Html<()> = html! {
         <input required=if true { Some("true") } else { None } />
     };
-    assert_eq!(view.render(), "<input required=true>");
+    assert_eq!(view.render(), r#"<input required="true">"#);
 
     let view: Html<()> = html! {
         <input required=if false { Some("true") } else { None } />
@@ -409,7 +412,7 @@ fn optional_attribute() {
     let view: Html<()> = html! {
         <input required=if let Some(value) = value { Some({ value }) } else { None } />
     };
-    assert_eq!(view.render(), "<input required=true>");
+    assert_eq!(view.render(), r#"<input required=true>"#);
 
     let value = None::<String>;
     let view: Html<()> = html! {
