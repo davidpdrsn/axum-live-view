@@ -21,7 +21,7 @@ pub(crate) enum DynamicFragmentDiff<'a, T> {
         #[serde(rename = "f", skip_serializing_if = "empty_slice")]
         fixed: &'static [&'static str],
         #[serde(rename = "b", skip_serializing_if = "BTreeMap::is_empty")]
-        dynamic: IndexMap<Option<IndexMap<DynamicFragmentDiff<'a, T>>>>,
+        dynamic: IndexMap<Option<IndexMap<Option<DynamicFragmentDiff<'a, T>>>>>,
     },
 }
 
@@ -53,7 +53,7 @@ impl<'a, T> From<&'a DynamicFragment<T>> for DynamicFragmentDiff<'a, T> {
                             *idx,
                             Some(
                                 map.iter()
-                                    .map(|(idx, dynamic)| (*idx, dynamic.into()))
+                                    .map(|(idx, dynamic)| (*idx, Some(dynamic.into())))
                                     .collect::<IndexMap<_>>(),
                             ),
                         )
@@ -150,7 +150,7 @@ impl<T> DynamicFragment<T> {
                             Some(
                                 from_other
                                     .iter()
-                                    .map(|(idx, c)| (*idx, c.into()))
+                                    .map(|(idx, c)| (*idx, Some(c.into())))
                                     .collect::<IndexMap<_>>(),
                             ),
                         )),
@@ -158,18 +158,16 @@ impl<T> DynamicFragment<T> {
                             debug_assert_eq!(from_idx, other_idx);
                             let map = zip(from_self.iter(), from_other.iter())
                                 .filter_map(|pair| match pair {
-                                    Zipped::Left(_) => {
-                                        unreachable!("unable to find a way to hit this yolo")
-                                    }
-                                    Zipped::Right(_) => {
-                                        unreachable!("unable to find a way to hit this yolo")
-                                    }
+                                    Zipped::Left((idx, _)) => Some((*idx, None)),
+                                    Zipped::Right((idx, value)) => Some((*idx, Some(value.into()))),
                                     Zipped::Both(
                                         (self_idx, self_value),
                                         (other_idx, other_value),
                                     ) => {
                                         debug_assert_eq!(self_idx, other_idx);
-                                        self_value.diff(other_value).map(|diff| (*self_idx, diff))
+                                        self_value
+                                            .diff(other_value)
+                                            .map(|diff| (*self_idx, Some(diff)))
                                     }
                                 })
                                 .collect::<BTreeMap<_, _>>();
