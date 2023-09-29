@@ -779,6 +779,76 @@ fn diffing_loop_conditional() {
 }
 
 #[test]
+fn diffing_loop_add_remove_inner_dynamic() {
+    let ns = &[1, 2];
+    let a: Html<()> = html! {
+        <ul>
+            for n in ns {
+                <li attr={"attr"}>
+                {n}
+                </li>
+            }
+        </ul>
+    };
+    let b: Html<()> = html! {
+        <ul>
+            for n in ns {
+                <li>
+                {n}
+                </li>
+            }
+        </ul>
+    };
+    assert_json_diff::assert_json_eq!(
+        pretty_print(a.diff(&b)),
+        json!({
+            "d": {
+                "0": {
+                    "f": [
+                        "<li>",
+                        "</li>"
+                    ],
+                    "b": {
+                        "0": {
+                            "0": "1",
+                            "1": null
+                        },
+                        "1": {
+                            "0": "2",
+                            "1": null
+                        }
+                    }
+                }
+            }
+        })
+    );
+    assert_json_diff::assert_json_eq!(
+        pretty_print(b.diff(&a)),
+        json!({
+            "d": {
+                "0": {
+                    "f": [
+                        "<li attr=",
+                        ">",
+                        "</li>"
+                    ],
+                    "b": {
+                        "0": {
+                            "0": "attr",
+                            "1": "1"
+                        },
+                        "1": {
+                            "0": "attr",
+                            "1": "2"
+                        }
+                    }
+                }
+            }
+        })
+    );
+}
+
+#[test]
 fn diffing_message() {
     fn render(msg: i32) -> Html<i32> {
         html! { <button axm-click={ msg }></button> }
