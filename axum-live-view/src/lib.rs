@@ -26,11 +26,9 @@
 //!         .route("/assets/live-view.js", axum_live_view::precompiled_js());
 //!
 //!     # async {
-//!     // ...that we run like any other axum app
-//!     axum::Server::bind(&"0.0.0.0:3000".parse().unwrap())
-//!         .serve(app.into_make_service())
-//!         .await
-//!         .unwrap();
+//!       // ...that we run like any other axum app
+//!       let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
+//!       axum::serve(listener, app).await.unwrap();
 //!     # };
 //! }
 //!
@@ -336,9 +334,9 @@ pub const PRECOMPILED_JS: &str = include_str!("../../assets-precompiled/axum_liv
 #[cfg(feature = "precompiled-js")]
 #[cfg_attr(docsrs, doc(cfg(feature = "precompiled-js")))]
 #[allow(clippy::declare_interior_mutable_const)]
-pub fn precompiled_js<S, B>() -> axum::routing::MethodRouter<S, B>
+pub fn precompiled_js<S>() -> axum::routing::MethodRouter<S>
 where
-    B: axum::body::HttpBody + Send + 'static,
+    // B: axum::body::HttpBody + Send + 'static,
     S: Clone + Send + Sync + 'static,
 {
     use axum::{

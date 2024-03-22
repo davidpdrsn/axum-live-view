@@ -1,3 +1,5 @@
+use std::sync::{Arc, Mutex};
+
 use axum::{
     extract::Extension,
     http::{HeaderMap, Uri},
@@ -5,20 +7,16 @@ use axum::{
     routing::get,
     Router,
 };
+use serde::{Deserialize, Serialize};
+use tokio::sync::broadcast;
+use tower::ServiceBuilder;
+
 use axum_live_view::{
     event_data::EventData,
     html, js_command,
     live_view::{self, Updated, ViewHandle},
     Html, LiveView, LiveViewUpgrade,
 };
-use serde::{Deserialize, Serialize};
-use std::{
-    convert::Infallible,
-    net::SocketAddr,
-    sync::{Arc, Mutex},
-};
-use tokio::sync::broadcast;
-use tower::ServiceBuilder;
 
 #[tokio::main]
 async fn main() {
@@ -37,11 +35,8 @@ async fn main() {
                 .layer(Extension(tx)),
         );
 
-    let addr = SocketAddr::from(([0, 0, 0, 0], 3000));
-    axum::Server::bind(&addr)
-        .serve(app.into_make_service())
-        .await
-        .unwrap();
+    let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
+    axum::serve(listener, app).await.unwrap();
 }
 
 type Messages = Arc<Mutex<Vec<Message>>>;

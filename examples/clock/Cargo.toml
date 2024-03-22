@@ -5,11 +5,11 @@ edition = "2018"
 publish = false
 
 [dependencies]
-axum = "0.6.0-rc.5"
+axum = "0.7.4"
 axum-live-view = { path = "../../axum-live-view", version = "0.1", features = ["precompiled-js"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tokio = { version = "1.0", features = ["full"] }
 tracing = "0.1"
 serde = { version = "1.0", features = ["derive"] }
-tower-http = { version = "0.2", features = ["fs"] }
+tower-http = { version = "0.5.2", features = ["fs"] }
 time = { version = "0.3.5", features = ["local-offset", "formatting"] }
