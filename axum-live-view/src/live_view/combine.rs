@@ -94,7 +94,7 @@ where
             handle.clone().with(Either1::T1),
         );
     }
-    fn update(mut self, msg: Self::Message, data: Option<EventData>) -> Updated<Self> {
+    fn update(self, msg: Self::Message, data: Option<EventData>) -> Updated<Self> {
         match msg {
             Either1::T1(msg) => {
                 let Self {
@@ -158,7 +158,7 @@ where
             handle.clone().with(Either2::T2),
         );
     }
-    fn update(mut self, msg: Self::Message, data: Option<EventData>) -> Updated<Self> {
+    fn update(self, msg: Self::Message, data: Option<EventData>) -> Updated<Self> {
         match msg {
             Either2::T1(msg) => {
                 let Self {
@@ -253,7 +253,7 @@ where
             handle.clone().with(Either3::T3),
         );
     }
-    fn update(mut self, msg: Self::Message, data: Option<EventData>) -> Updated<Self> {
+    fn update(self, msg: Self::Message, data: Option<EventData>) -> Updated<Self> {
         match msg {
             Either3::T1(msg) => {
                 let Self {
@@ -382,7 +382,7 @@ where
             handle.clone().with(Either4::T4),
         );
     }
-    fn update(mut self, msg: Self::Message, data: Option<EventData>) -> Updated<Self> {
+    fn update(self, msg: Self::Message, data: Option<EventData>) -> Updated<Self> {
         match msg {
             Either4::T1(msg) => {
                 let Self {
@@ -543,7 +543,7 @@ where
             handle.clone().with(Either5::T5),
         );
     }
-    fn update(mut self, msg: Self::Message, data: Option<EventData>) -> Updated<Self> {
+    fn update(self, msg: Self::Message, data: Option<EventData>) -> Updated<Self> {
         match msg {
             Either5::T1(msg) => {
                 let Self {
@@ -790,7 +790,7 @@ where
             handle.clone().with(Either6::T6),
         );
     }
-    fn update(mut self, msg: Self::Message, data: Option<EventData>) -> Updated<Self> {
+    fn update(self, msg: Self::Message, data: Option<EventData>) -> Updated<Self> {
         match msg {
             Either6::T1(msg) => {
                 let Self {
@@ -1099,7 +1099,7 @@ where
             handle.clone().with(Either7::T7),
         );
     }
-    fn update(mut self, msg: Self::Message, data: Option<EventData>) -> Updated<Self> {
+    fn update(self, msg: Self::Message, data: Option<EventData>) -> Updated<Self> {
         match msg {
             Either7::T1(msg) => {
                 let Self {
@@ -1459,7 +1459,7 @@ where
             handle.clone().with(Either8::T8),
         );
     }
-    fn update(mut self, msg: Self::Message, data: Option<EventData>) -> Updated<Self> {
+    fn update(self, msg: Self::Message, data: Option<EventData>) -> Updated<Self> {
         match msg {
             Either8::T1(msg) => {
                 let Self {

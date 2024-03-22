@@ -180,7 +180,11 @@ where
                     handle,
                     reply_tx,
                 } => {
-                    let _ = reply_tx.send(view.mount(uri, &headers, handle));
+                    // TODO(mathias): Clippy provides this suggestion - double check it
+                    let _ = {
+                        view.mount(uri, &headers, handle);
+                        reply_tx.send(())
+                    };
                 }
                 ViewRequest::Render { reply_tx } => {
                     let _ = reply_tx
@@ -214,7 +218,7 @@ where
 
                     let new_markup = wrap_in_live_view_container(view.render());
                     let diff = markup.diff(&new_markup).map(|diff| {
-                        serde_json::to_value(&diff).expect("failed to serialize HTML diff")
+                        serde_json::to_value(diff).expect("failed to serialize HTML diff")
                     });
                     markup = new_markup;
 

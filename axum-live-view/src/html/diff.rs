@@ -82,8 +82,8 @@ impl<T> Html<T> {
             })
             .collect::<BTreeMap<usize, Option<DynamicFragmentDiff<T>>>>();
 
-        let new_fixed = (self.fixed != other.fixed).then(|| other.fixed);
-        let new_dynamic = (!dynamic.is_empty()).then(|| dynamic);
+        let new_fixed = (self.fixed != other.fixed).then_some(other.fixed);
+        let new_dynamic = (!dynamic.is_empty()).then_some(dynamic);
 
         match (new_fixed, new_dynamic) {
             (None, None) => None,
