@@ -262,6 +262,7 @@ impl FormView {
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 #[serde(untagged)]
 enum ChangedInputValue {
     Select(String),

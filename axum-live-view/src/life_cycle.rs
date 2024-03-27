@@ -180,7 +180,6 @@ where
                     handle,
                     reply_tx,
                 } => {
-                    // TODO(mathias): Clippy provides this suggestion - double check it
                     let _ = {
                         view.mount(uri, &headers, handle);
                         reply_tx.send(())
