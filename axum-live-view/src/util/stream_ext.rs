@@ -126,7 +126,7 @@ where
     T: Stream,
     U: Stream<Item = T::Item>,
 {
-    use Poll::*;
+    use Poll::{Pending, Ready};
 
     let mut done = true;
 

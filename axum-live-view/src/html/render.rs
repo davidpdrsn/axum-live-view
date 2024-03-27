@@ -30,7 +30,7 @@ where
                 let _ = render_to(html.fixed, &html.dynamic, out);
             }
             Some((_, DynamicFragment::String(s))) => {
-                out.push_str(&*s);
+                out.push_str(s);
             }
             Some((_, DynamicFragment::Message(msg))) => {
                 let encoded_msg = serde_json::to_string(msg).unwrap();

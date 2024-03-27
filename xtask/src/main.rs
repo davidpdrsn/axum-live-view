@@ -66,7 +66,7 @@ fn ts_build(opt: TsBuild) -> Result {
     if check {
         cmd.arg("--noEmit");
     } else {
-        cmd.args(&["--build"]);
+        cmd.args(["--build"]);
     }
 
     run_cmd(cmd)?;
@@ -343,7 +343,7 @@ fn codegen() -> Result {
 
     let mut cmd = Command::new("cargo");
     cmd.current_dir(project_root());
-    cmd.args(&["fmt"]);
+    cmd.args(["fmt"]);
     cmd.status()?;
 
     Ok(())

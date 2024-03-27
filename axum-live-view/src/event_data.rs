@@ -1,6 +1,7 @@
 //! Data associated with events from the client such as click or form events.
 
 mod inner {
+    #![allow(missing_docs)]
     use crate::life_cycle::{self, EventMessageFromSocketData};
     use serde::{de::DeserializeOwned, Serialize};
     use std::fmt;
@@ -13,7 +14,7 @@ mod inner {
     #[derive(Debug, Clone)]
     #[non_exhaustive]
     pub enum EventData {
-        /// An form event.
+        /// A form event.
         ///
         /// See [`Form`] for more details.
         Form(Form),
@@ -21,7 +22,7 @@ mod inner {
         ///
         /// See [`Input`] for more details.
         Input(Input),
-        /// An key event.
+        /// A key event.
         ///
         /// See [`Key`] for more details.
         Key(Key),
@@ -179,7 +180,7 @@ mod inner {
                     FormSerializationError(QuerySerializationErrorKind::Utf8Error(err))
                 })?;
 
-            let t = serde_qs::from_str(&*query).map_err(|err| {
+            let t = serde_qs::from_str(&query).map_err(|err| {
                 FormSerializationError(QuerySerializationErrorKind::Serialization(err))
             })?;
 
@@ -209,8 +210,8 @@ mod inner {
     impl std::error::Error for FormSerializationError {
         fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
             match &self.0 {
-                QuerySerializationErrorKind::Utf8Error(inner) => Some(&*inner),
-                QuerySerializationErrorKind::Serialization(inner) => Some(&*inner),
+                QuerySerializationErrorKind::Utf8Error(inner) => Some(inner),
+                QuerySerializationErrorKind::Serialization(inner) => Some(inner),
             }
         }
     }
@@ -221,6 +222,7 @@ mod inner {
     }
 
     impl FormBuilder {
+        #![allow(missing_docs)]
         pub fn new() -> Self {
             Self::default()
         }
@@ -252,6 +254,7 @@ mod inner {
     }
 
     impl Input {
+        #![allow(missing_docs)]
         pub fn as_bool(&self) -> Option<bool> {
             if let Self::Bool(inner) = self {
                 Some(*inner)
@@ -291,6 +294,7 @@ mod inner {
     }
 
     impl Key {
+        #![allow(missing_docs)]
         pub fn key(&self) -> &str {
             &self.key
         }
